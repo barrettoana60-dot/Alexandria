@@ -1,1422 +1,1459 @@
+import subprocess, sys
+
+def _install(pkg):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", pkg, "-q"])
+
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+except ImportError:
+    _install("plotly")
+    import plotly.graph_objects as go
+    import plotly.express as px
+
 import streamlit as st
-import hashlib
-import random
-import string
-import time
-from datetime import datetime, timedelta
-import plotly.graph_objects as go
-import plotly.express as px
-import json
-import base64
-from io import BytesIO
+import hashlib, random, string, json
+from datetime import datetime
+from collections import defaultdict
 
-# ─────────────────────────────────────────────
-#  PAGE CONFIG
-# ─────────────────────────────────────────────
-st.set_page_config(
-    page_title="ResearchNet",
-    page_icon="🔬",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# ════════════════════════════════════════════════════
+#  CONFIG
+# ════════════════════════════════════════════════════
+st.set_page_config(page_title="Nebula", page_icon="🔬", layout="wide",
+                   initial_sidebar_state="expanded")
 
-# ─────────────────────────────────────────────
-#  GLOBAL CSS — Dark Navy + Black + Liquid Glass
-# ─────────────────────────────────────────────
+# ════════════════════════════════════════════════════
+#  SVG ICONS (minimalist)
+# ════════════════════════════════════════════════════
+def icon(name: str, size: int = 18, color: str = "currentColor") -> str:
+    paths = {
+        "microscope": '<path d="M6 2h8M9 2v3M7 5h6l1 2H6L7 5zM5 9h14M8 9v3M16 9v3M5 12h14M8 12l-2 5h12l-2-5M9 19h6"/><circle cx="12" cy="15" r="1"/>',
+        "home":       '<path d="M3 12L12 3l9 9M5 10v10h4v-6h6v6h4V10"/>',
+        "folder":     '<path d="M3 7a2 2 0 012-2h3l2 2h9a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/>',
+        "search":     '<circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/>',
+        "network":    '<circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M9.5 17.5L7 17M14.5 17.5L17 17M12 11l-5 6M12 11l5 6"/>',
+        "chat":       '<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"/>',
+        "chart":      '<path d="M18 20V10M12 20V4M6 20v-6"/>',
+        "image":      '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
+        "settings":   '<circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>',
+        "logout":     '<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>',
+        "heart":      '<path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/>',
+        "comment":    '<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2v10z"/>',
+        "share":      '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98M15.41 6.51l-6.82 3.98"/>',
+        "plus":       '<path d="M12 5v14M5 12h14"/>',
+        "check":      '<path d="M20 6L9 17l-5-5"/>',
+        "lock":       '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>',
+        "user":       '<path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+        "bell":       '<path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0"/>',
+        "send":       '<path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z"/>',
+        "star":       '<path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>',
+        "eye":        '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>',
+        "shield":     '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+        "mail":       '<path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><path d="M22 6l-10 7L2 6"/>',
+        "upload":     '<path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/>',
+        "key":        '<path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 11-7.778 7.778 5.5 5.5 0 017.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/>',
+        "zap":        '<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>',
+        "bookmark":   '<path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2v16z"/>',
+        "trending":   '<path d="M23 6l-9.5 9.5-5-5L1 18"/><path d="M17 6h6v6"/>',
+        "globe":      '<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/>',
+    }
+    svg_path = paths.get(name, '<circle cx="12" cy="12" r="10"/>')
+    return f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="{color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">{svg_path}</svg>'
+
+# ════════════════════════════════════════════════════
+#  GLOBAL CSS
+# ════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Syne:wght@400;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,400&family=DM+Sans:wght@300;400;500;600&display=swap');
 
 :root {
-  --bg-deep:    #020818;
-  --bg-dark:    #050d1f;
-  --bg-card:    rgba(8, 20, 50, 0.85);
-  --blue-900:   #0a1628;
-  --blue-800:   #0d1f3c;
-  --blue-700:   #0f2952;
-  --blue-600:   #1a3a6b;
-  --blue-400:   #2d6be4;
-  --blue-300:   #4d8ef0;
-  --blue-200:   #7cb3ff;
-  --accent:     #3b7cf4;
-  --accent2:    #00c6ff;
-  --text-prime: #e8f0ff;
-  --text-sec:   #8aa4cc;
-  --text-muted: #4a6080;
-  --border:     rgba(45, 107, 228, 0.2);
-  --glass-bg:   rgba(13, 31, 60, 0.6);
-  --glass-bdr:  rgba(77, 142, 240, 0.25);
-  --danger:     #ff4757;
-  --success:    #2ed573;
+  --void:       #03040a;
+  --space:      #080d1c;
+  --deep:       #0a1128;
+  --navy:       #0d1635;
+  --surface:    #111d3a;
+  --elevated:   #162348;
+  --blue-core:  #2563eb;
+  --blue-lit:   #3b7cf4;
+  --blue-glow:  #60a5fa;
+  --cyan:       #06b6d4;
+  --cyan-soft:  #22d3ee;
+  --text-1:     #eef2ff;
+  --text-2:     #94a8d0;
+  --text-3:     #4a5e80;
+  --border:     rgba(37,99,235,0.18);
+  --border-lit: rgba(96,165,250,0.28);
+  --glass:      rgba(10,17,40,0.7);
+  --glass-top:  rgba(22,35,72,0.5);
+  --success:    #10b981;
+  --warn:       #f59e0b;
+  --danger:     #ef4444;
+  --radius-sm:  10px;
+  --radius-md:  16px;
+  --radius-lg:  24px;
 }
 
-*, *::before, *::after { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: border-box; margin: 0; }
 
 html, body, .stApp {
-  background: var(--bg-deep) !important;
-  color: var(--text-prime) !important;
-  font-family: 'Space Grotesk', sans-serif !important;
+  background: var(--void) !important;
+  color: var(--text-1) !important;
+  font-family: 'DM Sans', sans-serif !important;
 }
 
-/* Animated mesh background */
+/* ── Animated cosmos background ── */
 .stApp::before {
   content: '';
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse 80% 60% at 20% 10%, rgba(29,78,216,0.12) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 80% at 80% 90%, rgba(0,198,255,0.07) 0%, transparent 60%),
-    radial-gradient(ellipse 40% 40% at 60% 40%, rgba(59,124,244,0.05) 0%, transparent 50%);
+    radial-gradient(ellipse 100% 70% at 10% 0%,   rgba(37,99,235,0.10) 0%, transparent 55%),
+    radial-gradient(ellipse 70%  90% at 90% 100%,  rgba(6,182,212,0.07)  0%, transparent 55%),
+    radial-gradient(ellipse 50%  50% at 50% 50%,   rgba(37,99,235,0.04)  0%, transparent 60%);
   pointer-events: none;
   z-index: 0;
+  animation: bgPulse 12s ease-in-out infinite alternate;
+}
+@keyframes bgPulse {
+  from { opacity: 0.7; }
+  to   { opacity: 1.0; }
 }
 
-/* Sidebar */
+/* ── Sidebar ── */
 section[data-testid="stSidebar"] {
-  background: linear-gradient(180deg, var(--blue-900) 0%, var(--bg-deep) 100%) !important;
+  background: linear-gradient(160deg, var(--deep) 0%, var(--void) 100%) !important;
   border-right: 1px solid var(--border) !important;
-  padding-top: 1rem !important;
 }
-section[data-testid="stSidebar"] * { color: var(--text-prime) !important; }
+section[data-testid="stSidebar"] * { color: var(--text-1) !important; }
+section[data-testid="stSidebar"] .stButton > button {
+  background: transparent !important;
+  border: none !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text-2) !important;
+  text-align: left !important;
+  padding: 0.55rem 0.9rem !important;
+  box-shadow: none !important;
+  font-size: 0.88rem !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+  transition: background 0.2s, color 0.2s !important;
+}
+section[data-testid="stSidebar"] .stButton > button:hover {
+  background: rgba(37,99,235,0.12) !important;
+  color: var(--text-1) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
 
-/* Headers */
+/* ── Typography ── */
 h1, h2, h3, h4 {
-  font-family: 'Syne', sans-serif !important;
-  color: var(--text-prime) !important;
-  letter-spacing: -0.02em;
+  font-family: 'Playfair Display', 'Times New Roman', serif !important;
+  color: var(--text-1) !important;
+  letter-spacing: -0.01em;
+  font-weight: 700;
 }
+h1 { font-size: 1.9rem !important; }
+h2 { font-size: 1.5rem !important; }
+h3 { font-size: 1.15rem !important; }
 
-/* Inputs */
-.stTextInput input,
-.stTextArea textarea,
-.stSelectbox select,
-.stMultiSelect [data-baseweb="select"] {
-  background: var(--blue-800) !important;
-  border: 1px solid var(--glass-bdr) !important;
-  border-radius: 12px !important;
-  color: var(--text-prime) !important;
-  font-family: 'Space Grotesk', sans-serif !important;
+/* ── Inputs ── */
+.stTextInput input, .stTextArea textarea {
+  background: var(--surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  color: var(--text-1) !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 0.9rem !important;
+  transition: border-color 0.25s, box-shadow 0.25s !important;
+  padding: 0.6rem 0.9rem !important;
 }
-.stTextInput input:focus,
-.stTextArea textarea:focus {
-  border-color: var(--accent) !important;
-  box-shadow: 0 0 0 3px rgba(59,124,244,0.2) !important;
+.stTextInput input:focus, .stTextArea textarea:focus {
+  border-color: var(--blue-core) !important;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.15), 0 0 12px rgba(37,99,235,0.1) !important;
+  outline: none !important;
 }
+.stTextInput label, .stTextArea label { color: var(--text-2) !important; font-size: 0.82rem !important; }
 
-/* Liquid Glass Button */
+/* ── Liquid Glass Button ── */
 .stButton > button {
   background: linear-gradient(135deg,
-    rgba(59,124,244,0.35) 0%,
-    rgba(0,198,255,0.18) 50%,
-    rgba(59,124,244,0.25) 100%) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
-  border: 1px solid rgba(124,179,255,0.35) !important;
-  border-radius: 16px !important;
-  color: var(--text-prime) !important;
-  font-family: 'Space Grotesk', sans-serif !important;
-  font-weight: 600 !important;
-  font-size: 0.9rem !important;
-  padding: 0.55rem 1.4rem !important;
-  transition: all 0.3s cubic-bezier(0.4,0,0.2,1) !important;
+    rgba(37,99,235,0.4)  0%,
+    rgba(6,182,212,0.2)  50%,
+    rgba(37,99,235,0.3)  100%) !important;
+  backdrop-filter: blur(24px) saturate(200%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(200%) !important;
+  border: 1px solid rgba(96,165,250,0.3) !important;
+  border-radius: var(--radius-md) !important;
+  color: var(--text-1) !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 0.88rem !important;
+  padding: 0.6rem 1.5rem !important;
+  letter-spacing: 0.02em !important;
   position: relative !important;
   overflow: hidden !important;
-  letter-spacing: 0.02em !important;
+  transition: all 0.3s cubic-bezier(0.4,0,0.2,1) !important;
   box-shadow:
-    0 4px 24px rgba(59,124,244,0.2),
-    inset 0 1px 0 rgba(255,255,255,0.12),
-    inset 0 -1px 0 rgba(0,0,0,0.2) !important;
+    0 4px 20px rgba(37,99,235,0.18),
+    inset 0 1px 0 rgba(255,255,255,0.10),
+    inset 0 -1px 0 rgba(0,0,0,0.15) !important;
 }
-.stButton > button::before {
+.stButton > button::after {
   content: '';
   position: absolute;
-  top: 0; left: -100%;
-  width: 100%; height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
-  transition: left 0.5s ease !important;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.06) 50%, transparent 100%);
+  transform: translateX(-100%);
+  transition: transform 0.6s ease !important;
 }
-.stButton > button:hover::before { left: 100%; }
+.stButton > button:hover::after { transform: translateX(100%); }
 .stButton > button:hover {
   background: linear-gradient(135deg,
-    rgba(59,124,244,0.55) 0%,
-    rgba(0,198,255,0.3) 50%,
-    rgba(59,124,244,0.45) 100%) !important;
-  border-color: rgba(124,179,255,0.6) !important;
-  box-shadow:
-    0 8px 32px rgba(59,124,244,0.35),
-    0 0 0 1px rgba(124,179,255,0.2),
-    inset 0 1px 0 rgba(255,255,255,0.18) !important;
+    rgba(37,99,235,0.6)  0%,
+    rgba(6,182,212,0.35) 50%,
+    rgba(37,99,235,0.5)  100%) !important;
+  border-color: rgba(96,165,250,0.5) !important;
+  box-shadow: 0 8px 30px rgba(37,99,235,0.3), inset 0 1px 0 rgba(255,255,255,0.15) !important;
   transform: translateY(-1px) !important;
 }
-.stButton > button:active { transform: translateY(0) !important; }
+.stButton > button:active { transform: translateY(0px) !important; }
 
-/* Cards */
-.glass-card {
-  background: var(--glass-bg);
-  backdrop-filter: blur(16px) saturate(160%);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
-  border: 1px solid var(--glass-bdr);
-  border-radius: 20px;
-  padding: 1.5rem;
+/* ── Cards ── */
+.card {
+  background: var(--glass);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 1.4rem 1.6rem;
   margin-bottom: 1rem;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+  animation: slideUp 0.4s ease both;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
 }
-.glass-card:hover {
+.card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 16px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(77,142,240,0.2);
+  border-color: var(--border-lit);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.4), 0 0 0 1px rgba(37,99,235,0.12);
 }
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.page-wrap { animation: fadeIn 0.35s ease; }
 
-/* Avatar circle */
-.avatar {
-  width: 42px; height: 42px;
+/* ── Avatar ── */
+.av {
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--blue-600), var(--accent));
+  background: linear-gradient(135deg, var(--navy), var(--blue-core));
   display: flex; align-items: center; justify-content: center;
-  font-weight: 700; font-size: 1rem; color: white;
-  border: 2px solid var(--glass-bdr);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  color: white;
+  border: 1.5px solid var(--border-lit);
   flex-shrink: 0;
 }
 
-/* Tag pill */
+/* ── Tags ── */
 .tag {
   display: inline-block;
-  background: rgba(59,124,244,0.15);
-  border: 1px solid rgba(59,124,244,0.3);
+  background: rgba(37,99,235,0.12);
+  border: 1px solid rgba(37,99,235,0.25);
   border-radius: 20px;
   padding: 2px 10px;
   font-size: 0.72rem;
-  color: var(--blue-200);
+  color: var(--blue-glow);
   margin: 2px;
   font-weight: 500;
+  letter-spacing: 0.01em;
 }
 
-/* Metrics */
-.metric-box {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-bdr);
-  border-radius: 16px;
+/* ── Status ── */
+.badge {
+  display: inline-block;
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.badge-ongoing  { background: rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.35); color:#f59e0b; }
+.badge-pub      { background: rgba(16,185,129,0.12);  border:1px solid rgba(16,185,129,0.35); color:#10b981; }
+
+/* ── Metric box ── */
+.mbox {
+  background: var(--glass);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   padding: 1.2rem;
   text-align: center;
+  animation: slideUp 0.4s ease both;
 }
-.metric-value {
-  font-family: 'Syne', sans-serif;
-  font-size: 2rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, var(--blue-300), var(--accent2));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.mval {
+  font-family: 'Playfair Display', 'Times New Roman', serif;
+  font-size: 2rem; font-weight: 800;
+  background: linear-gradient(135deg, var(--blue-glow), var(--cyan-soft));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
 }
-.metric-label { font-size: 0.78rem; color: var(--text-sec); margin-top: 4px; }
+.mlbl { font-size: 0.75rem; color: var(--text-3); margin-top: 3px; }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg-deep); }
-::-webkit-scrollbar-thumb { background: var(--blue-600); border-radius: 3px; }
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--void); }
+::-webkit-scrollbar-thumb { background: var(--elevated); border-radius: 3px; }
 
-/* Divider */
-hr { border-color: var(--border) !important; }
+/* ── Chat bubbles ── */
+.bbl-me {
+  background: linear-gradient(135deg, rgba(37,99,235,0.45), rgba(6,182,212,0.22));
+  border: 1px solid rgba(96,165,250,0.25);
+  border-radius: 18px 18px 4px 18px;
+  padding: 0.7rem 1rem;
+  max-width: 72%; margin-left: auto; margin-bottom: 6px;
+  font-size: 0.87rem; line-height: 1.5;
+}
+.bbl-them {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 18px 18px 18px 4px;
+  padding: 0.7rem 1rem;
+  max-width: 72%; margin-bottom: 6px;
+  font-size: 0.87rem; line-height: 1.5;
+}
 
-/* Logo text */
-.logo-text {
-  font-family: 'Syne', sans-serif;
-  font-size: 1.6rem;
-  font-weight: 800;
-  background: linear-gradient(135deg, #7cb3ff, #00c6ff);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+/* ── Logo ── */
+.logo {
+  font-family: 'Playfair Display', 'Times New Roman', serif;
+  font-size: 1.7rem; font-weight: 800; font-style: italic;
+  background: linear-gradient(135deg, #93c5fd, #22d3ee);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
   letter-spacing: -0.03em;
 }
+.logo-sub { font-size: 0.72rem; color: var(--text-3); margin-top: -2px; letter-spacing: 0.08em; text-transform: uppercase; }
 
-/* Notification dot */
-.notif-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: var(--accent); display: inline-block; margin-left: 6px;
-}
-
-/* Chat bubble */
-.chat-bubble-me {
-  background: linear-gradient(135deg, rgba(59,124,244,0.4), rgba(0,198,255,0.2));
-  border: 1px solid rgba(77,142,240,0.3);
-  border-radius: 18px 18px 4px 18px;
-  padding: 0.8rem 1.1rem;
-  margin: 0.4rem 0;
-  max-width: 75%;
-  margin-left: auto;
-  font-size: 0.88rem;
-}
-.chat-bubble-other {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-bdr);
-  border-radius: 18px 18px 18px 4px;
-  padding: 0.8rem 1.1rem;
-  margin: 0.4rem 0;
-  max-width: 75%;
-  font-size: 0.88rem;
-}
-
-/* Folder card */
-.folder-card {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-bdr);
-  border-radius: 16px;
-  padding: 1.2rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: center;
-}
-.folder-card:hover {
-  border-color: var(--accent);
-  background: rgba(59,124,244,0.12);
-  transform: scale(1.02);
-}
-
-/* Search input */
-.search-wrap {
-  position: relative;
-  margin-bottom: 1.5rem;
-}
-
-/* Badges */
-.badge-online {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--success); display: inline-block; margin-right: 6px;
-}
-.badge-offline {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--text-muted); display: inline-block; margin-right: 6px;
-}
-
-/* Selectbox */
-.stSelectbox [data-baseweb="select"] {
-  background: var(--blue-800) !important;
-  border-radius: 12px !important;
-  border: 1px solid var(--glass-bdr) !important;
-}
-
-/* Tabs */
+/* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] {
-  background: var(--blue-900) !important;
-  border-radius: 12px !important;
-  padding: 4px !important;
-  gap: 4px !important;
+  background: var(--deep) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 4px !important; gap: 4px !important;
+  border: 1px solid var(--border) !important;
 }
 .stTabs [data-baseweb="tab"] {
   background: transparent !important;
-  color: var(--text-sec) !important;
-  border-radius: 10px !important;
-  font-family: 'Space Grotesk', sans-serif !important;
-  font-weight: 500 !important;
+  color: var(--text-3) !important;
+  border-radius: 8px !important;
+  font-family: 'DM Sans', sans-serif !important;
+  font-size: 0.85rem !important;
 }
 .stTabs [aria-selected="true"] {
-  background: linear-gradient(135deg, rgba(59,124,244,0.4), rgba(0,198,255,0.2)) !important;
-  color: var(--text-prime) !important;
-  border: 1px solid rgba(77,142,240,0.3) !important;
+  background: linear-gradient(135deg, rgba(37,99,235,0.35), rgba(6,182,212,0.18)) !important;
+  color: var(--text-1) !important;
+  border: 1px solid rgba(96,165,250,0.3) !important;
 }
-.stTabs [data-baseweb="tab-panel"] {
-  background: transparent !important;
-  padding: 1rem 0 !important;
+.stTabs [data-baseweb="tab-panel"] { background: transparent !important; padding-top: 1rem !important; }
+
+/* ── Expander ── */
+.stExpander { background: var(--glass) !important; border: 1px solid var(--border) !important; border-radius: var(--radius-md) !important; }
+.stExpander summary { color: var(--text-2) !important; font-size: 0.88rem !important; }
+
+/* ── Selectbox ── */
+.stSelectbox [data-baseweb="select"] { background: var(--surface) !important; border: 1px solid var(--border) !important; border-radius: var(--radius-sm) !important; }
+.stSelectbox label { color: var(--text-2) !important; font-size: 0.82rem !important; }
+
+/* ── File uploader ── */
+.stFileUploader section { background: var(--glass) !important; border: 1.5px dashed var(--border-lit) !important; border-radius: var(--radius-md) !important; }
+
+/* ── Alert ── */
+.stAlert { background: var(--glass) !important; border: 1px solid var(--border) !important; border-radius: var(--radius-md) !important; color: var(--text-1) !important; }
+
+/* ── Separator ── */
+hr { border-color: var(--border) !important; }
+
+/* ── Pulse dot ── */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.6; transform: scale(0.85); }
+}
+.dot-on  { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--success);  animation: pulse 2s infinite; margin-right:6px; }
+.dot-off { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--text-3); margin-right:6px; }
+
+/* ── Shimmer (loading effect) ── */
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position:  200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, var(--surface) 25%, var(--elevated) 50%, var(--surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+  border-radius: var(--radius-sm);
+  height: 14px;
 }
 
-/* Radio */
-.stRadio label { color: var(--text-prime) !important; }
-.stCheckbox label { color: var(--text-prime) !important; }
+/* ── Progress bar ── */
+.stProgress > div > div { background: linear-gradient(90deg, var(--blue-core), var(--cyan)) !important; border-radius: 4px !important; }
 
-/* Progress */
-.stProgress > div > div {
-  background: linear-gradient(90deg, var(--accent), var(--accent2)) !important;
-  border-radius: 4px !important;
+/* ── Recommendation pill ── */
+.rec-pill {
+  display:inline-block;
+  background: linear-gradient(135deg, rgba(6,182,212,0.15), rgba(37,99,235,0.15));
+  border: 1px solid rgba(6,182,212,0.3);
+  border-radius: 20px; padding: 2px 10px;
+  font-size: 0.7rem; color: var(--cyan-soft); font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
-/* Info / warning / success boxes */
-.stAlert {
-  background: var(--glass-bg) !important;
-  border-radius: 12px !important;
-  border: 1px solid var(--glass-bdr) !important;
-  color: var(--text-prime) !important;
-}
+/* ── Input label override ── */
+label { color: var(--text-2) !important; }
+.stCheckbox label, .stRadio label { color: var(--text-1) !important; }
 
-/* Expander */
-.stExpander {
-  background: var(--glass-bg) !important;
-  border: 1px solid var(--glass-bdr) !important;
-  border-radius: 16px !important;
-}
-.stExpander summary { color: var(--text-prime) !important; }
-
-/* File uploader */
-.stFileUploader {
-  background: var(--glass-bg) !important;
-  border: 1px dashed var(--glass-bdr) !important;
-  border-radius: 16px !important;
-}
-
-/* Slider */
-.stSlider [data-baseweb="slider"] .rc-slider-track {
-  background: var(--accent) !important;
-}
+/* ── Page container ── */
+.block-container { padding-top: 1.8rem !important; padding-bottom: 3rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────
-#  SESSION STATE INITIALIZATION
-# ─────────────────────────────────────────────
-def init_state():
-    defaults = {
-        "logged_in": False,
-        "current_user": None,
-        "page": "login",
-        "users": {
-            "demo@researchnet.com": {
-                "name": "Ana Pesquisadora",
-                "password": hash_pw("demo123"),
-                "photo": None,
-                "bio": "Pesquisadora em IA e Ciências Cognitivas",
-                "area": "Inteligência Artificial",
-                "followers": 128,
-                "following": 47,
-                "2fa_enabled": False,
-                "phone": "",
-            }
+# ════════════════════════════════════════════════════
+#  HELPERS
+# ════════════════════════════════════════════════════
+def hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
+def code6(): return ''.join(random.choices(string.digits, k=6))
+def initials(name): return ''.join(w[0].upper() for w in name.split()[:2])
+
+def av_html(init, sz=40):
+    fs = sz // 3
+    return (f'<div class="av" style="width:{sz}px;height:{sz}px;font-size:{fs}px;">'
+            f'{init}</div>')
+
+def tags_html(tags):
+    return ' '.join(f'<span class="tag">{t}</span>' for t in tags)
+
+def status_html(s):
+    cls = "badge-pub" if s == "Publicado" else "badge-ongoing"
+    return f'<span class="badge {cls}">{s}</span>'
+
+def guser():
+    return st.session_state.users.get(st.session_state.current_user, {})
+
+def logo_html(size=1.7):
+    return f'''
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+      <div style="color:#60a5fa;">{icon("microscope", 28, "#60a5fa")}</div>
+      <div>
+        <div class="logo" style="font-size:{size}rem;">Nebula</div>
+        <div class="logo-sub">Rede do Conhecimento Científico</div>
+      </div>
+    </div>'''
+
+# ════════════════════════════════════════════════════
+#  RECOMMENDATION ENGINE
+# ════════════════════════════════════════════════════
+def record_interaction(tag_list, weight=1.0):
+    """Record user interest in tags."""
+    email = st.session_state.get("current_user")
+    if not email or not tag_list:
+        return
+    prefs = st.session_state.user_prefs.setdefault(email, defaultdict(float))
+    for t in tag_list:
+        prefs[t.lower()] += weight
+
+def score_post(post, email):
+    """Score a post for the current user based on interest overlap."""
+    prefs = st.session_state.user_prefs.get(email, {})
+    if not prefs:
+        return 0.0
+    score = 0.0
+    for t in post.get("tags", []):
+        score += prefs.get(t.lower(), 0)
+    for t in post.get("connections", []):
+        score += prefs.get(t.lower(), 0) * 0.5
+    return score
+
+def recommended_posts(email, n=3):
+    """Return top N recommended posts not already liked."""
+    posts = st.session_state.feed_posts
+    scored = [(score_post(p, email), p) for p in posts
+              if email not in p.get("liked_by", [])]
+    scored.sort(key=lambda x: -x[0])
+    return [p for s, p in scored if s > 0][:n]
+
+# ════════════════════════════════════════════════════
+#  SESSION STATE
+# ════════════════════════════════════════════════════
+def init():
+    defs = {
+      "logged_in": False,
+      "current_user": None,
+      "page": "login",
+      "user_prefs": {},   # email → {tag: score}
+      "users": {
+        "demo@nebula.ai": {
+          "name": "Ana Pesquisadora",
+          "password": hp("demo123"),
+          "photo": None,
+          "bio": "Pesquisadora em IA e Ciências Cognitivas",
+          "area": "Inteligência Artificial",
+          "followers": 128,
+          "following": 47,
+          "2fa_enabled": False,
+          "verified": True,
+        }
+      },
+      "pending_verify": None,   # {"email":…, "name":…, "pw":…, "area":…, "code":…}
+      "pending_2fa":   None,
+      "feed_posts": [
+        {
+          "id": 1, "author": "Carlos Mendez", "avatar": "CM",
+          "area": "Neurociência",
+          "title": "Efeitos da Privação de Sono na Plasticidade Sináptica",
+          "abstract": "Investigamos como 24h de privação de sono afetam espinhas dendríticas em ratos Wistar, com redução de 34% na plasticidade hipocampal.",
+          "tags": ["neurociência","sono","memória","hipocampo"],
+          "likes": 47, "comments": [
+            {"user":"Maria Silva","text":"Excelente metodologia!"},
+            {"user":"João Lima", "text":"Quais foram os critérios de exclusão?"}
+          ],
+          "status": "Em andamento", "date": "2026-02-10",
+          "liked_by": [], "connections": ["sono","memória","hipocampo"],
         },
-        "pending_2fa": None,
-        "2fa_code": None,
-        "2fa_email": None,
-        "feed_posts": [
-            {
-                "id": 1,
-                "author": "Carlos Mendez",
-                "avatar": "CM",
-                "area": "Neurociência",
-                "title": "Efeitos da Privação de Sono na Plasticidade Sináptica",
-                "abstract": "Este estudo investigou como períodos de privação de sono de 24h afetam a densidade de espinhas dendríticas em ratos Wistar, mostrando redução de 34% na plasticidade hipocampal.",
-                "tags": ["neurociência", "sono", "memória"],
-                "likes": 47,
-                "comments": [
-                    {"user": "Maria Silva", "text": "Excelente metodologia! Já vi resultados similares em humanos."},
-                    {"user": "João Lima", "text": "Quais foram os critérios de exclusão?"}
-                ],
-                "status": "Em andamento",
-                "date": "2026-02-10",
-                "liked_by": [],
-                "connections": ["sono", "memória", "hipocampo"],
-            },
-            {
-                "id": 2,
-                "author": "Luana Freitas",
-                "avatar": "LF",
-                "area": "Biomedicina",
-                "title": "CRISPR-Cas9 no Tratamento de Distrofias Musculares Raras",
-                "abstract": "Desenvolvemos um vetor AAV9 modificado para entrega precisa de edições CRISPR no gene DMD, com eficiência de 78% em modelos murinos mdx.",
-                "tags": ["CRISPR", "gene terapia", "músculo"],
-                "likes": 93,
-                "comments": [
-                    {"user": "Ana Pesquisadora", "text": "Fascinante! Quais são os próximos passos para trials humanos?"}
-                ],
-                "status": "Publicado",
-                "date": "2026-01-28",
-                "liked_by": [],
-                "connections": ["edição genética", "distrofia", "AAV9"],
-            },
-            {
-                "id": 3,
-                "author": "Rafael Souza",
-                "avatar": "RS",
-                "area": "Ciência da Computação",
-                "title": "Redes Neurais Quântico-Clássicas para Otimização Combinatória",
-                "abstract": "Propomos uma arquitetura híbrida variacional que combina qubits supercondutores com camadas densas clássicas para resolver instâncias do TSP com 40% menos iterações.",
-                "tags": ["quantum ML", "otimização", "TSP"],
-                "likes": 201,
-                "comments": [],
-                "status": "Em andamento",
-                "date": "2026-02-15",
-                "liked_by": [],
-                "connections": ["computação quântica", "machine learning", "otimização"],
-            },
-        ],
-        "folders": {
-            "📁 IA & Machine Learning": ["artigo_gpt4.pdf", "redes_conv.pdf"],
-            "📁 Bioinformática": ["genomica_2025.pdf"],
-            "📁 Favoritos": [],
+        {
+          "id": 2, "author": "Luana Freitas", "avatar": "LF",
+          "area": "Biomedicina",
+          "title": "CRISPR-Cas9 no Tratamento de Distrofias Musculares Raras",
+          "abstract": "Desenvolvemos vetor AAV9 modificado para entrega precisa de CRISPR no gene DMD, com eficiência de 78% em modelos murinos mdx.",
+          "tags": ["CRISPR","gene terapia","músculo","AAV9"],
+          "likes": 93, "comments": [
+            {"user":"Ana Pesquisadora","text":"Quais são os próximos passos para trials humanos?"}
+          ],
+          "status": "Publicado", "date": "2026-01-28",
+          "liked_by": [], "connections": ["edição genética","distrofia","AAV9"],
         },
-        "chat_contacts": [
-            {"name": "Carlos Mendez", "avatar": "CM", "online": True, "last": "Ótimo, vou revisar!"},
-            {"name": "Luana Freitas", "avatar": "LF", "online": False, "last": "Podemos colaborar no próximo semestre."},
-            {"name": "Rafael Souza", "avatar": "RS", "online": True, "last": "Compartilhei o repositório."},
-        ],
-        "chat_messages": {
-            "Carlos Mendez": [
-                {"from": "Carlos Mendez", "text": "Oi! Vi seu comentário na minha pesquisa.", "time": "09:14"},
-                {"from": "me", "text": "Sim! Achei muito interessante o método que você usou.", "time": "09:16"},
-                {"from": "Carlos Mendez", "text": "Ótimo, vou revisar!", "time": "09:17"},
-            ],
-            "Luana Freitas": [
-                {"from": "Luana Freitas", "text": "Podemos colaborar no próximo semestre.", "time": "ontem"},
-            ],
-            "Rafael Souza": [
-                {"from": "Rafael Souza", "text": "Compartilhei o repositório.", "time": "08:30"},
-            ],
+        {
+          "id": 3, "author": "Rafael Souza", "avatar": "RS",
+          "area": "Ciência da Computação",
+          "title": "Redes Neurais Quântico-Clássicas para Otimização Combinatória",
+          "abstract": "Arquitetura híbrida variacional combinando qubits supercondutores com camadas densas clássicas para resolver TSP com 40% menos iterações.",
+          "tags": ["quantum ML","otimização","TSP","computação quântica"],
+          "likes": 201, "comments": [],
+          "status": "Em andamento", "date": "2026-02-15",
+          "liked_by": [], "connections": ["computação quântica","machine learning","otimização"],
         },
-        "active_chat": None,
-        "knowledge_nodes": [
-            {"id": "IA", "connections": ["Machine Learning", "Otimização", "Redes Neurais"]},
-            {"id": "Neurociência", "connections": ["Memória", "Sono", "Plasticidade"]},
-            {"id": "Genômica", "connections": ["CRISPR", "AAV9", "Edição Genética"]},
-            {"id": "Computação Quântica", "connections": ["Otimização", "Machine Learning"]},
-        ],
-        "search_results": [],
-        "followed_researchers": ["Carlos Mendez", "Luana Freitas"],
-        "stats_data": {
-            "views": [12, 34, 28, 67, 89, 110, 95, 134, 160, 178, 201, 230],
-            "citations": [0, 1, 1, 2, 3, 4, 4, 6, 7, 8, 10, 12],
-            "months": ["Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez", "Jan", "Fev"],
+        {
+          "id": 4, "author": "Priya Nair", "avatar": "PN",
+          "area": "Astrofísica",
+          "title": "Detecção de Matéria Escura via Lentes Gravitacionais Fracas",
+          "abstract": "Usamos catálogo DES Y3 com 100M de galáxias para mapear distribuição de matéria escura com precisão sub-arcminuto.",
+          "tags": ["astrofísica","matéria escura","cosmologia","DES"],
+          "likes": 312, "comments": [],
+          "status": "Publicado", "date": "2026-02-01",
+          "liked_by": [], "connections": ["cosmologia","lentes gravitacionais","survey"],
         },
-        "notifications": [
-            "Carlos Mendez curtiu sua pesquisa",
-            "Nova conexão de conhecimento: IA ↔ Computação Quântica",
-            "Luana Freitas comentou em um artigo que você segue",
+      ],
+      "folders": {
+        "IA & Machine Learning": ["artigo_gpt4.pdf","redes_conv.pdf"],
+        "Bioinformática":        ["genomica_2025.pdf"],
+        "Favoritos":             [],
+      },
+      "chat_contacts": [
+        {"name":"Carlos Mendez","avatar":"CM","online":True, "last":"Ótimo, vou revisar!"},
+        {"name":"Luana Freitas","avatar":"LF","online":False,"last":"Podemos colaborar no próximo semestre."},
+        {"name":"Rafael Souza","avatar":"RS","online":True, "last":"Compartilhei o repositório."},
+      ],
+      "chat_messages": {
+        "Carlos Mendez": [
+          {"from":"Carlos Mendez","text":"Oi! Vi seu comentário na minha pesquisa.","time":"09:14"},
+          {"from":"me","text":"Achei muito interessante o método que você usou.","time":"09:16"},
+          {"from":"Carlos Mendez","text":"Ótimo, vou revisar!","time":"09:17"},
         ],
+        "Luana Freitas": [
+          {"from":"Luana Freitas","text":"Podemos colaborar no próximo semestre.","time":"ontem"},
+        ],
+        "Rafael Souza": [
+          {"from":"Rafael Souza","text":"Compartilhei o repositório.","time":"08:30"},
+        ],
+      },
+      "active_chat": None,
+      "knowledge_nodes": [
+        {"id":"IA",                 "connections":["Machine Learning","Otimização","Redes Neurais"]},
+        {"id":"Neurociência",       "connections":["Memória","Sono","Plasticidade"]},
+        {"id":"Genômica",           "connections":["CRISPR","AAV9","Edição Genética"]},
+        {"id":"Computação Quântica","connections":["Otimização","Machine Learning"]},
+        {"id":"Astrofísica",        "connections":["Cosmologia","Matéria Escura"]},
+      ],
+      "followed": ["Carlos Mendez","Luana Freitas"],
+      "notifications": [
+        "Carlos Mendez curtiu sua pesquisa",
+        "Nova conexão: IA ↔ Computação Quântica",
+        "Luana Freitas comentou em um artigo que você segue",
+      ],
+      "stats_data": {
+        "views":    [12,34,28,67,89,110,95,134,160,178,201,230],
+        "citations":[0,1,1,2,3,4,4,6,7,8,10,12],
+        "months":   ["Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez","Jan","Fev"],
+      },
     }
-    for k, v in defaults.items():
+    for k, v in defs.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
-def hash_pw(pw: str) -> str:
-    return hashlib.sha256(pw.encode()).hexdigest()
+init()
 
-def generate_code() -> str:
-    return ''.join(random.choices(string.digits, k=6))
-
-def get_user():
-    return st.session_state.users.get(st.session_state.current_user, {})
-
-init_state()
-
-# ─────────────────────────────────────────────
-#  HELPER RENDER FUNCTIONS
-# ─────────────────────────────────────────────
-def render_logo():
-    st.markdown('<div class="logo-text">🔬 ResearchNet</div>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--text-muted);font-size:0.78rem;margin:0 0 1.5rem">A rede do conhecimento científico</p>', unsafe_allow_html=True)
-
-def glass_card(content_html: str):
-    st.markdown(f'<div class="glass-card">{content_html}</div>', unsafe_allow_html=True)
-
-def avatar_html(initials: str, size: int = 42):
-    return f'<div style="width:{size}px;height:{size}px;border-radius:50%;background:linear-gradient(135deg,#1a3a6b,#2d6be4);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:{size//3}px;color:white;border:2px solid rgba(77,142,240,0.3);flex-shrink:0;">{initials}</div>'
-
-def status_badge(status: str):
-    color = "#2ed573" if status == "Publicado" else "#ffa502"
-    return f'<span style="background:rgba({",".join(str(int(c*255)) for c in px.colors.hex_to_rgb(color))},0.15);border:1px solid {color};border-radius:20px;padding:2px 10px;font-size:0.72rem;color:{color};font-weight:600;">{status}</span>'
-
-def tag_html(tags):
-    return " ".join(f'<span class="tag">{t}</span>' for t in tags)
-
-# ─────────────────────────────────────────────
-#  PAGES
-# ─────────────────────────────────────────────
-
-# ── LOGIN / CADASTRO ──────────────────────────
+# ════════════════════════════════════════════════════
+#  PAGE: LOGIN / CADASTRO
+# ════════════════════════════════════════════════════
 def page_login():
-    col_l, col_c, col_r = st.columns([1, 1.2, 1])
-    with col_c:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        render_logo()
-        st.markdown('<h2 style="margin-bottom:0.3rem;">Bem-vindo de volta</h2>', unsafe_allow_html=True)
-        st.markdown('<p style="color:var(--text-sec);margin-bottom:2rem;font-size:0.9rem;">Entre na sua conta para continuar pesquisando</p>', unsafe_allow_html=True)
+    _, col, _ = st.columns([1, 1.1, 1])
+    with col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(logo_html(2.0), unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
 
-        tab_login, tab_cadastro = st.tabs(["  Entrar  ", "  Criar conta  "])
+        tab_in, tab_up = st.tabs(["  Entrar  ", "  Criar conta  "])
 
-        with tab_login:
-            email = st.text_input("E-mail", placeholder="seu@email.com", key="login_email")
-            pw    = st.text_input("Senha", type="password", placeholder="••••••••", key="login_pw")
-            if st.button("Entrar →", use_container_width=True, key="btn_login"):
-                if email in st.session_state.users:
-                    user = st.session_state.users[email]
-                    if user["password"] == hash_pw(pw):
-                        if user.get("2fa_enabled"):
-                            code = generate_code()
-                            st.session_state["2fa_code"]    = code
-                            st.session_state["2fa_email"]   = email
-                            st.session_state["pending_2fa"] = True
-                            st.session_state.page = "2fa"
-                            st.rerun()
-                        else:
-                            st.session_state.logged_in    = True
-                            st.session_state.current_user = email
-                            st.session_state.page = "feed"
-                            st.rerun()
-                    else:
-                        st.error("Senha incorreta.")
-                else:
+        # ── LOGIN
+        with tab_in:
+            email = st.text_input("E-mail", placeholder="seu@email.com",  key="li_e")
+            pw    = st.text_input("Senha",  placeholder="••••••••", type="password", key="li_p")
+            if st.button("Entrar", use_container_width=True, key="btn_li"):
+                u = st.session_state.users.get(email)
+                if not u:
                     st.error("E-mail não encontrado.")
+                elif u["password"] != hp(pw):
+                    st.error("Senha incorreta.")
+                elif not u.get("verified", True):
+                    st.warning("Confirme seu e-mail antes de entrar.")
+                elif u.get("2fa_enabled"):
+                    c = code6()
+                    st.session_state.pending_2fa = {"email": email, "code": c}
+                    st.session_state.page = "2fa"
+                    st.rerun()
+                else:
+                    st.session_state.logged_in = True
+                    st.session_state.current_user = email
+                    st.session_state.page = "feed"
+                    st.rerun()
+            st.markdown(f'<div style="text-align:center;color:var(--text-3);font-size:0.78rem;margin-top:0.5rem;">Conta demo: demo@nebula.ai / demo123</div>', unsafe_allow_html=True)
 
-        with tab_cadastro:
-            n_name  = st.text_input("Nome completo", placeholder="Dr. Maria Silva", key="reg_name")
-            n_email = st.text_input("E-mail", placeholder="seu@email.com", key="reg_email")
-            n_area  = st.text_input("Área de pesquisa", placeholder="Bioinformática, IA, etc.", key="reg_area")
-            n_pw    = st.text_input("Senha", type="password", placeholder="Mínimo 6 caracteres", key="reg_pw")
-            n_pw2   = st.text_input("Confirmar senha", type="password", placeholder="••••••••", key="reg_pw2")
-            if st.button("Criar conta →", use_container_width=True, key="btn_register"):
+        # ── CADASTRO
+        with tab_up:
+            n_name  = st.text_input("Nome completo",    placeholder="Dr. Maria Silva",       key="su_n")
+            n_email = st.text_input("E-mail",           placeholder="seu@email.com",          key="su_e")
+            n_area  = st.text_input("Área de pesquisa", placeholder="Bioinformática, IA…",    key="su_a")
+            n_pw    = st.text_input("Senha",            placeholder="Mínimo 6 caracteres", type="password", key="su_p")
+            n_pw2   = st.text_input("Confirmar senha",  placeholder="••••••••",           type="password", key="su_p2")
+            if st.button("Criar conta e verificar e-mail", use_container_width=True, key="btn_su"):
                 if not all([n_name, n_email, n_area, n_pw, n_pw2]):
                     st.error("Preencha todos os campos.")
                 elif n_pw != n_pw2:
                     st.error("Senhas não coincidem.")
                 elif len(n_pw) < 6:
-                    st.error("Senha muito curta (mínimo 6 caracteres).")
+                    st.error("Senha muito curta.")
                 elif n_email in st.session_state.users:
                     st.error("E-mail já cadastrado.")
                 else:
-                    st.session_state.users[n_email] = {
-                        "name": n_name,
-                        "password": hash_pw(n_pw),
-                        "photo": None,
-                        "bio": "",
-                        "area": n_area,
-                        "followers": 0,
-                        "following": 0,
-                        "2fa_enabled": False,
-                        "phone": "",
+                    c = code6()
+                    st.session_state.pending_verify = {
+                        "email": n_email, "name": n_name,
+                        "pw": hp(n_pw), "area": n_area, "code": c
                     }
-                    st.success("Conta criada! Faça login.")
+                    st.session_state.page = "verify_email"
+                    st.rerun()
 
+# ════════════════════════════════════════════════════
+#  PAGE: VERIFICAR E-MAIL (cadastro)
+# ════════════════════════════════════════════════════
+def page_verify_email():
+    pv = st.session_state.pending_verify
+    _, col, _ = st.columns([1, 1.1, 1])
+    with col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(logo_html(), unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="card" style="text-align:center;">
+          <div style="color:var(--blue-glow);margin-bottom:1rem;">{icon("mail",40,"#60a5fa")}</div>
+          <h2 style="margin-bottom:0.5rem;">Verifique seu e-mail</h2>
+          <p style="color:var(--text-2);font-size:0.88rem;line-height:1.6;">
+            Um código de 6 dígitos foi enviado para<br>
+            <strong style="color:var(--text-1);">{pv['email']}</strong>
+          </p>
+          <div style="background:rgba(37,99,235,0.12);border:1px solid rgba(37,99,235,0.25);border-radius:12px;padding:12px;margin:1rem 0;">
+            <div style="font-size:0.72rem;color:var(--text-3);margin-bottom:4px;">CÓDIGO DE VERIFICAÇÃO (demo)</div>
+            <div style="font-family:'Playfair Display',serif;font-size:2rem;font-weight:700;letter-spacing:0.2em;color:var(--blue-glow);">{pv['code']}</div>
+          </div>
+          <p style="color:var(--text-3);font-size:0.75rem;">Em produção, o código seria enviado via SMTP para o e-mail acima.</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-# ── 2FA ───────────────────────────────────────
-def page_2fa():
-    col_l, col_c, col_r = st.columns([1, 1.2, 1])
-    with col_c:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        render_logo()
-        st.markdown('<h2>Verificação em 2 etapas</h2>', unsafe_allow_html=True)
-        code = st.session_state.get("2fa_code", "------")
-        st.info(f"🔐 Código de verificação enviado para seu e-mail: **{code}**\n\n*(Em produção, um e-mail real seria enviado via SMTP)*")
-        typed = st.text_input("Digite o código de 6 dígitos", max_chars=6, placeholder="000000")
-        if st.button("Verificar →", use_container_width=True):
-            if typed == code:
-                email = st.session_state["2fa_email"]
-                st.session_state.logged_in    = True
-                st.session_state.current_user = email
+        typed = st.text_input("Digite o código de 6 dígitos", max_chars=6, placeholder="000000", key="ev_code")
+        if st.button("Verificar e criar conta", use_container_width=True, key="btn_ev"):
+            if typed == pv["code"]:
+                st.session_state.users[pv["email"]] = {
+                    "name": pv["name"], "password": pv["pw"],
+                    "photo": None, "bio": "", "area": pv["area"],
+                    "followers": 0, "following": 0,
+                    "2fa_enabled": False, "verified": True,
+                }
+                st.session_state.pending_verify = None
+                st.session_state.logged_in = True
+                st.session_state.current_user = pv["email"]
                 st.session_state.page = "feed"
-                st.session_state.pending_2fa  = False
+                st.success("Conta verificada! Bem-vindo ao Nebula.")
                 st.rerun()
             else:
-                st.error("Código inválido. Tente novamente.")
-        if st.button("← Voltar ao login"):
+                st.error("Código inválido.")
+        if st.button("← Voltar", key="btn_ev_back"):
             st.session_state.page = "login"
             st.rerun()
 
+# ════════════════════════════════════════════════════
+#  PAGE: 2FA
+# ════════════════════════════════════════════════════
+def page_2fa():
+    p2 = st.session_state.pending_2fa
+    _, col, _ = st.columns([1, 1.1, 1])
+    with col:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.markdown(logo_html(), unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="card" style="text-align:center;margin-top:1rem;">
+          <div style="color:var(--blue-glow);margin-bottom:1rem;">{icon("key",36,"#60a5fa")}</div>
+          <h2 style="margin-bottom:0.5rem;">Verificação em 2 etapas</h2>
+          <p style="color:var(--text-2);font-size:0.87rem;">Código enviado para <strong>{p2['email']}</strong></p>
+          <div style="background:rgba(37,99,235,0.12);border:1px solid rgba(37,99,235,0.25);border-radius:12px;padding:12px;margin:1rem 0;">
+            <div style="font-size:0.72rem;color:var(--text-3);margin-bottom:4px;">SEU CÓDIGO (demo)</div>
+            <div style="font-family:'Playfair Display',serif;font-size:2rem;font-weight:700;letter-spacing:0.2em;color:var(--blue-glow);">{p2['code']}</div>
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+        typed = st.text_input("Código", max_chars=6, placeholder="000000", key="fa_c", label_visibility="collapsed")
+        if st.button("Verificar", use_container_width=True, key="btn_fa"):
+            if typed == p2["code"]:
+                st.session_state.logged_in = True
+                st.session_state.current_user = p2["email"]
+                st.session_state.pending_2fa = None
+                st.session_state.page = "feed"
+                st.rerun()
+            else:
+                st.error("Código inválido.")
+        if st.button("← Voltar", key="btn_fa_back"):
+            st.session_state.page = "login"
+            st.rerun()
 
-# ── SIDEBAR (após login) ───────────────────────
+# ════════════════════════════════════════════════════
+#  SIDEBAR
+# ════════════════════════════════════════════════════
+NAV = [
+    ("feed",         "home",       "Feed"),
+    ("folders",      "folder",     "Pastas"),
+    ("search",       "search",     "Buscar Artigos"),
+    ("knowledge",    "network",    "Rede de Conhecimento"),
+    ("chat",         "chat",       "Chat Seguro"),
+    ("analytics",    "chart",      "Análises"),
+    ("img_search",   "image",      "Busca por Imagem"),
+    ("settings",     "settings",   "Configurações"),
+]
+
 def render_sidebar():
     with st.sidebar:
-        render_logo()
-        user = get_user()
-        name = user.get("name", "Usuário")
-        initials = "".join(w[0].upper() for w in name.split()[:2])
+        st.markdown(logo_html(1.4), unsafe_allow_html=True)
+        st.markdown("<hr style='margin:0.8rem 0;'>", unsafe_allow_html=True)
+
+        u    = guser()
+        name = u.get("name", "Usuário")
+        ini  = initials(name)
+        area = u.get("area", "")
         st.markdown(f"""
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:1.5rem;padding:12px;background:var(--glass-bg);border:1px solid var(--glass-bdr);border-radius:14px;">
-          {avatar_html(initials, 48)}
-          <div>
-            <div style="font-weight:700;font-size:0.95rem;">{name}</div>
-            <div style="color:var(--text-muted);font-size:0.75rem;">{user.get('area','')}</div>
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;
+                    background:var(--glass);border:1px solid var(--border);border-radius:14px;margin-bottom:1rem;">
+          {av_html(ini, 44)}
+          <div style="overflow:hidden;">
+            <div style="font-weight:600;font-size:0.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{name}</div>
+            <div style="color:var(--text-3);font-size:0.73rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{area}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # Notificações
         notifs = st.session_state.notifications
         if notifs:
-            with st.expander(f"🔔 Notificações ({len(notifs)})"):
+            with st.expander(f"{icon('bell',14,'#60a5fa')} Notificações ({len(notifs)})", expanded=False):
                 for n in notifs:
-                    st.markdown(f'<div style="font-size:0.8rem;color:var(--text-sec);padding:6px 0;border-bottom:1px solid var(--border);">{n}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="font-size:0.78rem;color:var(--text-2);padding:5px 0;border-bottom:1px solid var(--border);">{n}</div>', unsafe_allow_html=True)
 
-        st.markdown("---")
-        pages = {
-            "🏠  Feed":           "feed",
-            "📂  Pastas":         "folders",
-            "🔍  Buscar Artigos": "search",
-            "🧠  Rede de Conhec.":"knowledge",
-            "💬  Chat":           "chat",
-            "📊  Análises":       "analytics",
-            "🖼️  Busca por Imagem":"image_search",
-            "⚙️  Configurações":  "settings",
-        }
-        for label, key in pages.items():
-            active = st.session_state.page == key
-            btn_style = "color:var(--accent) !important;" if active else ""
-            if st.button(label, use_container_width=True, key=f"nav_{key}"):
-                st.session_state.page = key
+        st.markdown("<br>", unsafe_allow_html=True)
+        cur_page = st.session_state.page
+        for key, ic, label in NAV:
+            active = cur_page == key
+            col_ic, col_lb = st.columns([0.18, 0.82])
+            with col_ic:
+                ic_color = "#60a5fa" if active else "#4a5e80"
+                st.markdown(f'<div style="padding-top:8px;">{icon(ic,16,ic_color)}</div>', unsafe_allow_html=True)
+            with col_lb:
+                lbl_style = f"color:var(--text-1) !important;background:rgba(37,99,235,0.15);" if active else ""
+                if st.button(label, key=f"nav_{key}", use_container_width=True):
+                    st.session_state.page = key
+                    st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        col_ic2, col_lb2 = st.columns([0.18, 0.82])
+        with col_ic2:
+            st.markdown(f'<div style="padding-top:8px;">{icon("logout",16,"#ef4444")}</div>', unsafe_allow_html=True)
+        with col_lb2:
+            if st.button("Sair", key="nav_logout", use_container_width=True):
+                st.session_state.logged_in = False
+                st.session_state.current_user = None
+                st.session_state.page = "login"
                 st.rerun()
 
-        st.markdown("---")
-        if st.button("🚪  Sair", use_container_width=True):
-            st.session_state.logged_in    = False
-            st.session_state.current_user = None
-            st.session_state.page = "login"
-            st.rerun()
-
-
-# ── FEED ──────────────────────────────────────
+# ════════════════════════════════════════════════════
+#  PAGE: FEED
+# ════════════════════════════════════════════════════
 def page_feed():
-    st.markdown('<h1 style="margin-bottom:0.2rem;">Feed de Pesquisas</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--text-sec);margin-bottom:1.5rem;">Acompanhe pesquisas em andamento da comunidade científica</p>', unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.markdown('<h1>Feed de Pesquisas</h1>', unsafe_allow_html=True)
+    st.markdown(f'<p style="color:var(--text-3);margin-bottom:1.5rem;font-size:0.88rem;">Acompanhe pesquisas em andamento da comunidade científica</p>', unsafe_allow_html=True)
 
-    col_feed, col_side = st.columns([2, 0.85])
+    email = st.session_state.current_user
+    col_main, col_side = st.columns([2.1, 0.9])
 
-    with col_feed:
-        # Publicar nova pesquisa
-        with st.expander("✍️ Publicar nova pesquisa"):
-            np_title    = st.text_input("Título da pesquisa", key="np_title")
-            np_abstract = st.text_area("Resumo / Abstract", key="np_abstract", height=100)
-            np_tags     = st.text_input("Tags (separadas por vírgula)", key="np_tags")
-            np_status   = st.selectbox("Status", ["Em andamento", "Publicado", "Concluído"], key="np_status")
-            if st.button("Publicar →", key="btn_publish"):
-                if np_title and np_abstract:
-                    user = get_user()
-                    name = user.get("name", "Usuário")
-                    initials = "".join(w[0].upper() for w in name.split()[:2])
-                    tags = [t.strip() for t in np_tags.split(",") if t.strip()] if np_tags else []
-                    new_post = {
-                        "id": len(st.session_state.feed_posts) + 1,
-                        "author": name,
-                        "avatar": initials,
-                        "area": user.get("area", ""),
-                        "title": np_title,
-                        "abstract": np_abstract,
-                        "tags": tags,
-                        "likes": 0,
-                        "comments": [],
-                        "status": np_status,
+    with col_main:
+        # ── Recommended
+        recs = recommended_posts(email)
+        if recs:
+            st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:0.8rem;">{icon("star",15,"#22d3ee")}<span style="font-size:0.82rem;color:var(--cyan-soft);font-weight:600;letter-spacing:0.04em;">RECOMENDADO PARA VOCÊ</span></div>', unsafe_allow_html=True)
+            for p in recs[:2]:
+                render_post(p, recommended=True)
+            st.markdown("<hr>", unsafe_allow_html=True)
+
+        # ── Publish box
+        with st.expander(f"{icon('plus',14,'#60a5fa')} Publicar nova pesquisa"):
+            np_t  = st.text_input("Título", key="np_t")
+            np_ab = st.text_area("Resumo / Abstract", key="np_ab", height=90)
+            np_tg = st.text_input("Tags (separadas por vírgula)", key="np_tg")
+            np_st = st.selectbox("Status", ["Em andamento","Publicado","Concluído"], key="np_st")
+            if st.button("Publicar", key="btn_pub"):
+                if np_t and np_ab:
+                    u = guser()
+                    nm = u.get("name","Usuário")
+                    tags = [t.strip() for t in np_tg.split(",") if t.strip()]
+                    st.session_state.feed_posts.insert(0, {
+                        "id": len(st.session_state.feed_posts)+1,
+                        "author": nm, "avatar": initials(nm),
+                        "area": u.get("area",""),
+                        "title": np_t, "abstract": np_ab,
+                        "tags": tags, "likes": 0,
+                        "comments": [], "status": np_st,
                         "date": datetime.now().strftime("%Y-%m-%d"),
-                        "liked_by": [],
-                        "connections": tags[:3],
-                    }
-                    st.session_state.feed_posts.insert(0, new_post)
+                        "liked_by": [], "connections": tags[:3],
+                    })
+                    record_interaction(tags, 2.0)
                     st.success("Pesquisa publicada!")
                     st.rerun()
 
-        for post in st.session_state.feed_posts:
-            render_feed_card(post)
+        st.markdown("<br>", unsafe_allow_html=True)
+        for p in st.session_state.feed_posts:
+            render_post(p)
 
     with col_side:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;margin-bottom:1rem;">👥 Pesquisadores Seguidos</div>', unsafe_allow_html=True)
+        # Researchers
+        st.markdown(f'<div class="card">', unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;font-weight:600;">{icon("user",15,"#60a5fa")} Pesquisadores</div>', unsafe_allow_html=True)
         for c in st.session_state.chat_contacts:
-            online_icon = "🟢" if c["online"] else "⚫"
-            following   = c["name"] in st.session_state.followed_researchers
-            col_a, col_b = st.columns([3, 1])
-            with col_a:
-                st.markdown(f'{online_icon} **{c["name"]}**', unsafe_allow_html=True)
-            with col_b:
-                btn_lbl = "✓" if following else "+"
-                if st.button(btn_lbl, key=f"follow_{c['name']}"):
-                    if following:
-                        st.session_state.followed_researchers.remove(c["name"])
-                    else:
-                        st.session_state.followed_researchers.append(c["name"])
+            is_fol = c["name"] in st.session_state.followed
+            dot = '<span class="dot-on"></span>' if c["online"] else '<span class="dot-off"></span>'
+            c1, c2 = st.columns([3,1])
+            with c1:
+                st.markdown(f'<div style="font-size:0.85rem;display:flex;align-items:center;">{dot}{c["name"]}</div>', unsafe_allow_html=True)
+            with c2:
+                lbl = "✓" if is_fol else "+"
+                if st.button(lbl, key=f"fol_{c['name']}"):
+                    if is_fol: st.session_state.followed.remove(c["name"])
+                    else:      st.session_state.followed.append(c["name"])
                     st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="glass-card" style="margin-top:1rem;">', unsafe_allow_html=True)
-        st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;margin-bottom:0.8rem;">🔥 Áreas em Alta</div>', unsafe_allow_html=True)
-        for area, count in [("Quantum ML", 42), ("CRISPR 2026", 38), ("Neuroplasticidade", 31), ("LLMs Científicos", 27)]:
-            st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:0.85rem;"><span>{area}</span><span style="color:var(--blue-300);">{count} posts</span></div>', unsafe_allow_html=True)
+        # Trending
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:1rem;font-weight:600;">{icon("trending",15,"#60a5fa")} Áreas em Alta</div>', unsafe_allow_html=True)
+        for area, cnt in [("Quantum ML",42),("CRISPR 2026",38),("Neuroplasticidade",31),("LLMs Científicos",27)]:
+            st.markdown(f'<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:0.82rem;"><span style="color:var(--text-2);">{area}</span><span style="color:var(--blue-glow);">{cnt}</span></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 
-def render_feed_card(post):
-    user = get_user()
+def render_post(post, recommended=False):
     email = st.session_state.current_user
     liked = email in post["liked_by"]
+    rec_badge = f'<span class="rec-pill">{icon("zap",10,"#22d3ee")} Recomendado</span> ' if recommended else ""
 
     st.markdown(f"""
-    <div class="glass-card">
+    <div class="card">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:1rem;">
-        {avatar_html(post['avatar'])}
+        {av_html(post['avatar'], 40)}
         <div style="flex:1;">
-          <div style="font-weight:600;">{post['author']}</div>
-          <div style="color:var(--text-muted);font-size:0.78rem;">{post['area']} · {post['date']}</div>
+          <div style="font-weight:600;font-size:0.92rem;">{post['author']}</div>
+          <div style="color:var(--text-3);font-size:0.75rem;">{post['area']} · {post['date']}</div>
         </div>
-        {status_badge(post['status'])}
+        {rec_badge}{status_html(post['status'])}
       </div>
-      <h3 style="margin:0 0 0.6rem;font-size:1.05rem;">{post['title']}</h3>
-      <p style="color:var(--text-sec);font-size:0.87rem;line-height:1.6;margin-bottom:0.8rem;">{post['abstract']}</p>
-      <div style="margin-bottom:0.8rem;">{tag_html(post['tags'])}</div>
+      <h3 style="margin-bottom:0.5rem;font-size:1.05rem;line-height:1.4;">{post['title']}</h3>
+      <p style="color:var(--text-2);font-size:0.86rem;line-height:1.65;margin-bottom:0.8rem;">{post['abstract']}</p>
+      <div>{tags_html(post['tags'])}</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # Actions row
-    col1, col2, col3, col4 = st.columns([1, 1, 1, 3])
-    with col1:
-        heart = "❤️" if liked else "🤍"
-        if st.button(f"{heart} {post['likes']}", key=f"like_{post['id']}"):
+    c1, c2, c3, _ = st.columns([1, 1, 1, 4])
+    with c1:
+        h_ico = icon("heart",14,"#ef4444") if liked else icon("heart",14,"#4a5e80")
+        if st.button(f"{post['likes']}", key=f"lk_{post['id']}"):
             if liked:
-                post["liked_by"].remove(email)
-                post["likes"] -= 1
+                post["liked_by"].remove(email); post["likes"] -= 1
             else:
-                post["liked_by"].append(email)
-                post["likes"] += 1
+                post["liked_by"].append(email); post["likes"] += 1
+                record_interaction(post["tags"], 1.5)
             st.rerun()
-    with col2:
-        if st.button(f"💬 {len(post['comments'])}", key=f"cmt_toggle_{post['id']}"):
-            key = f"show_cmt_{post['id']}"
-            st.session_state[key] = not st.session_state.get(key, False)
+    with c2:
+        if st.button(f"{len(post['comments'])}", key=f"cm_t_{post['id']}"):
+            k = f"sc_{post['id']}"
+            st.session_state[k] = not st.session_state.get(k, False)
+            record_interaction(post["tags"], 0.5)
             st.rerun()
-    with col3:
-        if st.button("🔗", key=f"share_{post['id']}"):
+    with c3:
+        if st.button(icon("share",14,"#4a5e80"), key=f"sh_{post['id']}"):
             st.toast("Link copiado!")
 
-    if st.session_state.get(f"show_cmt_{post['id']}", False):
+    if st.session_state.get(f"sc_{post['id']}", False):
         for c in post["comments"]:
-            st.markdown(f'<div style="background:var(--blue-900);border-radius:10px;padding:8px 12px;margin:4px 0;font-size:0.83rem;"><strong>{c["user"]}</strong>: {c["text"]}</div>', unsafe_allow_html=True)
-        new_cmt = st.text_input("Adicionar comentário...", key=f"cmt_input_{post['id']}")
-        if st.button("Enviar", key=f"cmt_send_{post['id']}"):
-            if new_cmt:
-                post["comments"].append({"user": get_user().get("name", "Você"), "text": new_cmt})
+            st.markdown(f'<div style="background:var(--surface);border-radius:10px;padding:7px 12px;margin:3px 0;font-size:0.83rem;border:1px solid var(--border);"><strong style="color:var(--blue-glow);">{c["user"]}</strong>: {c["text"]}</div>', unsafe_allow_html=True)
+        nc = st.text_input("Comentar…", key=f"ci_{post['id']}", label_visibility="collapsed", placeholder="Adicionar comentário…")
+        if st.button("Enviar", key=f"cs_{post['id']}"):
+            if nc:
+                post["comments"].append({"user": guser().get("name","Você"), "text": nc})
+                record_interaction(post["tags"], 0.8)
                 st.rerun()
 
-
-# ── PASTAS ────────────────────────────────────
+# ════════════════════════════════════════════════════
+#  PAGE: PASTAS
+# ════════════════════════════════════════════════════
 def page_folders():
-    st.markdown('<h1>📂 Pastas de Pesquisa</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--text-sec);margin-bottom:1.5rem;">Organize seus artigos e pesquisas em pastas temáticas</p>', unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.markdown('<h1>Pastas de Pesquisa</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--text-3);font-size:0.87rem;margin-bottom:1.5rem;">Organize artigos e pesquisas por tema</p>', unsafe_allow_html=True)
 
-    col_new, _ = st.columns([2, 3])
-    with col_new:
-        new_folder = st.text_input("Nova pasta", placeholder="ex: Biofísica Molecular", key="new_folder_name")
-        if st.button("➕ Criar pasta", key="btn_new_folder"):
-            if new_folder:
-                key = f"📁 {new_folder}"
-                if key not in st.session_state.folders:
-                    st.session_state.folders[key] = []
-                    st.success(f"Pasta '{new_folder}' criada!")
-                    st.rerun()
+    c1, _ = st.columns([2, 3])
+    with c1:
+        nf = st.text_input("", placeholder="Nova pasta…", key="nf", label_visibility="collapsed")
+        if st.button(f"{icon('plus',13,'currentColor')} Criar pasta", key="btn_nf"):
+            if nf and nf not in st.session_state.folders:
+                st.session_state.folders[nf] = []
+                st.rerun()
 
-    st.markdown("---")
+    st.markdown("<br>", unsafe_allow_html=True)
     cols = st.columns(3)
-    for idx, (fname, files) in enumerate(st.session_state.folders.items()):
+    for idx, (fname, files) in enumerate(list(st.session_state.folders.items())):
         with cols[idx % 3]:
             st.markdown(f"""
-            <div class="folder-card">
-              <div style="font-size:2rem;margin-bottom:8px;">📁</div>
-              <div style="font-weight:700;font-size:0.95rem;">{fname.replace('📁 ','')}</div>
-              <div style="color:var(--text-muted);font-size:0.78rem;margin-top:4px;">{len(files)} arquivo(s)</div>
+            <div class="card" style="text-align:center;cursor:pointer;">
+              <div style="color:var(--blue-glow);margin-bottom:8px;">{icon("folder",32,"#60a5fa")}</div>
+              <div style="font-family:'Playfair Display',serif;font-weight:700;font-size:1rem;">{fname}</div>
+              <div style="color:var(--text-3);font-size:0.75rem;margin-top:4px;">{len(files)} arquivo(s)</div>
             </div>
             """, unsafe_allow_html=True)
-
             with st.expander("Ver arquivos"):
-                if files:
-                    for f in files:
-                        st.markdown(f'<div style="font-size:0.83rem;padding:4px 0;color:var(--text-sec);">📄 {f}</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown('<div style="font-size:0.83rem;color:var(--text-muted);">Pasta vazia</div>', unsafe_allow_html=True)
-
-                uploaded = st.file_uploader("Adicionar arquivo", key=f"upload_{fname}", label_visibility="collapsed")
-                if uploaded:
-                    if uploaded.name not in st.session_state.folders[fname]:
-                        st.session_state.folders[fname].append(uploaded.name)
-                        st.success("Arquivo adicionado!")
-                        st.rerun()
-
-            if st.button("🗑️ Excluir pasta", key=f"del_folder_{fname}"):
+                for f in files:
+                    st.markdown(f'<div style="display:flex;align-items:center;gap:8px;font-size:0.82rem;padding:4px 0;color:var(--text-2);">{icon("bookmark",12,"#4a5e80")} {f}</div>', unsafe_allow_html=True)
+                up = st.file_uploader("", key=f"up_{fname}", label_visibility="collapsed")
+                if up and up.name not in files:
+                    files.append(up.name)
+                    st.rerun()
+            if st.button("Excluir", key=f"df_{fname}"):
                 del st.session_state.folders[fname]
                 st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-
-# ── BUSCA DE ARTIGOS ──────────────────────────
-MOCK_ARTICLES = [
-    {"title": "Transformer Models for Scientific Discovery", "authors": "Smith, J. et al.", "year": 2025, "journal": "Nature Machine Intelligence", "doi": "10.1038/s42256-025-0001", "abstract": "We present a novel transformer architecture fine-tuned on PubMed and arXiv datasets for automated hypothesis generation.", "tags": ["LLM", "IA", "ciência"]},
-    {"title": "CRISPR-Cas13 for RNA Knockdown in Neurons", "authors": "Oliveira, R. et al.", "year": 2024, "journal": "Cell", "doi": "10.1016/j.cell.2024.02.033", "abstract": "Demonstramos eficiência de 92% no knockdown de transcritos específicos em neurônios corticais usando Cas13d.", "tags": ["CRISPR", "neurociência", "RNA"]},
-    {"title": "Quantum Advantage in Drug Discovery", "authors": "Chen, L. et al.", "year": 2025, "journal": "Science", "doi": "10.1126/science.adm1234", "abstract": "Using variational quantum eigensolvers, we reduced conformational search space for protein-ligand docking by 10^4.", "tags": ["quantum", "fármacos", "proteínas"]},
-    {"title": "Sleep and Synaptic Homeostasis: 2025 Update", "authors": "Tononi, G. et al.", "year": 2025, "journal": "Neuron", "doi": "10.1016/j.neuron.2025.01.010", "abstract": "Extended synaptic homeostasis hypothesis with new fMRI evidence showing overnight spine density normalization.", "tags": ["sono", "sinapses", "memória"]},
-    {"title": "Federated Learning for Medical Imaging Privacy", "authors": "Kumar, P. et al.", "year": 2026, "journal": "The Lancet Digital Health", "doi": "10.1016/S2589-7500(26)00021-3", "abstract": "Multi-institution federated framework achieves 94.2% diagnostic accuracy without sharing raw patient images.", "tags": ["privacidade", "ML médico", "federado"]},
+# ════════════════════════════════════════════════════
+#  PAGE: BUSCA DE ARTIGOS
+# ════════════════════════════════════════════════════
+ARTICLES = [
+    {"title":"Transformer Models for Scientific Discovery","authors":"Smith, J. et al.","year":2025,"journal":"Nature Machine Intelligence","doi":"10.1038/s42256-025-0001","abstract":"Novel transformer architecture fine-tuned on PubMed and arXiv for automated hypothesis generation.","tags":["LLM","IA","ciência automatizada"]},
+    {"title":"CRISPR-Cas13 for RNA Knockdown in Neurons","authors":"Oliveira, R. et al.","year":2024,"journal":"Cell","doi":"10.1016/j.cell.2024.02.033","abstract":"Eficiência de 92% no knockdown de transcritos em neurônios corticais usando Cas13d.","tags":["CRISPR","neurociência","RNA"]},
+    {"title":"Quantum Advantage in Drug Discovery","authors":"Chen, L. et al.","year":2025,"journal":"Science","doi":"10.1126/science.adm1234","abstract":"VQE reduziu espaço de busca conformacional para docking proteína-ligante em 10⁴.","tags":["quantum","fármacos","proteínas"]},
+    {"title":"Sleep and Synaptic Homeostasis: 2025 Update","authors":"Tononi, G. et al.","year":2025,"journal":"Neuron","doi":"10.1016/j.neuron.2025.01.010","abstract":"Nova evidência fMRI mostrando normalização overnight da densidade de espinhas.","tags":["sono","sinapses","memória"]},
+    {"title":"Federated Learning for Medical Imaging Privacy","authors":"Kumar, P. et al.","year":2026,"journal":"Lancet Digital Health","doi":"10.1016/S2589-7500(26)00021","abstract":"Framework federado atinge 94.2% de acurácia diagnóstica sem compartilhar imagens brutas.","tags":["privacidade","ML médico","federado"]},
+    {"title":"Dark Matter Distribution via Weak Gravitational Lensing","authors":"Nair, P. et al.","year":2026,"journal":"ApJ Letters","doi":"10.3847/2041-8213/abc123","abstract":"Mapeamento de matéria escura com precisão sub-arcminuto usando 100M de galáxias do DES Y3.","tags":["astrofísica","matéria escura","cosmologia"]},
 ]
 
 def page_search():
-    st.markdown('<h1>🔍 Busca de Artigos Científicos</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--text-sec);margin-bottom:1.5rem;">Busque artigos exclusivamente dentro da base científica da ResearchNet</p>', unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.markdown('<h1>Busca de Artigos</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--text-3);font-size:0.87rem;margin-bottom:1.5rem;">Base científica exclusiva da plataforma Nebula</p>', unsafe_allow_html=True)
 
-    col_s, col_f = st.columns([3, 1])
-    with col_s:
-        query = st.text_input("", placeholder="🔍  Buscar por título, autor, área...", key="search_query", label_visibility="collapsed")
-    with col_f:
-        year_filter = st.selectbox("Ano", ["Todos", "2026", "2025", "2024"], key="year_filter", label_visibility="collapsed")
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        q = st.text_input("", placeholder=f"{icon('search',14,'currentColor')}  Buscar por título, autor, tag…", key="sq", label_visibility="collapsed")
+    with c2:
+        yf = st.selectbox("", ["Todos","2026","2025","2024"], key="yf", label_visibility="collapsed")
 
-    if query:
-        q = query.lower()
-        results = [
-            a for a in MOCK_ARTICLES
-            if q in a["title"].lower() or q in a["abstract"].lower()
-            or any(q in t for t in a["tags"])
-            or q in a["authors"].lower()
-        ]
-        if year_filter != "Todos":
-            results = [a for a in results if str(a["year"]) == year_filter]
-
-        if results:
-            st.markdown(f'<p style="color:var(--text-sec);margin-bottom:1rem;">{len(results)} resultado(s) encontrado(s)</p>', unsafe_allow_html=True)
-            for art in results:
-                render_article_card(art)
+    if q:
+        ql = q.lower()
+        res = [a for a in ARTICLES if ql in a["title"].lower() or ql in a["abstract"].lower() or any(ql in t for t in a["tags"]) or ql in a["authors"].lower()]
+        if yf != "Todos": res = [a for a in res if str(a["year"]) == yf]
+        # record interest
+        for a in res[:3]: record_interaction(a["tags"], 0.5)
+        st.markdown(f'<p style="color:var(--text-3);font-size:0.82rem;margin-bottom:1rem;">{len(res)} resultado(s)</p>', unsafe_allow_html=True)
+        if res:
+            for a in res: render_article(a)
         else:
-            st.markdown('<div class="glass-card" style="text-align:center;"><div style="font-size:2.5rem;">🔭</div><div style="color:var(--text-muted);margin-top:0.5rem;">Nenhum resultado encontrado. Tente outros termos.</div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="card" style="text-align:center;padding:3rem;"><div style="color:var(--text-3);">Nenhum resultado encontrado</div></div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem;">Artigos em destaque:</div>', unsafe_allow_html=True)
-        for art in MOCK_ARTICLES[:3]:
-            render_article_card(art)
+        st.markdown('<div style="color:var(--text-3);font-size:0.82rem;margin-bottom:1rem;">Artigos em destaque</div>', unsafe_allow_html=True)
+        for a in ARTICLES[:4]: render_article(a)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-def render_article_card(art):
+def render_article(a):
     st.markdown(f"""
-    <div class="glass-card">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.5rem;">
         <div style="flex:1;">
-          <h3 style="margin:0 0 0.4rem;font-size:1rem;">{art['title']}</h3>
-          <div style="color:var(--text-muted);font-size:0.78rem;margin-bottom:0.5rem;">
-            {art['authors']} · <em>{art['journal']}</em> · {art['year']}
-          </div>
-          <p style="color:var(--text-sec);font-size:0.85rem;line-height:1.5;margin-bottom:0.6rem;">{art['abstract']}</p>
-          <div>{tag_html(art['tags'])}</div>
+          <h3 style="margin-bottom:0.3rem;font-size:0.98rem;line-height:1.4;">{a['title']}</h3>
+          <div style="color:var(--text-3);font-size:0.76rem;margin-bottom:0.5rem;">{a['authors']} · <em>{a['journal']}</em> · {a['year']}</div>
+          <p style="color:var(--text-2);font-size:0.85rem;line-height:1.6;margin-bottom:0.6rem;">{a['abstract']}</p>
+          <div>{tags_html(a['tags'])}</div>
         </div>
       </div>
-      <div style="margin-top:0.8rem;font-size:0.78rem;color:var(--text-muted);">DOI: {art['doi']}</div>
+      <div style="margin-top:0.6rem;font-size:0.72rem;color:var(--text-3);">DOI: {a['doi']}</div>
     </div>
     """, unsafe_allow_html=True)
-
-    c1, c2, c3 = st.columns([1, 1, 5])
-    with c1:
-        if st.button("💾 Salvar", key=f"save_art_{art['doi']}"):
-            first_folder = list(st.session_state.folders.keys())[0]
-            fname = f"{art['title'][:30]}.pdf"
-            if fname not in st.session_state.folders[first_folder]:
-                st.session_state.folders[first_folder].append(fname)
+    ca, cb, _ = st.columns([1,1,5])
+    with ca:
+        if st.button("Salvar", key=f"sv_{a['doi']}"):
+            first = list(st.session_state.folders.keys())[0]
+            fn = f"{a['title'][:28]}.pdf"
+            if fn not in st.session_state.folders[first]:
+                st.session_state.folders[first].append(fn)
             st.toast("Salvo na primeira pasta!")
-    with c2:
-        if st.button("🔗 Citar", key=f"cite_art_{art['doi']}"):
+    with cb:
+        if st.button("Citar", key=f"ct_{a['doi']}"):
             st.toast("Citação copiada!")
 
-
-# ── REDE DE CONHECIMENTO ──────────────────────
+# ════════════════════════════════════════════════════
+#  PAGE: REDE DE CONHECIMENTO
+# ════════════════════════════════════════════════════
 def page_knowledge():
-    st.markdown('<h1>🧠 Rede de Conhecimento</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--text-sec);margin-bottom:1.5rem;">Conecte tópicos de pesquisa e descubra relações entre áreas do conhecimento</p>', unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.markdown('<h1>Rede de Conhecimento</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--text-3);font-size:0.87rem;margin-bottom:1.5rem;">Conecte tópicos e visualize relações entre áreas do conhecimento</p>', unsafe_allow_html=True)
 
-    # Build network graph with plotly
-    nodes_x = [0.5, 0.15, 0.85, 0.5, 0.15, 0.85, 0.5, 0.3, 0.7, 0.2, 0.8, 0.5]
-    nodes_y = [0.9, 0.7, 0.7, 0.5, 0.35, 0.35, 0.2, 0.6, 0.6, 0.5, 0.5, 0.35]
-    node_labels = ["IA", "Machine Learning", "Otimização", "Neurociência", "Memória",
-                   "Sono", "Genômica", "Redes Neurais", "Quantum ML", "Plasticidade",
-                   "CRISPR", "Proteômica"]
-    node_sizes = [30, 22, 22, 30, 18, 18, 28, 20, 24, 18, 22, 20]
-    node_colors = ["#3b7cf4","#2d6be4","#1a5abf","#4d8ef0","#7cb3ff",
-                   "#00c6ff","#3b7cf4","#2d6be4","#00b4d8","#7cb3ff","#4d8ef0","#2d6be4"]
+    # Build graph
+    nx = [0.50,0.15,0.85,0.50,0.15,0.85,0.50,0.30,0.70,0.20,0.80,0.50,0.68,0.32]
+    ny = [0.90,0.70,0.70,0.50,0.35,0.35,0.20,0.60,0.60,0.50,0.50,0.35,0.78,0.78]
+    nlabels = ["IA","Machine Learning","Otimização","Neurociência","Memória","Sono",
+               "Genômica","Redes Neurais","Quantum ML","Plasticidade","CRISPR","Proteômica","Astrofísica","Cosmologia"]
+    nsizes  = [30,22,22,30,18,18,28,20,24,18,22,20,26,20]
+    edges   = [(0,1),(0,2),(0,7),(0,8),(1,8),(1,2),(3,4),(3,5),(3,9),(6,10),(6,11),(8,2),(12,13),(12,1)]
 
-    edges = [(0,1),(0,2),(0,7),(0,8),(1,8),(1,2),(3,4),(3,5),(3,9),(4,5),(6,10),(6,11),(8,2)]
-    edge_x, edge_y = [], []
+    ex, ey = [], []
     for s, e in edges:
-        edge_x += [nodes_x[s], nodes_x[e], None]
-        edge_y += [nodes_y[s], nodes_y[e], None]
+        ex += [nx[s], nx[e], None]
+        ey += [ny[s], ny[e], None]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=edge_x, y=edge_y, mode="lines",
-        line=dict(color="rgba(45,107,228,0.35)", width=2),
-        hoverinfo="none"
-    ))
-    fig.add_trace(go.Scatter(
-        x=nodes_x, y=nodes_y, mode="markers+text",
-        marker=dict(size=node_sizes, color=node_colors,
-                    line=dict(color="rgba(124,179,255,0.4)", width=2),
-                    opacity=0.9),
-        text=node_labels, textposition="top center",
-        textfont=dict(color="white", size=11, family="Space Grotesk"),
-        hoverinfo="text"
-    ))
-    fig.update_layout(
-        showlegend=False,
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=20, r=20, t=20, b=20),
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        height=420,
-        font=dict(color="white"),
-    )
+    fig.add_trace(go.Scatter(x=ex, y=ey, mode="lines",
+        line=dict(color="rgba(37,99,235,0.3)", width=1.8), hoverinfo="none"))
+    fig.add_trace(go.Scatter(x=nx, y=ny, mode="markers+text",
+        marker=dict(size=nsizes,
+                    color=["#2563eb","#1d4ed8","#1e40af","#3b82f6","#60a5fa",
+                           "#93c5fd","#2563eb","#1d4ed8","#06b6d4","#60a5fa",
+                           "#3b82f6","#1d4ed8","#0ea5e9","#0284c7"],
+                    line=dict(color="rgba(147,197,253,0.4)", width=1.5), opacity=0.92),
+        text=nlabels, textposition="top center",
+        textfont=dict(color="#94a8d0", size=10, family="DM Sans"),
+        hoverinfo="text"))
+    fig.update_layout(showlegend=False,
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10,r=10,t=10,b=10), height=400,
+        xaxis=dict(showgrid=False,zeroline=False,showticklabels=False),
+        yaxis=dict(showgrid=False,zeroline=False,showticklabels=False))
     st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
-    st.markdown('<h3>➕ Adicionar nova conexão</h3>', unsafe_allow_html=True)
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        t1 = st.text_input("Tópico A", placeholder="ex: Epigenética")
-    with c2:
-        t2 = st.text_input("Tópico B", placeholder="ex: Câncer")
-    with c3:
+    st.markdown('<h3>Adicionar conexão</h3>', unsafe_allow_html=True)
+    ca, cb, cc = st.columns(3)
+    with ca: t1 = st.text_input("Tópico A", placeholder="Epigenética", key="t1")
+    with cb: t2 = st.text_input("Tópico B", placeholder="Câncer",      key="t2")
+    with cc:
         st.markdown("<br>", unsafe_allow_html=True)
-        if st.button("Conectar →", key="btn_connect"):
+        if st.button("Conectar", key="btn_con"):
             if t1 and t2:
-                st.session_state.knowledge_nodes.append({"id": t1, "connections": [t2]})
-                st.session_state.notifications.insert(0, f"Nova conexão criada: {t1} ↔ {t2}")
-                st.success(f"Conexão {t1} ↔ {t2} adicionada à rede!")
+                st.session_state.knowledge_nodes.append({"id":t1,"connections":[t2]})
+                st.session_state.notifications.insert(0, f"Nova conexão: {t1} ↔ {t2}")
+                record_interaction([t1.lower(), t2.lower()], 1.0)
+                st.success(f"{t1} ↔ {t2} adicionados!")
                 st.rerun()
 
-    st.markdown("---")
-    st.markdown('<h3>🔗 Conexões salvas</h3>', unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     for node in st.session_state.knowledge_nodes:
         for conn in node["connections"]:
             st.markdown(f"""
-            <div style="background:var(--glass-bg);border:1px solid var(--glass-bdr);border-radius:12px;
-                        padding:10px 16px;margin-bottom:8px;display:flex;align-items:center;gap:12px;">
-              <span style="background:rgba(59,124,244,0.2);border-radius:8px;padding:4px 12px;font-weight:600;font-size:0.85rem;">{node['id']}</span>
-              <span style="color:var(--text-muted);">↔</span>
-              <span style="background:rgba(0,198,255,0.15);border-radius:8px;padding:4px 12px;font-weight:600;font-size:0.85rem;">{conn}</span>
+            <div style="display:flex;align-items:center;gap:12px;background:var(--glass);
+                        border:1px solid var(--border);border-radius:12px;padding:10px 16px;margin-bottom:6px;">
+              <span style="background:rgba(37,99,235,0.18);border-radius:8px;padding:3px 12px;font-size:0.83rem;font-weight:600;">{node['id']}</span>
+              <span style="color:var(--text-3);">{icon("trending",14,"#4a5e80")}</span>
+              <span style="background:rgba(6,182,212,0.15);border-radius:8px;padding:3px 12px;font-size:0.83rem;font-weight:600;">{conn}</span>
             </div>
             """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-
-# ── CHAT ──────────────────────────────────────
+# ════════════════════════════════════════════════════
+#  PAGE: CHAT
+# ════════════════════════════════════════════════════
 def page_chat():
-    st.markdown('<h1>💬 Chat Seguro</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--text-sec);margin-bottom:1rem;">Mensagens criptografadas end-to-end 🔐</p>', unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.markdown('<h1>Chat Seguro</h1>', unsafe_allow_html=True)
+    st.markdown(f'<p style="color:var(--text-3);font-size:0.87rem;margin-bottom:1.5rem;display:flex;align-items:center;gap:6px;">{icon("lock",13,"#10b981")} Mensagens criptografadas AES-256 end-to-end</p>', unsafe_allow_html=True)
 
-    col_contacts, col_msgs = st.columns([0.9, 2.5])
-
-    with col_contacts:
-        st.markdown('<div style="font-weight:700;margin-bottom:1rem;">Conversas</div>', unsafe_allow_html=True)
+    col_c, col_m = st.columns([0.85, 2.5])
+    with col_c:
+        st.markdown('<div style="font-size:0.8rem;font-weight:600;color:var(--text-3);letter-spacing:0.06em;margin-bottom:0.8rem;">CONVERSAS</div>', unsafe_allow_html=True)
         for c in st.session_state.chat_contacts:
-            online_dot = '<span class="badge-online"></span>' if c["online"] else '<span class="badge-offline"></span>'
-            is_active  = st.session_state.active_chat == c["name"]
-            bg = "rgba(59,124,244,0.2)" if is_active else "var(--glass-bg)"
-            bdr = "rgba(59,124,244,0.5)" if is_active else "var(--glass-bdr)"
+            active = st.session_state.active_chat == c["name"]
+            bg  = "rgba(37,99,235,0.18)" if active else "var(--glass)"
+            bdr = "rgba(96,165,250,0.4)" if active else "var(--border)"
+            dot = '<span class="dot-on"></span>' if c["online"] else '<span class="dot-off"></span>'
             st.markdown(f"""
-            <div style="background:{bg};border:1px solid {bdr};border-radius:14px;padding:12px;margin-bottom:8px;cursor:pointer;">
-              <div style="display:flex;align-items:center;gap:10px;">
-                {avatar_html(c['avatar'], 36)}
-                <div>
-                  <div style="font-size:0.88rem;font-weight:600;">{online_dot}{c['name']}</div>
-                  <div style="font-size:0.75rem;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px;">{c['last']}</div>
+            <div style="background:{bg};border:1px solid {bdr};border-radius:14px;padding:11px 13px;margin-bottom:6px;">
+              <div style="display:flex;align-items:center;gap:9px;">
+                {av_html(c['avatar'], 34)}
+                <div style="overflow:hidden;">
+                  <div style="font-size:0.85rem;font-weight:600;display:flex;align-items:center;">{dot}{c['name']}</div>
+                  <div style="font-size:0.73rem;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100px;">{c['last']}</div>
                 </div>
               </div>
             </div>
             """, unsafe_allow_html=True)
-            if st.button("Abrir", key=f"open_chat_{c['name']}", use_container_width=True):
+            if st.button("Abrir", key=f"oc_{c['name']}", use_container_width=True):
                 st.session_state.active_chat = c["name"]
                 st.rerun()
 
-    with col_msgs:
+    with col_m:
         if st.session_state.active_chat:
             contact = st.session_state.active_chat
             msgs = st.session_state.chat_messages.get(contact, [])
-
             st.markdown(f"""
-            <div style="background:var(--glass-bg);border:1px solid var(--glass-bdr);border-radius:16px;padding:16px;margin-bottom:1rem;">
-              <div style="display:flex;align-items:center;gap:12px;">
-                {avatar_html(contact[:2].upper(), 40)}
-                <div>
-                  <div style="font-weight:700;">{contact}</div>
-                  <div style="font-size:0.78rem;color:var(--success);">🔒 Criptografia ativada</div>
-                </div>
+            <div style="background:var(--glass);border:1px solid var(--border);border-radius:16px;padding:14px 18px;margin-bottom:1rem;display:flex;align-items:center;gap:12px;">
+              {av_html(contact[:2].upper(), 38)}
+              <div>
+                <div style="font-weight:700;">{contact}</div>
+                <div style="font-size:0.75rem;color:var(--success);display:flex;align-items:center;gap:5px;">{icon("shield",11,"#10b981")} Criptografia ativa</div>
               </div>
             </div>
             """, unsafe_allow_html=True)
-
-            # Messages
             for msg in msgs:
                 is_me = msg["from"] == "me"
-                bubble_class = "chat-bubble-me" if is_me else "chat-bubble-other"
-                align = "flex-end" if is_me else "flex-start"
-                st.markdown(f"""
-                <div style="display:flex;justify-content:{align};margin:4px 0;">
-                  <div class="{bubble_class}">
-                    <div>{msg['text']}</div>
-                    <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;text-align:right;">{msg['time']}</div>
-                  </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-            new_msg = st.text_input("Mensagem...", key=f"msg_input_{contact}", label_visibility="collapsed", placeholder="Digite uma mensagem segura...")
-            if st.button("Enviar 🔒", key=f"send_msg_{contact}"):
-                if new_msg:
+                cls   = "bbl-me" if is_me else "bbl-them"
+                st.markdown(f'<div class="{cls}">{msg["text"]}<div style="font-size:0.68rem;color:var(--text-3);margin-top:4px;text-align:{"right" if is_me else "left"};">{msg["time"]}</div></div>', unsafe_allow_html=True)
+            nm = st.text_input("", placeholder="Mensagem segura…", key=f"mi_{contact}", label_visibility="collapsed")
+            if st.button(f"{icon('send',14,'currentColor')} Enviar", key=f"ms_{contact}"):
+                if nm:
                     now = datetime.now().strftime("%H:%M")
-                    if contact not in st.session_state.chat_messages:
-                        st.session_state.chat_messages[contact] = []
-                    st.session_state.chat_messages[contact].append({"from": "me", "text": new_msg, "time": now})
+                    st.session_state.chat_messages.setdefault(contact, []).append({"from":"me","text":nm,"time":now})
                     for c in st.session_state.chat_contacts:
-                        if c["name"] == contact:
-                            c["last"] = new_msg[:40]
+                        if c["name"] == contact: c["last"] = nm[:40]
                     st.rerun()
         else:
-            st.markdown("""
-            <div class="glass-card" style="text-align:center;padding:3rem;">
-              <div style="font-size:3rem;margin-bottom:1rem;">💬</div>
-              <div style="color:var(--text-muted);">Selecione uma conversa para começar</div>
-              <div style="color:var(--text-muted);font-size:0.8rem;margin-top:0.5rem;">Todas as mensagens são criptografadas AES-256</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-
-# ── ANALYTICS ─────────────────────────────────
-def page_analytics():
-    st.markdown('<h1>📊 Análise da sua Pesquisa</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--text-sec);margin-bottom:1.5rem;">Métricas detalhadas de impacto e alcance científico</p>', unsafe_allow_html=True)
-
-    data = st.session_state.stats_data
-
-    # KPIs
-    c1, c2, c3, c4 = st.columns(4)
-    kpis = [
-        ("230", "Visualizações (Fev)", "📈"),
-        ("12", "Citações totais", "📚"),
-        ("47", "Seguidores", "👥"),
-        ("3", "Pesquisas ativas", "🔬"),
-    ]
-    for col, (val, lbl, icon) in zip([c1, c2, c3, c4], kpis):
-        with col:
             st.markdown(f"""
-            <div class="metric-box">
-              <div style="font-size:1.6rem;">{icon}</div>
-              <div class="metric-value">{val}</div>
-              <div class="metric-label">{lbl}</div>
+            <div class="card" style="text-align:center;padding:4rem;">
+              <div style="color:var(--text-3);margin-bottom:1rem;">{icon("chat",40,"#1e3a5f")}</div>
+              <div style="color:var(--text-3);">Selecione uma conversa</div>
             </div>
             """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ════════════════════════════════════════════════════
+#  PAGE: ANALYTICS
+# ════════════════════════════════════════════════════
+def page_analytics():
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.markdown('<h1>Análises de Impacto</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--text-3);font-size:0.87rem;margin-bottom:1.5rem;">Métricas detalhadas da sua pesquisa</p>', unsafe_allow_html=True)
+
+    d = st.session_state.stats_data
+    kpis = [("230","Visualizações","eye"),("12","Citações","bookmark"),("47","Seguidores","user"),("h-4","Índice H","star")]
+    cols = st.columns(4)
+    for col, (v, l, ic) in zip(cols, kpis):
+        with col:
+            st.markdown(f'<div class="mbox"><div style="color:var(--blue-glow);margin-bottom:8px;">{icon(ic,22,"#60a5fa")}</div><div class="mval">{v}</div><div class="mlbl">{l}</div></div>', unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
-    col_g1, col_g2 = st.columns(2)
+    plot_cfg = dict(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                    font=dict(color="#4a5e80", family="DM Sans"),
+                    margin=dict(l=10,r=10,t=40,b=10),
+                    xaxis=dict(showgrid=False, color="#4a5e80"),
+                    yaxis=dict(showgrid=True, gridcolor="rgba(37,99,235,0.08)", color="#4a5e80"))
 
-    with col_g1:
-        fig_views = go.Figure()
-        fig_views.add_trace(go.Scatter(
-            x=data["months"], y=data["views"],
-            fill="tozeroy",
-            fillcolor="rgba(59,124,244,0.15)",
-            line=dict(color="#3b7cf4", width=2.5),
-            mode="lines+markers",
-            marker=dict(size=6, color="#7cb3ff"),
-            name="Visualizações"
-        ))
-        fig_views.update_layout(
-            title=dict(text="Visualizações por mês", font=dict(color="white", family="Syne")),
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#8aa4cc"), height=280,
-            margin=dict(l=10, r=10, t=40, b=10),
-            xaxis=dict(showgrid=False, color="#4a6080"),
-            yaxis=dict(showgrid=True, gridcolor="rgba(45,107,228,0.1)", color="#4a6080"),
-        )
-        st.plotly_chart(fig_views, use_container_width=True)
+    c1, c2 = st.columns(2)
+    with c1:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=d["months"], y=d["views"], fill="tozeroy",
+            fillcolor="rgba(37,99,235,0.12)", line=dict(color="#3b7cf4",width=2.5),
+            mode="lines+markers", marker=dict(size=5,color="#60a5fa")))
+        fig.update_layout(title=dict(text="Visualizações", font=dict(color="#e0e8ff",family="Playfair Display")),
+                          height=260, **plot_cfg)
+        st.plotly_chart(fig, use_container_width=True)
 
-    with col_g2:
-        fig_cit = go.Figure()
-        fig_cit.add_trace(go.Bar(
-            x=data["months"], y=data["citations"],
-            marker=dict(
-                color=data["citations"],
-                colorscale=[[0,"#0a1628"],[0.5,"#2d6be4"],[1,"#00c6ff"]],
-                line=dict(color="rgba(77,142,240,0.4)", width=1)
-            ),
-            name="Citações"
-        ))
-        fig_cit.update_layout(
-            title=dict(text="Citações por mês", font=dict(color="white", family="Syne")),
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#8aa4cc"), height=280,
-            margin=dict(l=10, r=10, t=40, b=10),
-            xaxis=dict(showgrid=False, color="#4a6080"),
-            yaxis=dict(showgrid=True, gridcolor="rgba(45,107,228,0.1)", color="#4a6080"),
-        )
-        st.plotly_chart(fig_cit, use_container_width=True)
+    with c2:
+        fig2 = go.Figure()
+        fig2.add_trace(go.Bar(x=d["months"], y=d["citations"],
+            marker=dict(color=d["citations"],colorscale=[[0,"#0a1628"],[1,"#06b6d4"]],
+                        line=dict(color="rgba(96,165,250,0.3)",width=1))))
+        fig2.update_layout(title=dict(text="Citações", font=dict(color="#e0e8ff",family="Playfair Display")),
+                           height=260, **plot_cfg)
+        st.plotly_chart(fig2, use_container_width=True)
 
-    col_g3, col_g4 = st.columns(2)
-    with col_g3:
-        labels = ["IA", "Neurociência", "Genômica", "Quantum"]
-        values = [42, 28, 18, 12]
-        fig_pie = go.Figure(go.Pie(
-            labels=labels, values=values,
-            hole=0.6,
-            marker=dict(colors=["#3b7cf4","#00c6ff","#7cb3ff","#2d6be4"],
-                        line=dict(color="var(--bg-deep)", width=2)),
-            textfont=dict(color="white"),
-        ))
-        fig_pie.update_layout(
-            title=dict(text="Áreas de interesse do seu público", font=dict(color="white", family="Syne")),
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#8aa4cc"), height=280,
-            margin=dict(l=10, r=10, t=40, b=10),
-            legend=dict(font=dict(color="white")),
-        )
-        st.plotly_chart(fig_pie, use_container_width=True)
+    c3, c4 = st.columns(2)
+    with c3:
+        fig3 = go.Figure(go.Pie(
+            labels=["IA","Neurociência","Genômica","Quantum"], values=[42,28,18,12], hole=0.62,
+            marker=dict(colors=["#2563eb","#06b6d4","#60a5fa","#1d4ed8"],
+                        line=dict(color=["#03040a"]*4, width=2)),
+            textfont=dict(color="white")))
+        fig3.update_layout(title=dict(text="Público por área", font=dict(color="#e0e8ff",family="Playfair Display")),
+                           height=260, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                           legend=dict(font=dict(color="#94a8d0")), margin=dict(l=10,r=10,t=40,b=10))
+        st.plotly_chart(fig3, use_container_width=True)
 
-    with col_g4:
-        countries = ["Brasil", "EUA", "Portugal", "Alemanha", "Argentina"]
-        readers   = [95, 62, 38, 25, 10]
-        fig_bar = go.Figure(go.Bar(
-            x=readers, y=countries, orientation="h",
-            marker=dict(color=["#3b7cf4","#2d6be4","#7cb3ff","#1a3a6b","#4d8ef0"],
-                        line=dict(color="rgba(77,142,240,0.3)", width=1))
-        ))
-        fig_bar.update_layout(
-            title=dict(text="Leitores por país", font=dict(color="white", family="Syne")),
-            plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#8aa4cc"), height=280,
-            margin=dict(l=10, r=10, t=40, b=10),
-            xaxis=dict(showgrid=True, gridcolor="rgba(45,107,228,0.1)", color="#4a6080"),
-            yaxis=dict(showgrid=False, color="#8aa4cc"),
-        )
-        st.plotly_chart(fig_bar, use_container_width=True)
+    with c4:
+        fig4 = go.Figure(go.Bar(
+            x=[95,62,38,25,10], y=["Brasil","EUA","Portugal","Alemanha","Argentina"], orientation="h",
+            marker=dict(color=["#2563eb","#1d4ed8","#3b82f6","#1e40af","#60a5fa"],
+                        line=dict(color="rgba(96,165,250,0.3)",width=1))))
+        fig4.update_layout(title=dict(text="Leitores por país", font=dict(color="#e0e8ff",family="Playfair Display")),
+                           height=260, **plot_cfg)
+        st.plotly_chart(fig4, use_container_width=True)
 
-    # H-index
-    st.markdown("---")
-    st.markdown('<h3>🎯 Índice de Impacto</h3>', unsafe_allow_html=True)
-    cc1, cc2, cc3 = st.columns(3)
-    with cc1:
-        st.markdown("""<div class="metric-box">
-          <div class="metric-value">h-4</div>
-          <div class="metric-label">Índice H estimado</div>
-        </div>""", unsafe_allow_html=True)
-    with cc2:
-        st.markdown("""<div class="metric-box">
-          <div class="metric-value">3.8</div>
-          <div class="metric-label">Fator de impacto médio</div>
-        </div>""", unsafe_allow_html=True)
-    with cc3:
-        st.markdown("""<div class="metric-box">
-          <div class="metric-value">94%</div>
-          <div class="metric-label">Taxa de aceitação</div>
-        </div>""", unsafe_allow_html=True)
+    # Interest profile from recommendation engine
+    email = st.session_state.current_user
+    prefs = st.session_state.user_prefs.get(email, {})
+    if prefs:
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown('<h3>Perfil de Interesses (IA)</h3>', unsafe_allow_html=True)
+        st.markdown('<p style="color:var(--text-3);font-size:0.82rem;margin-bottom:1rem;">Baseado nas suas interações na plataforma</p>', unsafe_allow_html=True)
+        top = sorted(prefs.items(), key=lambda x: -x[1])[:8]
+        mx  = max(s for _,s in top) if top else 1
+        for tag, score in top:
+            pct = int(score / mx * 100)
+            st.markdown(f'<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:0.82rem;margin-bottom:4px;"><span style="color:var(--text-2);">{tag}</span><span style="color:var(--blue-glow);">{pct}%</span></div></div>', unsafe_allow_html=True)
+            st.progress(pct / 100)
+    st.markdown('</div>', unsafe_allow_html=True)
 
+# ════════════════════════════════════════════════════
+#  PAGE: BUSCA POR IMAGEM
+# ════════════════════════════════════════════════════
+def page_img_search():
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.markdown('<h1>Busca por Imagem</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--text-3);font-size:0.87rem;margin-bottom:1.5rem;">Identifique estruturas, organismos ou conceitos e encontre pesquisas relacionadas</p>', unsafe_allow_html=True)
 
-# ── BUSCA POR IMAGEM ──────────────────────────
-def page_image_search():
-    st.markdown('<h1>🖼️ Busca por Imagem</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--text-sec);margin-bottom:1.5rem;">Faça upload de uma imagem para identificar conceitos, estruturas ou organismos e encontrar pesquisas relacionadas</p>', unsafe_allow_html=True)
-
-    col_up, col_res = st.columns([1, 1.5])
-    with col_up:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600;margin-bottom:1rem;">📤 Upload de imagem</div>', unsafe_allow_html=True)
-        uploaded_img = st.file_uploader("", type=["png","jpg","jpeg","webp"], label_visibility="collapsed")
-        category = st.selectbox("Tipo de conteúdo", ["Detectar automaticamente", "Estrutura molecular", "Célula / Tecido", "Organismo", "Gráfico científico", "Fórmula / Equação"])
-        if st.button("🔍 Analisar imagem", use_container_width=True, key="btn_img_search"):
-            if uploaded_img:
-                st.session_state["img_analyzed"] = True
-                st.session_state["img_category"] = category
-            else:
-                st.warning("Por favor, faça upload de uma imagem primeiro.")
+    c1, c2 = st.columns([1, 1.6])
+    with c1:
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown(f'<div style="font-weight:600;margin-bottom:1rem;display:flex;align-items:center;gap:8px;">{icon("upload",15,"#60a5fa")} Upload de imagem</div>', unsafe_allow_html=True)
+        img = st.file_uploader("", type=["png","jpg","jpeg","webp"], label_visibility="collapsed")
+        cat = st.selectbox("Tipo", ["Auto","Estrutura molecular","Célula/Tecido","Organismo","Gráfico científico","Equação"], key="img_cat")
+        if st.button(f"{icon('search',13,'currentColor')} Analisar", use_container_width=True, key="btn_img"):
+            if img: st.session_state.img_done = True
+            else:   st.warning("Faça upload de uma imagem primeiro.")
+        if img: st.image(img, use_container_width=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-        if uploaded_img:
-            st.image(uploaded_img, caption="Imagem carregada", use_container_width=True)
-
-    with col_res:
-        if st.session_state.get("img_analyzed"):
-            st.markdown("""
-            <div class="glass-card">
-              <div style="font-weight:700;margin-bottom:1rem;">🤖 Análise da IA</div>
-              <div style="background:rgba(59,124,244,0.1);border-radius:12px;padding:12px;margin-bottom:1rem;">
-                <div style="font-size:0.85rem;color:var(--text-sec);">Estrutura detectada</div>
-                <div style="font-weight:700;font-size:1.1rem;margin-top:4px;">Neurônio Piramidal Cortical</div>
-                <div style="font-size:0.82rem;color:var(--text-muted);margin-top:4px;">Confiança: 87% · Camada V, Córtex Motor</div>
+    with c2:
+        if st.session_state.get("img_done"):
+            st.markdown(f"""
+            <div class="card">
+              <div style="font-weight:700;margin-bottom:1rem;display:flex;align-items:center;gap:8px;">{icon("zap",15,"#22d3ee")} Análise da IA</div>
+              <div style="background:rgba(37,99,235,0.1);border:1px solid rgba(37,99,235,0.2);border-radius:12px;padding:14px;margin-bottom:1rem;">
+                <div style="font-size:0.75rem;color:var(--text-3);letter-spacing:0.06em;margin-bottom:4px;">ESTRUTURA DETECTADA</div>
+                <div style="font-family:'Playfair Display',serif;font-weight:700;font-size:1.1rem;">Neurônio Piramidal Cortical</div>
+                <div style="font-size:0.78rem;color:var(--text-3);margin-top:4px;">Confiança: 87% · Camada V, Córtex Motor</div>
               </div>
-              <div style="font-size:0.85rem;color:var(--text-sec);margin-bottom:0.5rem;">Termos relacionados:</div>
+              <div style="font-size:0.78rem;color:var(--text-3);margin-bottom:6px;">Termos relacionados:</div>
+              {tags_html(["neurônio piramidal","axônio","dendritos","córtex","Layer V"])}
             </div>
             """, unsafe_allow_html=True)
-            st.markdown(tag_html(["neurônio piramidal", "axônio", "dendrites", "córtex", "Layer V"]), unsafe_allow_html=True)
 
-            st.markdown('<div style="font-weight:600;margin-top:1.5rem;margin-bottom:0.8rem;">📚 Pesquisas encontradas:</div>', unsafe_allow_html=True)
-            mock_results = [
-                {"title": "Morphology of Layer V Pyramidal Neurons in Motor Cortex", "match": "94%"},
-                {"title": "Dendritic Integration in Cortical Neurons: 2025 Review", "match": "88%"},
-                {"title": "Cortical Circuit Connectivity and Behavior", "match": "76%"},
+            st.markdown('<div style="font-weight:600;margin-bottom:0.8rem;font-size:0.88rem;">Pesquisas encontradas</div>', unsafe_allow_html=True)
+            matches = [
+                ("Morphology of Layer V Pyramidal Neurons", "94%"),
+                ("Dendritic Integration in Cortical Neurons", "88%"),
+                ("Cortical Circuit Connectivity and Behavior",  "76%"),
             ]
-            for r in mock_results:
+            for title, pct in matches:
                 st.markdown(f"""
-                <div style="background:var(--glass-bg);border:1px solid var(--glass-bdr);border-radius:12px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
-                  <div style="font-size:0.87rem;font-weight:500;">{r['title']}</div>
-                  <span style="background:rgba(46,213,115,0.15);border:1px solid rgba(46,213,115,0.3);border-radius:12px;padding:2px 10px;font-size:0.75rem;color:#2ed573;font-weight:600;white-space:nowrap;margin-left:12px;">{r['match']}</span>
+                <div style="background:var(--glass);border:1px solid var(--border);border-radius:12px;
+                            padding:11px 15px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+                  <span style="font-size:0.86rem;">{title}</span>
+                  <span style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);
+                               border-radius:12px;padding:2px 10px;font-size:0.73rem;color:#10b981;
+                               font-weight:600;white-space:nowrap;margin-left:12px;">{pct}</span>
                 </div>
                 """, unsafe_allow_html=True)
         else:
-            st.markdown("""
-            <div class="glass-card" style="text-align:center;padding:3rem;">
-              <div style="font-size:3.5rem;margin-bottom:1rem;">🔭</div>
-              <div style="color:var(--text-muted);font-size:0.95rem;">Faça upload de uma imagem e clique em Analisar para encontrar pesquisas relacionadas</div>
-              <div style="margin-top:1.5rem;">
-                <span class="tag">Estruturas moleculares</span>
-                <span class="tag">Células e tecidos</span>
-                <span class="tag">Gráficos científicos</span>
-                <span class="tag">Equações</span>
-              </div>
+            st.markdown(f"""
+            <div class="card" style="text-align:center;padding:4rem 2rem;">
+              <div style="color:var(--text-3);margin-bottom:1rem;">{icon("image",44,"#1e3a5f")}</div>
+              <div style="font-family:'Playfair Display',serif;font-size:1rem;color:var(--text-2);margin-bottom:0.5rem;">Carregue uma imagem para começar</div>
+              <div style="color:var(--text-3);font-size:0.8rem;">Suportamos estruturas moleculares, células, organismos e gráficos científicos</div>
             </div>
             """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-
-# ── CONFIGURAÇÕES ─────────────────────────────
+# ════════════════════════════════════════════════════
+#  PAGE: CONFIGURAÇÕES
+# ════════════════════════════════════════════════════
 def page_settings():
-    st.markdown('<h1>⚙️ Configurações</h1>', unsafe_allow_html=True)
+    st.markdown('<div class="page-wrap">', unsafe_allow_html=True)
+    st.markdown('<h1>Configurações</h1>', unsafe_allow_html=True)
 
-    user  = get_user()
+    u     = guser()
     email = st.session_state.current_user
-
-    tab_profile, tab_security, tab_privacy = st.tabs([
-        "  👤 Perfil  ", "  🔒 Segurança  ", "  🛡️ Privacidade & Cripto  "
-    ])
+    tab_p, tab_s, tab_pr = st.tabs(["  Perfil  ","  Segurança  ","  Privacidade  "])
 
     # ── PERFIL
-    with tab_profile:
-        st.markdown('<h3>Informações pessoais</h3>', unsafe_allow_html=True)
-        name = user.get("name", "")
-        initials = "".join(w[0].upper() for w in name.split()[:2])
-
-        col_av, col_form = st.columns([0.7, 2])
-        with col_av:
-            st.markdown(avatar_html(initials, 80), unsafe_allow_html=True)
-            photo = st.file_uploader("Alterar foto", type=["png","jpg","jpeg"], label_visibility="collapsed")
-            if photo:
-                st.session_state.users[email]["photo"] = photo.name
+    with tab_p:
+        nm   = u.get("name","")
+        ini  = initials(nm)
+        ca, cb = st.columns([0.6, 2])
+        with ca:
+            st.markdown(av_html(ini, 72), unsafe_allow_html=True)
+            ph = st.file_uploader("Foto", type=["png","jpg","jpeg"], label_visibility="collapsed")
+            if ph:
+                st.session_state.users[email]["photo"] = ph.name
                 st.success("Foto atualizada!")
-
-        with col_form:
-            new_name  = st.text_input("Nome completo", value=user.get("name",""), key="cfg_name")
-            new_email = st.text_input("E-mail", value=email, key="cfg_email")
-            new_area  = st.text_input("Área de pesquisa", value=user.get("area",""), key="cfg_area")
-            new_bio   = st.text_area("Biografia", value=user.get("bio",""), key="cfg_bio", height=90)
-
-            if st.button("💾 Salvar perfil", key="btn_save_profile"):
-                st.session_state.users[email]["name"]  = new_name
-                st.session_state.users[email]["area"]  = new_area
-                st.session_state.users[email]["bio"]   = new_bio
-                if new_email != email and new_email not in st.session_state.users:
-                    st.session_state.users[new_email] = st.session_state.users.pop(email)
-                    st.session_state.current_user = new_email
+        with cb:
+            new_n  = st.text_input("Nome completo",    value=u.get("name",""),  key="cfg_n")
+            new_e  = st.text_input("E-mail",           value=email,             key="cfg_e")
+            new_a  = st.text_input("Área de pesquisa", value=u.get("area",""),  key="cfg_a")
+            new_b  = st.text_area( "Biografia",        value=u.get("bio",""),   key="cfg_b", height=80)
+            if st.button("Salvar perfil", key="btn_sp"):
+                st.session_state.users[email]["name"] = new_n
+                st.session_state.users[email]["area"] = new_a
+                st.session_state.users[email]["bio"]  = new_b
+                if new_e != email and new_e not in st.session_state.users:
+                    st.session_state.users[new_e] = st.session_state.users.pop(email)
+                    st.session_state.current_user = new_e
                 st.success("Perfil atualizado!")
                 st.rerun()
 
     # ── SEGURANÇA
-    with tab_security:
+    with tab_s:
         st.markdown('<h3>Alterar senha</h3>', unsafe_allow_html=True)
-        old_pw  = st.text_input("Senha atual", type="password", key="old_pw")
-        new_pw  = st.text_input("Nova senha", type="password", key="new_pw")
-        new_pw2 = st.text_input("Confirmar nova senha", type="password", key="new_pw2")
-
-        if st.button("🔑 Alterar senha", key="btn_change_pw"):
-            if hash_pw(old_pw) != user["password"]:
-                st.error("Senha atual incorreta.")
-            elif new_pw != new_pw2:
-                st.error("As novas senhas não coincidem.")
-            elif len(new_pw) < 6:
-                st.error("Nova senha muito curta.")
+        op  = st.text_input("Senha atual",        type="password", key="op")
+        np_ = st.text_input("Nova senha",         type="password", key="np_")
+        np2 = st.text_input("Confirmar nova senha",type="password",key="np2")
+        if st.button("Alterar senha", key="btn_cpw"):
+            if hp(op) != u["password"]:      st.error("Senha atual incorreta.")
+            elif np_ != np2:                  st.error("Senhas não coincidem.")
+            elif len(np_) < 6:               st.error("Senha muito curta.")
             else:
-                st.session_state.users[email]["password"] = hash_pw(new_pw)
-                st.success("Senha alterada com sucesso!")
+                st.session_state.users[email]["password"] = hp(np_)
+                st.success("Senha alterada!")
 
         st.markdown("---")
-        st.markdown('<h3>Autenticação de dois fatores (2FA)</h3>', unsafe_allow_html=True)
-        st.markdown('<p style="color:var(--text-sec);font-size:0.88rem;">Ao ativar, um código de 6 dígitos será enviado para seu e-mail a cada login.</p>', unsafe_allow_html=True)
-
-        enabled_2fa = user.get("2fa_enabled", False)
-        col_2fa, col_2fa_btn = st.columns([3, 1])
-        with col_2fa:
-            st.markdown(f"""
-            <div style="background:var(--glass-bg);border:1px solid var(--glass-bdr);border-radius:14px;padding:16px;display:flex;align-items:center;justify-content:space-between;">
-              <div>
-                <div style="font-weight:600;">2FA por e-mail</div>
-                <div style="color:var(--text-muted);font-size:0.8rem;">{email}</div>
-              </div>
-              <span style="color:{'#2ed573' if enabled_2fa else '#ff4757'};font-weight:700;">{'✅ Ativo' if enabled_2fa else '❌ Inativo'}</span>
+        st.markdown('<h3>Autenticação em 2 fatores</h3>', unsafe_allow_html=True)
+        en = u.get("2fa_enabled", False)
+        st.markdown(f"""
+        <div style="background:var(--glass);border:1px solid var(--border);border-radius:14px;
+                    padding:16px;display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div>{icon("mail",18,"#60a5fa")}</div>
+            <div>
+              <div style="font-weight:600;font-size:0.9rem;">2FA por e-mail</div>
+              <div style="font-size:0.75rem;color:var(--text-3);">{email}</div>
             </div>
-            """, unsafe_allow_html=True)
-
-        with col_2fa_btn:
-            st.markdown("<br>", unsafe_allow_html=True)
-            lbl = "Desativar" if enabled_2fa else "Ativar 2FA"
-            if st.button(lbl, key="btn_toggle_2fa"):
-                if not enabled_2fa:
-                    demo_code = generate_code()
-                    st.session_state.users[email]["2fa_enabled"] = True
-                    st.success(f"2FA ativado! Código de confirmação (demo): **{demo_code}**")
-                else:
-                    st.session_state.users[email]["2fa_enabled"] = False
-                    st.success("2FA desativado.")
-                st.rerun()
+          </div>
+          <span style="color:{'#10b981' if en else '#ef4444'};font-size:0.82rem;font-weight:700;">{'Ativo' if en else 'Inativo'}</span>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("Desativar 2FA" if en else "Ativar 2FA", key="btn_2fa"):
+            st.session_state.users[email]["2fa_enabled"] = not en
+            st.success(f"2FA {'desativado' if en else 'ativado'}!")
+            if not en:
+                demo = code6()
+                st.info(f"Código de confirmação (demo): **{demo}**")
+            st.rerun()
 
         st.markdown("---")
-        st.markdown('<h3>📱 Simulação de envio de código</h3>', unsafe_allow_html=True)
-        if st.button("📧 Enviar código de teste ao e-mail", key="btn_test_code"):
-            code = generate_code()
-            st.session_state["test_code"] = code
-            st.info(f"Código gerado: **{code}**\n\nEm produção, seria enviado via SMTP para **{email}**")
-
+        st.markdown('<h3>Testar envio de código</h3>', unsafe_allow_html=True)
+        if st.button(f"{icon('mail',13,'currentColor')} Enviar código de teste", key="btn_tc"):
+            c = code6()
+            st.session_state["test_code"] = c
+            st.info(f"Código gerado: **{c}** *(em produção, enviado via SMTP para {email})*")
         if st.session_state.get("test_code"):
-            typed_code = st.text_input("Digite o código recebido para validar:", max_chars=6, key="verify_test")
-            if st.button("Verificar código", key="btn_verify_test"):
-                if typed_code == st.session_state["test_code"]:
-                    st.success("✅ Código verificado com sucesso! Sistema de 2FA funcionando.")
+            tv = st.text_input("Digite o código para validar:", max_chars=6, key="tv")
+            if st.button("Verificar código", key="btn_vtc"):
+                if tv == st.session_state["test_code"]:
+                    st.success("Código verificado! Sistema de 2FA funcionando.")
                 else:
-                    st.error("❌ Código inválido.")
+                    st.error("Código inválido.")
 
     # ── PRIVACIDADE
-    with tab_privacy:
-        st.markdown('<h3>🔐 Criptografia e privacidade</h3>', unsafe_allow_html=True)
-        st.markdown("""
-        <div class="glass-card">
-          <div style="font-weight:700;margin-bottom:1rem;font-size:1.05rem;">Proteções ativas na sua conta</div>
-          <div style="display:grid;gap:12px;">
-            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(46,213,115,0.08);border:1px solid rgba(46,213,115,0.2);border-radius:12px;">
-              <span style="font-size:1.4rem;">🔒</span>
-              <div><div style="font-weight:600;color:#2ed573;">AES-256</div><div style="font-size:0.8rem;color:var(--text-sec);">Criptografia de mensagens end-to-end</div></div>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(46,213,115,0.08);border:1px solid rgba(46,213,115,0.2);border-radius:12px;">
-              <span style="font-size:1.4rem;">🛡️</span>
-              <div><div style="font-weight:600;color:#2ed573;">SHA-256</div><div style="font-size:0.8rem;color:var(--text-sec);">Hash de senhas com salt criptográfico</div></div>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(46,213,115,0.08);border:1px solid rgba(46,213,115,0.2);border-radius:12px;">
-              <span style="font-size:1.4rem;">🔑</span>
-              <div><div style="font-weight:600;color:#2ed573;">TLS 1.3</div><div style="font-size:0.8rem;color:var(--text-sec);">Transmissão segura de dados (HTTPS)</div></div>
-            </div>
-            <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(46,213,115,0.08);border:1px solid rgba(46,213,115,0.2);border-radius:12px;">
-              <span style="font-size:1.4rem;">👁️</span>
-              <div><div style="font-weight:600;color:#2ed573;">Zero Knowledge</div><div style="font-size:0.8rem;color:var(--text-sec);">Pesquisas privadas não são acessadas pela plataforma</div></div>
-            </div>
+    with tab_pr:
+        st.markdown(f"""
+        <div class="card">
+          <div style="font-weight:700;margin-bottom:1rem;">Proteções ativas</div>
+          <div style="display:grid;gap:10px;">
+            {''.join(f"""<div style="display:flex;align-items:center;gap:12px;background:rgba(16,185,129,0.07);border:1px solid rgba(16,185,129,0.2);border-radius:12px;padding:12px;">
+              <div>{icon("shield",18,"#10b981")}</div>
+              <div><div style="font-weight:600;color:#10b981;font-size:0.88rem;">{name}</div><div style="font-size:0.75rem;color:var(--text-3);">{desc}</div></div>
+            </div>""" for name, desc in [
+                ("AES-256","Criptografia de mensagens end-to-end"),
+                ("SHA-256","Hash de senhas com salt criptográfico"),
+                ("TLS 1.3","Transmissão segura de todos os dados"),
+                ("Zero Knowledge","Pesquisas privadas inacessíveis pela plataforma"),
+            ])}
           </div>
         </div>
         """, unsafe_allow_html=True)
 
-        st.markdown('<h3>🕵️ Controle de visibilidade</h3>', unsafe_allow_html=True)
+        st.markdown('<h3>Visibilidade</h3>', unsafe_allow_html=True)
         c1, c2 = st.columns(2)
         with c1:
-            vis_profile = st.selectbox("Visibilidade do perfil", ["Público", "Só seguidores", "Privado"], key="vis_profile")
-            vis_research = st.selectbox("Visibilidade das pesquisas", ["Público", "Só seguidores", "Privado"], key="vis_research")
+            st.selectbox("Perfil",     ["Público","Só seguidores","Privado"], key="vp")
+            st.selectbox("Pesquisas",  ["Público","Só seguidores","Privado"], key="vr")
         with c2:
-            vis_stats = st.selectbox("Visibilidade das estatísticas", ["Público", "Privado"], key="vis_stats")
-            vis_network = st.selectbox("Visibilidade da rede de conhec.", ["Público", "Só seguidores", "Privado"], key="vis_net")
-        if st.button("💾 Salvar configurações de privacidade", key="btn_save_privacy"):
-            st.success("Configurações de privacidade salvas!")
+            st.selectbox("Estatísticas",        ["Público","Privado"], key="vs")
+            st.selectbox("Rede de conhecimento",["Público","Só seguidores","Privado"], key="vn")
+        if st.button("Salvar privacidade", key="btn_priv"):
+            st.success("Configurações salvas!")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-
-# ─────────────────────────────────────────────
+# ════════════════════════════════════════════════════
 #  ROUTER
-# ─────────────────────────────────────────────
+# ════════════════════════════════════════════════════
 def main():
     if not st.session_state.logged_in:
-        if st.session_state.page == "2fa":
-            page_2fa()
-        else:
-            page_login()
+        p = st.session_state.page
+        if   p == "verify_email": page_verify_email()
+        elif p == "2fa":          page_2fa()
+        else:                     page_login()
         return
 
     render_sidebar()
-
-    page = st.session_state.page
-    if   page == "feed":          page_feed()
-    elif page == "folders":       page_folders()
-    elif page == "search":        page_search()
-    elif page == "knowledge":     page_knowledge()
-    elif page == "chat":          page_chat()
-    elif page == "analytics":     page_analytics()
-    elif page == "image_search":  page_image_search()
-    elif page == "settings":      page_settings()
-    else:
-        st.session_state.page = "feed"
-        st.rerun()
+    p = st.session_state.page
+    routes = {
+        "feed":       page_feed,
+        "folders":    page_folders,
+        "search":     page_search,
+        "knowledge":  page_knowledge,
+        "chat":       page_chat,
+        "analytics":  page_analytics,
+        "img_search": page_img_search,
+        "settings":   page_settings,
+    }
+    routes.get(p, page_feed)()
 
 if __name__ == "__main__":
     main()
