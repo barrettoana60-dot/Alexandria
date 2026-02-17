@@ -1,5 +1,3 @@
-streamlit
-pandas
-numpy
-plotly
-networkx
+streamlit>=1.32.0
+plotly>=5.20.0
+pillow>=10.0.0
