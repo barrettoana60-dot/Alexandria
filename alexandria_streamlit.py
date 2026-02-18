@@ -226,14 +226,55 @@ input[type="number"]{background:rgba(4,10,22,.75)!important;border:1px solid var
 .pbox{background:rgba(6,182,212,.06);border:1px solid rgba(6,182,212,.24);
   border-radius:var(--rmd);padding:1rem;margin-bottom:.8rem}
 /* ── FEED AUTHOR LINK ── */
-.clickable-author{cursor:pointer;display:inline-flex;align-items:center;gap:8px;
-  padding:4px 10px 4px 4px;border-radius:30px;
-  transition:background .18s,border-color .18s;
-  border:1px solid transparent;}
-.clickable-author:hover{background:rgba(30,100,180,.18);border-color:rgba(90,158,240,.28);}
-.clickable-author-name{font-weight:700;font-size:.90rem;font-family:'Syne',sans-serif;
-  color:var(--t1);transition:color .18s;}
-.clickable-author:hover .clickable-author-name{color:var(--b300);}
+.clickable-author-container {
+    position: relative;
+    display: inline-block; /* Or block, depending on layout */
+    margin-bottom: 0.5rem; /* Space below the author info */
+}
+
+.clickable-author-button {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1; /* Ensure it's above the text */
+    opacity: 0; /* Invisible by default */
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+.clickable-author-button:hover {
+    background: rgba(90,158,240,.1); /* Visual feedback on hover */
+    opacity: 0.1; /* Slightly visible on hover */
+}
+
+.author-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 10px 4px 4px;
+    border-radius: 30px;
+    transition: background .18s, border-color .18s;
+    border: 1px solid transparent;
+}
+
+.author-info-name {
+    font-weight: 700;
+    font-size: .90rem;
+    font-family:'Syne',sans-serif;
+    color:var(--t1);
+    transition:color .18s;
+}
+
+.author-info-area {
+    font-size: .75rem;
+    color: var(--t3);
+}
+
 /* ── DOT ── */
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.85)}}
 .don{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);animation:pulse 2s infinite;margin-right:5px}
@@ -431,7 +472,7 @@ def analyze_image_advanced(uploaded_file):
             "shapes":shapes,"symmetry":round(sym,3),"circular":has_circular,"grid":has_grid,
             "color":{"r":round(mr,1),"g":round(mg,1),"b":round(mb,1),"warm":warm,"cool":cool},
             "texture":{"entropy":round(entropy,3),"contrast":round(contrast,2),
-                       "complexity":"Alta" if entropy>5.5 else ("Média" if entropy>4 else "Baixa")},
+                           "complexity":"Alta" if entropy>5.5 else ("Média" if entropy>4 else "Baixa")},
             "palette":palette,"size":orig,"skin_pct":round(skin_pct*100,1)
         }
     except Exception as e:
@@ -547,13 +588,16 @@ def search_image_in_nebula(rep):
     """Busca posts da Nebula relacionados à imagem analisada."""
     kw = rep.get("kw","").lower().split()
     category_words = rep.get("category","").lower().split()
-    all_kw = list(set(kw + category_words))
+    material_words = rep.get("material","").lower().split()
+    object_words = rep.get("object_type","").lower().split()
+    all_search_terms = list(set(kw + category_words + material_words + object_words))
+
     results = []
     for p in st.session_state.feed_posts:
         score = 0
         post_text = (p.get("title","") + " " + p.get("abstract","") + " " + " ".join(p.get("tags",[]))).lower()
-        for k in all_kw:
-            if len(k) > 3 and k in post_text:
+        for term in all_search_terms:
+            if len(term) > 2 and term in post_text: # Use len > 2 for more meaningful terms
                 score += 1
         if score > 0:
             results.append((score, p))
@@ -564,7 +608,10 @@ def search_image_in_folders(rep):
     """Busca nos arquivos das pastas do usuário relacionados à imagem."""
     kw = rep.get("kw","").lower().split()
     category_words = rep.get("category","").lower().split()
-    all_kw = list(set(kw + category_words))
+    material_words = rep.get("material","").lower().split()
+    object_words = rep.get("object_type","").lower().split()
+    all_search_terms = list(set(kw + category_words + material_words + object_words))
+
     matches = []
 
     for fname, fdata in st.session_state.folders.items():
@@ -573,14 +620,14 @@ def search_image_in_folders(rep):
         folder_tags = [t.lower() for t in fdata.get("analysis_tags", [])]
 
         folder_score = 0
-        for k in all_kw:
-            if len(k) > 3 and any(k in t for t in folder_tags):
+        for term in all_search_terms:
+            if len(term) > 2 and any(term in t for t in folder_tags):
                 folder_score += 1
 
         for f in fdata.get("files", []):
             file_lower = f.lower()
-            for k in all_kw:
-                if len(k) > 3 and k in file_lower:
+            for term in all_search_terms:
+                if len(term) > 2 and term in file_lower:
                     folder_score += 1
 
         if folder_score > 0:
@@ -591,7 +638,11 @@ def search_image_in_folders(rep):
 
 def search_image_internet(rep):
     """Busca artigos na internet relacionados à categoria da imagem."""
-    query = rep.get("kw","scientific image analysis")
+    query_terms = [rep.get("category",""), rep.get("object_type",""), rep.get("material","")]
+    query = " ".join(filter(None, query_terms))
+    if not query.strip():
+        query = rep.get("kw","scientific image analysis") # Fallback to general keywords
+
     ss = search_semantic_scholar(query, limit=3)
     cr = search_crossref(query, limit=2)
     merged = ss + [x for x in cr if not any(x["title"].lower()==s["title"].lower() for s in ss)]
@@ -872,288 +923,274 @@ def page_profile(target_email):
     </div>""",unsafe_allow_html=True)
 
     if not is_me:
-        c1,c2,_=st.columns([1,1,4])
-        with c1:
-            if st.button("✓ Seguindo" if is_fol else "➕ Seguir",key="btn_pf_fol"):
-                if is_fol:
-                    st.session_state.followed.remove(target_email)
-                    tu["followers"]=max(0,tu.get("followers",0)-1)
-                else:
-                    st.session_state.followed.append(target_email)
-                    tu["followers"]=tu.get("followers",0)+1
+        col_fol,col_chat,_=st.columns([1,1,3])
+        with col_fol:
+            if st.button("✓ Seguindo" if is_fol else "➕ Seguir",key=f"prof_fol_{target_email}",use_container_width=True):
+                if is_fol: st.session_state.followed.remove(target_email); tu["followers"]=max(0,tu.get("followers",0)-1)
+                else: st.session_state.followed.append(target_email); tu["followers"]=tu.get("followers",0)+1
                 save_db(); st.rerun()
-        with c2:
-            if st.button("💬 Mensagem",key="btn_pf_msg"):
-                if target_email not in st.session_state.chat_messages:
-                    st.session_state.chat_messages[target_email]=[]
-                st.session_state.active_chat=target_email
-                st.session_state.page="chat"; st.session_state.profile_view=None; st.rerun()
+        with col_chat:
+            if st.button("💬 Chat",key=f"prof_chat_{target_email}",use_container_width=True):
+                if target_email not in st.session_state.chat_messages: st.session_state.chat_messages[target_email]=[]
+                st.session_state.active_chat=target_email; st.session_state.page="chat"; st.rerun()
 
-    st.markdown("<hr>",unsafe_allow_html=True)
-    st.markdown(f'<h2>Pesquisas de {tname.split()[0]}</h2>',unsafe_allow_html=True)
+    st.markdown('<h2 style="margin-top:1.5rem;">Pesquisas de '+tname+'</h2>',unsafe_allow_html=True)
     if user_posts:
-        for p in user_posts:
-            # Simplified render_post for profile page, without full interaction buttons
+        for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True):
+            # Simplified render_post for profile page, without action buttons
             st.markdown(f"""
-            <div class="card" style="cursor:default;">
-              <div style="display:flex;align-items:center;gap:12px;margin-bottom:.95rem;">
-                <div style="flex-shrink:0;">{avh(ini(p.get('author','?')),44,get_photo(p.get('author_email','')))}</div>
-                <div style="flex:1;min-width:0;">
-                  <div style="font-weight:700;font-size:.90rem;font-family:'Syne',sans-serif;color:var(--t1);">
-                    {p['author']}
-                  </div>
-                  <div style="color:var(--t3);font-size:.70rem;margin-top:1px;">{p['area']} · {p['date']}</div>
+            <div class="card">
+                <div style="font-family:'Syne',sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem;">{p['title']}</div>
+                <div style="color:var(--t2);font-size:.82rem;line-height:1.6;">{p['abstract']}</div>
+                <div style="margin-top:.8rem;display:flex;gap:1.2rem;font-size:.73rem;color:var(--t3);">
+                    <span>{p.get('date','')}</span>
+                    <span>❤ {p['likes']}</span>
+                    <span>💬 {len(p['comments'])}</span>
+                    {badge(p['status'])}
                 </div>
-                <div style="display:flex;align-items:center;gap:6px;">{badge(p['status'])}</div>
-              </div>
-              <h3 style="margin-bottom:.48rem;font-size:1rem;line-height:1.45;">{p['title']}</h3>
-              <p style="color:var(--t2);font-size:.83rem;line-height:1.68;margin-bottom:.82rem;">{p['abstract']}</p>
-              <div style="margin-bottom:.4rem;">{tags_html(p['tags'])}</div>
-            </div>""",unsafe_allow_html=True)
+                <div style="margin-top:.5rem;">{tags_html(p['tags'])}</div>
+            </div>
+            """, unsafe_allow_html=True)
     else:
-        st.markdown('<div class="card" style="text-align:center;padding:2.5rem;color:var(--t3);">Nenhuma pesquisa publicada ainda.</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card" style="text-align:center;padding:2rem;color:var(--t3);">Nenhuma pesquisa publicada ainda.</div>',unsafe_allow_html=True)
+
+    st.markdown('</div>',unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════
 # FEED
 # ════════════════════════════════════════════════════
 def page_feed():
     st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:1.4rem;">Feed de Pesquisas</h1>',unsafe_allow_html=True)
-    email=st.session_state.current_user; u=guser()
+    st.markdown('<h1 style="padding-top:1.4rem;">Seu Feed</h1>',unsafe_allow_html=True)
 
+    email=st.session_state.current_user
     recs=get_recs(email)
     if recs:
-        st.markdown('<span class="badge-rec">✦ RECOMENDADO PARA VOCÊ</span><br>',unsafe_allow_html=True)
-        for p in recs: render_post(p, rec=True, ctx="rec") # Pass ctx="rec"
-        st.markdown("<hr>",unsafe_allow_html=True)
+        st.markdown('<h2>Recomendações para você <span class="badge-rec">NOVO</span></h2>',unsafe_allow_html=True)
+        for p in recs:
+            render_post(p, rec=True, ctx="rec") # Pass ctx for unique keys
 
-    with st.expander("＋  Publicar nova pesquisa"):
-        np_t=st.text_input("Título",key="np_t")
-        np_ab=st.text_area("Resumo / Abstract",key="np_ab",height=90)
-        np_tg=st.text_input("Tags (vírgula)",key="np_tg")
-        np_st=st.selectbox("Status",["Em andamento","Publicado","Concluído"],key="np_st")
-        if st.button("🚀 Publicar",key="btn_pub"):
-            if np_t and np_ab:
-                nm=u.get("name","Usuário"); tags=[t.strip() for t in np_tg.split(",") if t.strip()]
-                st.session_state.feed_posts.insert(0,{
-                    "id":len(st.session_state.feed_posts)+1,
-                    "author":nm,"author_email":email,"avatar":ini(nm),
-                    "area":u.get("area",""),"title":np_t,"abstract":np_ab,
-                    "tags":tags,"likes":0,"comments":[],"status":np_st,
-                    "date":datetime.now().strftime("%Y-%m-%d"),
-                    "liked_by":[],"saved_by":[],"connections":tags[:3]})
-                record(tags,2.0); save_db(); st.success("✓ Publicado!"); st.rerun()
+    st.markdown('<h2>Últimas pesquisas</h2>',unsafe_allow_html=True)
+    for p in sorted(st.session_state.feed_posts,key=lambda x:x.get("date",""),reverse=True):
+        render_post(p, ctx="feed") # Pass ctx for unique keys
 
-    st.markdown("<br>",unsafe_allow_html=True)
-    ff=st.selectbox("",["Todos","Seguidos","Salvos"],key="ff",label_visibility="collapsed")
-    posts=st.session_state.feed_posts
-    if ff=="Seguidos": posts=[p for p in posts if p.get("author_email") in st.session_state.followed]
-    elif ff=="Salvos": posts=[p for p in posts if email in p.get("saved_by",[])]
-    for p in posts: render_post(p, ctx="feed") # Pass ctx="feed"
     st.markdown('</div>',unsafe_allow_html=True)
 
-def render_post(post, rec=False, show_profile_link=True, ctx="general"): # Added ctx parameter
-    email=st.session_state.current_user
-    liked=email in post["liked_by"]; saved=email in post.get("saved_by",[])
-    aemail=post.get("author_email",""); aphoto=get_photo(aemail); ain=post.get("avatar","??")
-    rec_badge='<span class="badge-rec" style="margin-left:6px;font-size:.65rem;">Rec.</span>' if rec else ""
-
-    # Card with clickable author area
-    # Use a unique key for the author link to prevent conflicts if multiple posts from same author are on screen
-    author_link_key = f"author_link_{ctx}_{post['id']}"
-
-    st.markdown(f"""
-    <div class="card" style="cursor:default;">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:.95rem;">
-        <div style="flex-shrink:0;">{avh(ain,44,aphoto)}</div>
-        <div style="flex:1;min-width:0;">
-          <div class="clickable-author" id="{author_link_key}_html_wrapper">
-            <span class="clickable-author-name">{post['author']}</span>
-          </div>
-          <div style="color:var(--t3);font-size:.70rem;margin-top:1px;">{post['area']} · {post['date']}</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;">{badge(post['status'])}{rec_badge}</div>
-      </div>
-      <h3 style="margin-bottom:.48rem;font-size:1rem;line-height:1.45;">{post['title']}</h3>
-      <p style="color:var(--t2);font-size:.83rem;line-height:1.68;margin-bottom:.82rem;">{post['abstract']}</p>
-      <div style="margin-bottom:.4rem;">{tags_html(post['tags'])}</div>
-    </div>""",unsafe_allow_html=True)
-
-    # Invisible button for author profile click
-    if show_profile_link and aemail:
-        # Streamlit button needs to be rendered to be clickable
-        if st.button("", key=author_link_key, help="Ver perfil completo", use_container_width=True):
-            st.session_state.profile_view = aemail
-            st.rerun()
-        # Overlay the invisible button over the author name area using CSS
-        st.markdown(f"""
-        <style>
-            .stButton[data-testid="stButton"] > button[key="{author_link_key}"] {{
-                position: absolute;
-                top: 1.35rem; /* Adjust to align with author name */
-                left: 1.5rem; /* Adjust to align with avatar */
-                width: 200px; /* Make it wide enough to cover the name and area */
-                height: 50px; /* Make it tall enough */
-                z-index: 1; /* Ensure it's above the card content but below other buttons */
-                opacity: 0; /* Make it invisible */
-            }}
-            .stButton[data-testid="stButton"] > button[key="{author_link_key}"]:hover {{
-                opacity: 0.1; /* Slightly visible on hover for debugging, remove in production */
-                background: rgba(90,158,240,.1); /* Visual feedback on hover */
-            }}
-        </style>
-        """, unsafe_allow_html=True)
-
-
-    # Action row
-    c1,c2,c3,c4,c5,_ = st.columns([.9,.9,.7,.7,1,2.5])
-    with c1:
-        if st.button(f"{'❤' if liked else '♡'} {post['likes']}",key=f"lk_{ctx}_{post['id']}"): # Use ctx in key
-            if liked: post["liked_by"].remove(email); post["likes"]-=1
-            else: post["liked_by"].append(email); post["likes"]+=1; record(post["tags"],1.5)
-            save_db(); st.rerun()
-    with c2:
-        if st.button(f"💬 {len(post['comments'])}",key=f"cm_t_{ctx}_{post['id']}"): # Use ctx in key
-            k=f"sc_{ctx}_{post['id']}"; st.session_state[k]=not st.session_state.get(k,False); st.rerun()
-    with c3:
-        if st.button("🔖" if saved else "📌",key=f"sv_{ctx}_{post['id']}"): # Use ctx in key
-            if saved: post["saved_by"].remove(email)
-            else: post["saved_by"].append(email)
-            save_db(); st.rerun()
-    with c4:
-        if st.button("↗",key=f"sh_{ctx}_{post['id']}"): # Use ctx in key
-            k=f"sopen_{ctx}_{post['id']}"; st.session_state[k]=not st.session_state.get(k,False); st.rerun()
-    with c5:
-        # Clickable "Ver perfil" button — this IS the profile navigation
-        if show_profile_link and aemail:
-            if st.button(f"👤 {post['author'].split()[0]}",key=f"vp_{ctx}_{post['id']}",help="Ver perfil completo"): # Use ctx in key
-                st.session_state.profile_view=aemail; st.rerun()
-
-    # Share modal
-    if st.session_state.get(f"sopen_{ctx}_{post['id']}",False): # Use ctx in key
-        url=f"https://nebula.ai/post/{post['id']}"
-        t_enc=post['title'][:70].replace(" ","+")
-        st.markdown(f"""<div class="card" style="padding:1rem;margin-top:-6px;">
-          <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:.85rem;margin-bottom:.6rem;">Compartilhar pesquisa</div>
-          <div style="display:flex;gap:.5rem;flex-wrap:wrap;">
-            <a href="https://twitter.com/intent/tweet?text={t_enc}&url={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.45rem .75rem;font-size:.72rem;color:var(--t2);">𝕏 Twitter</div></a>
-            <a href="https://www.linkedin.com/sharing/share-offsite/?url={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.45rem .75rem;font-size:.72rem;color:var(--t2);">in LinkedIn</div></a>
-            <a href="https://wa.me/?text={t_enc}+{url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.45rem .75rem;font-size:.72rem;color:var(--t2);">📱 WhatsApp</div></a>
-            <a href="mailto:?subject={t_enc}&body={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.45rem .75rem;font-size:.72rem;color:var(--t2);">✉️ E-mail</div></a>
-          </div></div>""",unsafe_allow_html=True)
-        st.code(url,language=None)
-
-    # Comments
-    if st.session_state.get(f"sc_{ctx}_{post['id']}",False): # Use ctx in key
-        for c in post["comments"]:
-            st.markdown(f'<div style="background:rgba(8,20,48,.82);border-radius:10px;padding:8px 14px;margin:3px 0;font-size:.81rem;border:1px solid var(--gbd);"><strong>{c["user"]}</strong>: {c["text"]}</div>',unsafe_allow_html=True)
-        nc=st.text_input("",key=f"ci_{ctx}_{post['id']}",label_visibility="collapsed",placeholder="Adicionar comentário…") # Use ctx in key
-        if st.button("Enviar",key=f"cs_{ctx}_{post['id']}"): # Use ctx in key
-            if nc:
-                post["comments"].append({"user":guser().get("name","Você"),"text":nc})
-                record(post["tags"],.8); save_db(); st.rerun()
-
 # ════════════════════════════════════════════════════
-# BUSCA DE ARTIGOS (real internet)
+# SEARCH
 # ════════════════════════════════════════════════════
-def _set_sq(v): st.session_state.sq=v
-
 def page_search():
     st.markdown('<div class="pw">',unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:1.4rem;">Busca de Artigos</h1>',unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--t3);font-size:.81rem;margin-bottom:1rem;">Semantic Scholar + CrossRef + Nebula em tempo real</p>',unsafe_allow_html=True)
-    c1,c2,c3=st.columns([3,.9,.9])
-    with c1: q=st.text_input("",placeholder="Título, autor, DOI, tema…",key="sq",label_visibility="collapsed")
-    with c2: src=st.selectbox("",["Nebula + Internet","Só Nebula","Só Internet"],key="src_sel",label_visibility="collapsed")
-    with c3: yr=st.selectbox("",["Todos","2026","2025","2024","2023","2022"],key="yr_f",label_visibility="collapsed")
-    if q:
-        ql=q.lower(); record([ql],.3)
-        neb_res=[p for p in st.session_state.feed_posts
-                 if ql in p["title"].lower() or ql in p["abstract"].lower()
-                 or any(ql in t.lower() for t in p["tags"]) or ql in p["author"].lower()]
-        if yr!="Todos": neb_res=[p for p in neb_res if yr in p.get("date","")]
-        if src=="Só Internet": neb_res=[]
-        cache_key=f"{q}|{yr}"; web_res=[]
-        if src!="Só Nebula":
-            if cache_key not in st.session_state.scholar_cache:
-                with st.spinner("Buscando em bases acadêmicas globais…"):
-                    ss=search_semantic_scholar(q,8); cr=search_crossref(q,5)
-                    merged=ss+[x for x in cr if not any(x["title"].lower()==s["title"].lower() for s in ss)]
-                    if yr!="Todos": merged=[a for a in merged if str(a.get("year",""))==yr]
-                    st.session_state.scholar_cache[cache_key]=merged
-            web_res=st.session_state.scholar_cache.get(cache_key,[])
-        tab_all,tab_neb,tab_web=st.tabs([f"  Todos ({len(neb_res)+len(web_res)})  ",f"  Nebula ({len(neb_res)})  ",f"  Internet ({len(web_res)})  "])
-        with tab_neb:
-            if neb_res:
-                for p in neb_res: render_search_post(p, ctx="search_neb") # Pass ctx
-            else: st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Nenhum resultado na Nebula.</div>',unsafe_allow_html=True)
-        with tab_web:
-            if src=="Só Nebula": st.info("Busca na internet desativada.")
-            elif web_res:
-                for idx,a in enumerate(web_res): render_web_article(a,idx, ctx="search_web_tab") # Pass ctx
-            else: st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Sem resultados. Verifique conexão ou tente outros termos.</div>',unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--t3);font-size:.82rem;margin-bottom:1rem;">Pesquise em bases de dados acadêmicas e na rede Nebula.</p>',unsafe_allow_html=True)
+
+    search_query=st.text_input("Termo de busca",placeholder="Ex: 'CRISPR gene editing' ou 'dark matter cosmology'",key="search_q")
+    if st.button("🔍 Buscar",use_container_width=True,key="btn_search"):
+        if search_query:
+            with st.spinner("Buscando artigos…"):
+                # Search in Nebula posts
+                nebula_results = [p for p in st.session_state.feed_posts if search_query.lower() in p["title"].lower() or search_query.lower() in p["abstract"].lower() or any(search_query.lower() in t.lower() for t in p["tags"])]
+
+                # Search in Semantic Scholar
+                ss_results = search_semantic_scholar(search_query, limit=5)
+
+                # Search in CrossRef
+                cr_results = search_crossref(search_query, limit=3)
+
+                st.session_state.search_results = {
+                    "nebula": nebula_results,
+                    "semantic_scholar": ss_results,
+                    "crossref": cr_results
+                }
+                st.session_state.last_search_query = search_query
+        else:
+            st.warning("Por favor, digite um termo de busca.")
+
+    if st.session_state.get("search_results"):
+        results = st.session_state.search_results
+
+        tab_all, tab_nebula, tab_web = st.tabs(["  Todos os resultados  ", "  Na Nebula  ", "  Na Internet  "])
+
         with tab_all:
-            if neb_res:
-                st.markdown('<div style="font-size:.68rem;color:var(--b300);font-weight:600;margin-bottom:.5rem;letter-spacing:.06em;text-transform:uppercase;">NEBULA</div>',unsafe_allow_html=True)
-                for p in neb_res: render_search_post(p, ctx="search_all_neb") # Pass ctx
-            if web_res:
-                if neb_res: st.markdown("<hr>",unsafe_allow_html=True)
-                st.markdown('<div style="font-size:.68rem;color:var(--cyanl);font-weight:600;margin-bottom:.5rem;letter-spacing:.06em;text-transform:uppercase;">BASE ACADÊMICA GLOBAL</div>',unsafe_allow_html=True)
-                for idx,a in enumerate(web_res): render_web_article(a,idx, ctx="search_all_web") # Pass ctx
-            if not neb_res and not web_res:
-                st.markdown('<div class="card" style="text-align:center;padding:3rem;"><div style="font-size:2.5rem;margin-bottom:1rem;">🔭</div><div style="color:var(--t3);">Nenhum resultado encontrado</div></div>',unsafe_allow_html=True)
-    else:
-        u=guser(); tags=area_to_tags(u.get("area",""))
-        if tags:
-            st.markdown(f'<div style="color:var(--t2);font-size:.81rem;margin-bottom:.7rem;">💡 Sugestões para <strong>{u.get("area","")}</strong>:</div>',unsafe_allow_html=True)
-            cols=st.columns(5)
-            for i,t in enumerate(tags[:5]):
-                with cols[i%5]: st.button(f"🔎 {t}",key=f"sug_{t}",use_container_width=True,on_click=_set_sq,kwargs={"v":t})
+            st.markdown(f'<h3>Resultados para "{st.session_state.last_search_query}"</h3>', unsafe_allow_html=True)
+
+            all_results = []
+            for p in results["nebula"]:
+                all_results.append({"type": "nebula", "data": p})
+            for a in results["semantic_scholar"]:
+                all_results.append({"type": "web", "data": a})
+            for a in results["crossref"]:
+                all_results.append({"type": "web", "data": a})
+
+            if all_results:
+                for idx, item in enumerate(all_results):
+                    if item["type"] == "nebula":
+                        render_search_post(item["data"], ctx=f"all_search_{idx}") # Pass ctx
+                    elif item["type"] == "web":
+                        render_web_article(item["data"], idx=idx, ctx=f"all_search_web_{idx}") # Pass ctx
+            else:
+                st.info("Nenhum resultado encontrado para esta busca.")
+
+        with tab_nebula:
+            st.markdown(f'<h3>Posts na Nebula para "{st.session_state.last_search_query}"</h3>', unsafe_allow_html=True)
+            if results["nebula"]:
+                for idx, p in enumerate(results["nebula"]):
+                    render_search_post(p, ctx=f"nebula_search_{idx}") # Pass ctx
+            else:
+                st.info("Nenhum post encontrado na Nebula para esta busca.")
+
+        with tab_web:
+            st.markdown(f'<h3>Artigos na Internet para "{st.session_state.last_search_query}"</h3>', unsafe_allow_html=True)
+            web_articles = results["semantic_scholar"] + results["crossref"]
+            if web_articles:
+                for idx, a in enumerate(web_articles):
+                    render_web_article(a, idx=idx, ctx=f"web_search_{idx}") # Pass ctx
+            else:
+                st.info("Nenhum artigo encontrado na internet para esta busca.")
+
     st.markdown('</div>',unsafe_allow_html=True)
 
-def render_search_post(post, ctx="search_results"): # Added ctx parameter
-    aemail=post.get("author_email",""); aphoto=get_photo(aemail); ain=post.get("avatar","??")
-    cm,cb=st.columns([8,1])
-    with cm:
-        st.markdown(f"""<div class="scard">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:.55rem;">
-            {avh(ain,30,aphoto)}
+# ════════════════════════════════════════════════════
+# RENDER POSTS AND ARTICLES
+# ════════════════════════════════════════════════════
+def render_post(post, rec=False, show_profile_link=True, ctx="feed"): # Added ctx parameter
+    email = st.session_state.current_user
+    liked = email in post["liked_by"]
+    saved = email in post.get("saved_by",[])
+
+    author_info = st.session_state.users.get(post["author_email"], {})
+    author_name = author_info.get("name", "?")
+    author_initials = ini(author_name)
+    author_photo = author_info.get("photo_b64")
+    author_area = author_info.get("area", "")
+
+    st.markdown(f"""
+    <div class="card">
+        <div class="clickable-author-container">
+            <div class="author-info">
+                {avh(author_initials, 36, author_photo)}
+                <div>
+                    <div class="author-info-name">{author_name}</div>
+                    <div class="author-info-area">{author_area}</div>
+                </div>
+            </div>
+            <!-- Invisible button to click on author profile -->
+            <button class="clickable-author-button" key="author_profile_link_{ctx}_{post['id']}" onclick="window.parent.document.querySelector('[data-testid=\"stButtonButton\"][key=\"author_profile_link_{ctx}_{post['id']}\"]').click()">
+            </button>
+        </div>
+        <div style="font-family:'Syne',sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:.4rem;">{post['title']}</div>
+        <div style="color:var(--t2);font-size:.82rem;line-height:1.6;">{post['abstract']}</div>
+        <div style="margin-top:.8rem;display:flex;gap:1.2rem;font-size:.73rem;color:var(--t3);">
+            <span>{post.get('date','')}</span>
+            <span>❤ {post['likes']}</span>
+            <span>💬 {len(post['comments'])}</span>
+            {badge(post['status'])}
+            {f'<span class="badge-rec">RECOMENDADO</span>' if rec else ''}
+        </div>
+        <div style="margin-top:.5rem;">{tags_html(post['tags'])}</div>
+        <div style="display:flex;gap:10px;margin-top:1rem;">
             <div style="flex:1;">
-              <div class="clickable-author" id="search_author_link_{ctx}_{post['id']}_html_wrapper">
-                <span class="clickable-author-name" style="font-size:.80rem;">{post['author']}</span>
-              </div>
-            <div style="font-size:.68rem;color:var(--t3);">{post['area']} · {post['date']} · {badge(post['status'])}</div></div>
-            <span style="font-size:.64rem;color:var(--b300);background:rgba(30,100,180,.10);border-radius:8px;padding:2px 8px;">Nebula</span>
-          </div>
-          <div style="font-family:'Syne',sans-serif;font-size:.92rem;font-weight:700;margin-bottom:.3rem;">{post['title']}</div>
-          <div style="font-size:.80rem;color:var(--t2);margin-bottom:.4rem;">{post['abstract'][:220]}…</div>
-          <div>{tags_html(post['tags'])}</div></div>""",unsafe_allow_html=True)
-    with cb:
-        st.markdown("<div style='height:18px'></div>",unsafe_allow_html=True)
-        if aemail and st.button("👤",key=f"vpa_s_{ctx}_{post['id']}",use_container_width=True,help="Ver perfil"): # Use ctx
-            st.session_state.profile_view=aemail; st.rerun()
-    # Invisible button for author profile click in search results
-    if aemail:
-        if st.button("", key=f"search_author_link_{ctx}_{post['id']}", help="Ver perfil completo", use_container_width=True): # Use ctx
-            st.session_state.profile_view = aemail
-            st.rerun()
-        st.markdown(f"""
-        <style>
-            .stButton[data-testid="stButton"] > button[key="search_author_link_{ctx}_{post['id']}"] {{
-                position: absolute;
-                top: 1.1rem; /* Adjust to align with author name */
-                left: 1.3rem; /* Adjust to align with author name */
-                width: 150px; /* Make it wide enough to cover the name and area */
-                height: 40px; /* Make it tall enough */
-                z-index: 1; /* Ensure it's above the card content but below other buttons */
-                opacity: 0; /* Make it invisible */
-            }}
-            .stButton[data-testid="stButton"] > button[key="search_author_link_{ctx}_{post['id']}"]:hover {{
-                opacity: 0.1; /* Slightly visible on hover for debugging, remove in production */
-                background: rgba(90,158,240,.1); /* Visual feedback on hover */
-            }}
-        </style>
-        """, unsafe_allow_html=True)
+                {st.button("❤ Curtir" if not liked else "💔 Descurtir", key=f"lk_{ctx}_{post['id']}", use_container_width=True)}
+            </div>
+            <div style="flex:1;">
+                {st.button("📌 Salvo" if saved else "🔖 Salvar", key=f"sv_{ctx}_{post['id']}", use_container_width=True)}
+            </div>
+            <div style="flex:1;">
+                {st.button("💬 Comentar", key=f"cm_{ctx}_{post['id']}", use_container_width=True)}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Handle button clicks
+    if st.session_state.get(f"lk_{ctx}_{post['id']}"):
+        if liked:
+            post["liked_by"].remove(email)
+            post["likes"] = max(0, post["likes"] - 1)
+        else:
+            post["liked_by"].append(email)
+            post["likes"] += 1
+        save_db(); st.rerun()
+
+    if st.session_state.get(f"sv_{ctx}_{post['id']}"):
+        if saved:
+            post["saved_by"].remove(email)
+        else:
+            post["saved_by"].append(email)
+        save_db(); st.rerun()
+
+    # Handle the invisible button click for profile view
+    if st.session_state.get(f"author_profile_link_{ctx}_{post['id']}"):
+        st.session_state.profile_view = post['author_email']
+        st.rerun()
+
+
+def render_search_post(post, ctx="search"): # Added ctx parameter
+    email = st.session_state.current_user
+    liked = email in post["liked_by"]
+    saved = email in post.get("saved_by",[])
+
+    author_info = st.session_state.users.get(post["author_email"], {})
+    author_name = author_info.get("name", "?")
+    author_initials = ini(author_name)
+    author_photo = author_info.get("photo_b64")
+    author_area = author_info.get("area", "")
+
+    st.markdown(f"""
+    <div class="scard">
+        <div class="clickable-author-container">
+            <div class="author-info" style="margin-bottom: 0.5rem;">
+                {avh(author_initials, 32, author_photo)}
+                <div>
+                    <div class="author-info-name" style="font-size:.82rem;">{author_name}</div>
+                    <div class="author-info-area" style="font-size:.68rem;">{author_area}</div>
+                </div>
+            </div>
+            <!-- Invisible button to click on author profile -->
+            <button class="clickable-author-button" key="search_author_link_{ctx}_{post['id']}" onclick="window.parent.document.querySelector('[data-testid=\"stButtonButton\"][key=\"search_author_link_{ctx}_{post['id']}\"]').click()">
+            </button>
+        </div>
+        <div style="font-family:'Syne',sans-serif;font-size:.95rem;font-weight:700;margin-bottom:.3rem;">{post['title']}</div>
+        <div style="color:var(--t2);font-size:.78rem;line-height:1.5;">{post['abstract'][:180]}...</div>
+        <div style="margin-top:.6rem;display:flex;gap:1rem;font-size:.68rem;color:var(--t3);">
+            <span>{post.get('date','')}</span>
+            <span>❤ {post['likes']}</span>
+            <span>💬 {len(post['comments'])}</span>
+            {badge(post['status'])}
+        </div>
+        <div style="margin-top:.4rem;">{tags_html(post['tags'])}</div>
+        <div style="display:flex;gap:8px;margin-top:.8rem;">
+            <div style="flex:1;">
+                {st.button("❤ Curtir" if not liked else "💔 Descurtir", key=f"lk_s_{ctx}_{post['id']}", use_container_width=True)}
+            </div>
+            <div style="flex:1;">
+                {st.button("📌 Salvo" if saved else "🔖 Salvar", key=f"sv_s_{ctx}_{post['id']}", use_container_width=True)}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Handle button clicks
+    if st.session_state.get(f"lk_s_{ctx}_{post['id']}"):
+        if liked:
+            post["liked_by"].remove(email)
+            post["likes"] = max(0, post["likes"] - 1)
+        else:
+            post["liked_by"].append(email)
+            post["likes"] += 1
+        save_db(); st.rerun()
+
+    if st.session_state.get(f"sv_s_{ctx}_{post['id']}"):
+        if saved:
+            post["saved_by"].remove(email)
+        else:
+            post["saved_by"].append(email)
+        save_db(); st.rerun()
+
+    # Handle the invisible button click for profile view
+    if st.session_state.get(f"search_author_link_{ctx}_{post['id']}"):
+        st.session_state.profile_view = post['author_email']
+        st.rerun()
 
 
 def render_web_article(a, idx=0, ctx="general_web"): # Added ctx parameter
