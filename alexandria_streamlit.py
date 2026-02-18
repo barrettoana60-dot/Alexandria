@@ -2,22 +2,21 @@ import subprocess, sys, os, json, hashlib, random, string, base64, re
 from datetime import datetime
 from collections import defaultdict
 
+# --- Instalação de pacotes (silenciosa) ---
 def _pip(pkg):
-    subprocess.check_call([sys.executable,"-m","pip","install",pkg,"-q"],
-                          stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-try:
-    import plotly.graph_objects as go
-except ImportError:
-    _pip("plotly"); import plotly.graph_objects as go
-try:
-    import numpy as np
-    from PIL import Image as PILImage
-except ImportError:
-    _pip("pillow numpy"); import numpy as np; from PIL import Image as PILImage
-try:
-    import requests
-except ImportError:
-    _pip("requests"); import requests
+    try:
+        __import__(pkg.split(" ")[0]) # Tenta importar primeiro
+    except ImportError:
+        subprocess.check_call([sys.executable,"-m","pip","install",pkg,"-q"],
+                              stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+
+_pip("plotly")
+import plotly.graph_objects as go
+_pip("pillow numpy")
+import numpy as np
+from PIL import Image as PILImage
+_pip("requests")
+import requests
 
 import streamlit as st
 
@@ -30,31 +29,41 @@ DB_FILE = "nebula_db.json"
 def load_db():
     if os.path.exists(DB_FILE):
         try:
-            with open(DB_FILE,"r") as f:
+            with open(DB_FILE,"r", encoding="utf-8") as f:
                 return json.load(f)
-        except:
-            pass
+        except json.JSONDecodeError:
+            st.error("Erro ao carregar o banco de dados. O arquivo JSON pode estar corrompido. Iniciando com dados padrão.")
+            # Se o JSON estiver corrompido, retorna um estado vazio para iniciar limpo
+            return {}
+        except Exception as e:
+            st.error(f"Erro inesperado ao carregar o banco de dados: {e}. Iniciando com dados padrão.")
+            return {}
     return {}
 
 def save_db():
     try:
-        with open(DB_FILE,"w") as f:
+        with open(DB_FILE,"w", encoding="utf-8") as f:
             json.dump(
                 {
                     "users": st.session_state.users,
                     "feed_posts": st.session_state.feed_posts,
                     "folders": st.session_state.folders,
+                    "knowledge_nodes": st.session_state.knowledge_nodes, # Salvar nodes também
+                    "user_prefs": st.session_state.user_prefs # Salvar preferências
                 },
                 f,
                 ensure_ascii=False,
                 indent=2,
             )
-    except:
-        pass
+    except Exception as e:
+        st.error(f"Erro ao salvar o banco de dados: {e}")
 
 def hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
 def code6(): return ''.join(random.choices(string.digits, k=6))
-def ini(n):  return ''.join(w[0].upper() for w in str(n).split()[:2])
+def ini(n):
+    if not isinstance(n, str):
+        n = str(n)
+    return ''.join(w[0].upper() for w in n.split()[:2])
 
 def img_to_b64(file_obj):
     try:
@@ -63,7 +72,7 @@ def img_to_b64(file_obj):
         ext  = getattr(file_obj,"name","img.png").split(".")[-1].lower()
         mime = {"jpg":"jpeg","jpeg":"jpeg","png":"png","gif":"gif","webp":"webp"}.get(ext,"png")
         return f"data:image/{mime};base64,{base64.b64encode(data).decode()}"
-    except:
+    except Exception:
         return None
 
 # ─── CSS ───────────────────────────────────
@@ -94,8 +103,31 @@ h1{font-size:1.8rem!important}h2{font-size:1.4rem!important}h3{font-size:1.05rem
 .stTextInput input:focus,.stTextArea textarea:focus{border-color:var(--blue)!important;box-shadow:0 0 0 3px rgba(37,99,235,.15)!important}
 .stTextInput label,.stTextArea label,.stSelectbox label,.stFileUploader label{color:var(--t2)!important;font-size:.82rem!important}
 /* liquid glass button */
-.stButton>button{background:linear-gradient(135deg,rgba(37,99,235,.38),rgba(6,182,212,.18),rgba(37,99,235,.28))!important;backdrop-filter:blur(24px) saturate(200%)!important;border:1px solid rgba(96,165,250,.28)!important;border-radius:var(--r-md)!important;color:var(--t1)!important;font-family:'DM Sans',sans-serif!important;font-weight:500!important;font-size:.87rem!important;letter-spacing:.02em!important;position:relative!important;overflow:hidden!important;transition:all .3s cubic-bezier(.4,0,.2,1)!important;box-shadow:0 4px 18px rgba(37,99,235,.16),inset 0 1px 0 rgba(255,255,255,.09)!important}
-.stButton>button:hover{background:linear-gradient(135deg,rgba(37,99,235,.58),rgba(6,182,212,.32),rgba(37,99,235,.48))!important;border-color:rgba(96,165,250,.48)!important;box-shadow:0 8px 28px rgba(37,99,235,.28)!important;transform:translateY(-1px)!important}
+.stButton>button{
+    background:linear-gradient(135deg,rgba(37,99,235,.38),rgba(6,182,212,.18),rgba(37,99,235,.28))!important;
+    backdrop-filter:blur(24px) saturate(200%)!important;
+    border:1px solid rgba(96,165,250,.28)!important;
+    border-radius:var(--r-md)!important;
+    color:var(--t1)!important;
+    font-family:'DM Sans',sans-serif!important;
+    font-weight:500!important;
+    font-size:.87rem!important;
+    letter-spacing:.02em!important;
+    position:relative!important;
+    overflow:hidden!important;
+    transition:all .3s cubic-bezier(.4,0,.2,1)!important;
+    box-shadow:0 4px 18px rgba(37,99,235,.16),inset 0 1px 0 rgba(255,255,255,.09)!important;
+    display: inline-flex; /* Para alinhar ícones */
+    align-items: center; /* Para alinhar ícones */
+    justify-content: center; /* Para alinhar ícones */
+    gap: 6px; /* Espaçamento entre ícone e texto */
+}
+.stButton>button:hover{
+    background:linear-gradient(135deg,rgba(37,99,235,.58),rgba(6,182,212,.32),rgba(37,99,235,.48))!important;
+    border-color:rgba(96,165,250,.48)!important;
+    box-shadow:0 8px 28px rgba(37,99,235,.28)!important;
+    transform:translateY(-1px)!important;
+}
 .stButton>button:active{transform:translateY(0)!important}
 /* cards */
 .card{background:var(--glass);backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);border:1px solid var(--bdr);border-radius:var(--r-lg);padding:1.3rem 1.5rem;margin-bottom:.9rem;box-shadow:0 8px 28px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.04);animation:sU .38s ease both;transition:transform .2s,box-shadow .2s,border-color .2s}
@@ -138,8 +170,11 @@ label{color:var(--t2)!important}
 .stCheckbox label,.stRadio label{color:var(--t1)!important}
 .block-container{padding-top:.5rem!important;padding-bottom:3rem!important;max-width:1300px!important}
 /* top nav row styling */
-.toprow .stButton>button{background:transparent!important;border:none!important;color:var(--t2)!important;font-size:.8rem!important;padding:.35rem .65rem!important;box-shadow:none!important;border-radius:8px!important;font-weight:400!important;letter-spacing:.01em!important}
-.toprow .stButton>button:hover{background:rgba(37,99,235,.14)!important;color:var(--t1)!important;transform:none!important;box-shadow:none!important}
+.toprow .stButton>button{background:transparent!important;border:none!important;color:var(--t2)!important;
+font-size:.79rem!important;padding:.3rem .5rem!important;box-shadow:none!important;border-radius:8px!important;
+font-weight:400!important;letter-spacing:.01em!important;margin-top:-12px!important}
+.toprow .stButton>button:hover{background:rgba(37,99,235,.13)!important;color:var(--t1)!important;transform:none!important;box-shadow:none!important}
+div[data-testid="stHorizontalBlock"]{gap:2px!important}
 /* dot */
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.85)}}
 .don{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);animation:pulse 2s infinite;margin-right:5px}
@@ -153,6 +188,18 @@ label{color:var(--t2)!important}
 /* search card */
 .scard{background:var(--glass);border:1px solid var(--bdr);border-radius:var(--r-md);padding:1rem 1.2rem;margin-bottom:.7rem;transition:border-color .2s}
 .scard:hover{border-color:var(--bdr-l)}
+/* clickable elements */
+.clickable-area {
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+    border-radius: var(--r-sm);
+    padding: 0.5rem;
+    margin: -0.5rem; /* Para expandir a área clicável sem mudar o layout */
+}
+.clickable-area:hover {
+    background-color: rgba(37, 99, 235, 0.08);
+    border-color: rgba(96, 165, 250, 0.2);
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -170,7 +217,7 @@ def badge(s):
     return f'<span class="{"b-pub" if s=="Publicado" else "b-on"}">{s}</span>'
 
 def guser():
-    # garante que 'users' é dict
+    # Garante que 'users' é um dict, caso contrário, inicializa como vazio
     if not isinstance(st.session_state.users, dict):
         st.session_state.users = {}
     return st.session_state.users.get(st.session_state.current_user, {})
@@ -268,6 +315,40 @@ def analyze_image(uploaded_file):
     except Exception:
         return None
 
+# ─── SIMULATED DOCUMENT ANALYSIS (for folders) ───────────────────
+def analyze_document_content(file_name, content_preview):
+    # Simula uma análise de conteúdo de documento
+    # Em um app real, isso usaria um LLM ou NLP para extrair tags e resumo
+
+    file_name_lower = file_name.lower()
+    content_lower = content_preview.lower()
+
+    tags = []
+    if "genomica" in file_name_lower or "dna" in content_lower:
+        tags.append("Genômica")
+    if "ia" in file_name_lower or "machine learning" in content_lower:
+        tags.append("Inteligência Artificial")
+    if "neurociencia" in file_name_lower or "cerebro" in content_lower:
+        tags.append("Neurociência")
+    if "quimica" in file_name_lower or "molecula" in content_lower:
+        tags.append("Química")
+    if "fisica" in file_name_lower or "quantum" in content_lower:
+        tags.append("Física")
+    if "biologia" in file_name_lower or "celula" in content_lower:
+        tags.append("Biologia")
+    if "astronomia" in file_name_lower or "estrela" in content_lower:
+        tags.append("Astronomia")
+    if "psicologia" in file_name_lower or "comportamento" in content_lower:
+        tags.append("Psicologia")
+
+    if not tags:
+        tags.append("Pesquisa Geral")
+
+    summary = f"Análise simulada do documento '{file_name}'. Tópicos principais: {', '.join(tags)}. Conteúdo: {content_preview[:100]}..."
+
+    return {"tags": tags, "summary": summary}
+
+
 # ─── REAL INTERNET ARTICLE SEARCH ──────────
 def search_semantic_scholar(query, limit=8):
     results=[]
@@ -305,7 +386,7 @@ def search_semantic_scholar(query, limit=8):
                     "origin":"semantic",
                     "tags":[]
                 })
-    except:
+    except Exception:
         pass
     return results
 
@@ -348,7 +429,7 @@ def search_crossref(query, limit=5):
                     "origin":"crossref",
                     "tags":[]
                 })
-    except:
+    except Exception:
         pass
     return results
 
@@ -423,23 +504,23 @@ CHAT_INIT={
 }
 
 KNOWLEDGE_NODES_DEFAULT=[
-    {"id":"IA","x":.50,"y":.85,"z":.50,"connections":["Machine Learning","Redes Neurais","Otimização"],"color":"#2563eb","size":28},
-    {"id":"Machine Learning","x":.20,"y":.65,"z":.40,"connections":["Deep Learning","Otimização","Dados"],"color":"#1d4ed8","size":22},
-    {"id":"Neurociência","x":.80,"y":.65,"z":.60,"connections":["Memória","Sono","Plasticidade"],"color":"#3b82f6","size":26},
-    {"id":"Genômica","x":.50,"y":.45,"z":.30,"connections":["CRISPR","Proteômica","Epigenética"],"color":"#06b6d4","size":24},
-    {"id":"Computação Quântica","x":.15,"y":.35,"z":.70,"connections":["Otimização","Machine Learning","Criptografia"],"color":"#8b5cf6","size":23},
-    {"id":"Astrofísica","x":.85,"y":.35,"z":.50,"connections":["Cosmologia","Matéria Escura","Óptica"],"color":"#ec4899","size":22},
-    {"id":"Psicologia","x":.50,"y":.15,"z":.60,"connections":["Cognição","Comportamento","Memória"],"color":"#f59e0b","size":20},
-    {"id":"Memória","x":.75,"y":.50,"z":.80,"connections":[],"color":"#60a5fa","size":14},
-    {"id":"Sono","x":.88,"y":.55,"z":.30,"connections":[],"color":"#60a5fa","size":13},
-    {"id":"Otimização","x":.25,"y":.45,"z":.60,"connections":[],"color":"#34d399","size":15},
-    {"id":"CRISPR","x":.60,"y":.30,"z":.20,"connections":[],"color":"#22d3ee","size":14},
-    {"id":"Deep Learning","x":.10,"y":.55,"z":.50,"connections":[],"color":"#818cf8","size":14},
-    {"id":"Cosmologia","x":.92,"y":.22,"z":.70,"connections":[],"color":"#f472b6","size":13},
-    {"id":"Cognição","x":.62,"y":.08,"z":.40,"connections":[],"color":"#fbbf24","size":13},
-    {"id":"Dados","x":.32,"y":.75,"z":.35,"connections":[],"color":"#34d399","size":12},
-    {"id":"Proteômica","x":.40,"y":.28,"z":.45,"connections":[],"color":"#22d3ee","size":12},
-    {"id":"Criptografia","x":.05,"y":.50,"z":.65,"connections":[],"color":"#818cf8","size":12},
+    {"id":"IA","type":"topic","x":.50,"y":.85,"z":.50,"connections":["Machine Learning","Redes Neurais","Otimização"],"color":"#2563eb","size":28},
+    {"id":"Machine Learning","type":"topic","x":.20,"y":.65,"z":.40,"connections":["Deep Learning","Otimização","Dados"],"color":"#1d4ed8","size":22},
+    {"id":"Neurociência","type":"topic","x":.80,"y":.65,"z":.60,"connections":["Memória","Sono","Plasticidade"],"color":"#3b82f6","size":26},
+    {"id":"Genômica","type":"topic","x":.50,"y":.45,"z":.30,"connections":["CRISPR","Proteômica","Epigenética"],"color":"#06b6d4","size":24},
+    {"id":"Computação Quântica","type":"topic","x":.15,"y":.35,"z":.70,"connections":["Otimização","Machine Learning","Criptografia"],"color":"#8b5cf6","size":23},
+    {"id":"Astrofísica","type":"topic","x":.85,"y":.35,"z":.50,"connections":["Cosmologia","Matéria Escura","Óptica"],"color":"#ec4899","size":22},
+    {"id":"Psicologia","type":"topic","x":.50,"y":.15,"z":.60,"connections":["Cognição","Comportamento","Memória"],"color":"#f59e0b","size":20},
+    {"id":"Memória","type":"topic","x":.75,"y":.50,"z":.80,"connections":[],"color":"#60a5fa","size":14},
+    {"id":"Sono","type":"topic","x":.88,"y":.55,"z":.30,"connections":[],"color":"#60a5fa","size":13},
+    {"id":"Otimização","type":"topic","x":.25,"y":.45,"z":.60,"connections":[],"color":"#34d399","size":15},
+    {"id":"CRISPR","type":"topic","x":.60,"y":.30,"z":.20,"connections":[],"color":"#22d3ee","size":14},
+    {"id":"Deep Learning","type":"topic","x":.10,"y":.55,"z":.50,"connections":[],"color":"#818cf8","size":14},
+    {"id":"Cosmologia","type":"topic","x":.92,"y":.22,"z":.70,"connections":[],"color":"#f472b6","size":13},
+    {"id":"Cognição","type":"topic","x":.62,"y":.08,"z":.40,"connections":[],"color":"#fbbf24","size":13},
+    {"id":"Dados","type":"topic","x":.32,"y":.75,"z":.35,"connections":[],"color":"#34d399","size":12},
+    {"id":"Proteômica","type":"topic","x":.40,"y":.28,"z":.45,"connections":[],"color":"#22d3ee","size":12},
+    {"id":"Criptografia","type":"topic","x":.05,"y":.50,"z":.65,"connections":[],"color":"#818cf8","size":12},
 ]
 
 # ─── SESSION INIT ──────────────────────────
@@ -449,6 +530,8 @@ def init():
     st.session_state.initialized = True
 
     disk = load_db()
+
+    # Garantir que disk_users é um dict
     disk_users = disk.get("users", {})
     if not isinstance(disk_users, dict):
         disk_users = {}
@@ -458,7 +541,11 @@ def init():
     st.session_state.setdefault("current_user", None)
     st.session_state.setdefault("page", "login")
     st.session_state.setdefault("profile_view", None)
-    st.session_state.setdefault("user_prefs", {})
+
+    # Garantir que user_prefs é um dict de defaultdict
+    disk_user_prefs = disk.get("user_prefs", {})
+    st.session_state.setdefault("user_prefs", {k: defaultdict(float, v) for k, v in disk_user_prefs.items()})
+
     st.session_state.setdefault("pending_verify", None)
     st.session_state.setdefault("pending_2fa", None)
     st.session_state.setdefault("feed_posts", disk.get("feed_posts",[dict(p) for p in SEED_POSTS]))
@@ -466,7 +553,13 @@ def init():
     st.session_state.setdefault("chat_contacts", list(SEED_USERS.keys()))
     st.session_state.setdefault("chat_messages", {k:list(v) for k,v in CHAT_INIT.items()})
     st.session_state.setdefault("active_chat", None)
-    st.session_state.setdefault("knowledge_nodes", [dict(n) for n in KNOWLEDGE_NODES_DEFAULT])
+
+    # Garantir que knowledge_nodes é uma lista de dicts
+    disk_knowledge_nodes = disk.get("knowledge_nodes", [dict(n) for n in KNOWLEDGE_NODES_DEFAULT])
+    if not isinstance(disk_knowledge_nodes, list):
+        disk_knowledge_nodes = [dict(n) for n in KNOWLEDGE_NODES_DEFAULT]
+    st.session_state.setdefault("knowledge_nodes", disk_knowledge_nodes)
+
     st.session_state.setdefault("followed", ["carlos@nebula.ai","luana@nebula.ai"])
     st.session_state.setdefault("notifications",["Carlos Mendez curtiu sua pesquisa","Nova conexão: IA ↔ Computação Quântica","Luana Freitas comentou em um artigo que você segue"])
     st.session_state.setdefault("stats_data",{"views":[12,34,28,67,89,110,95,134,160,178,201,230],"citations":[0,1,1,2,3,4,4,6,7,8,10,12],"months":["Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez","Jan","Fev"],"h_index":4,"fator_impacto":3.8,"aceitacao":94,"notes":""})
@@ -613,9 +706,9 @@ def page_2fa():
             st.rerun()
 
 # ─── TOP NAV ────────────────────────────────
-NAV=[("feed","◈","Feed"),("search","⊙","Artigos"),("knowledge","⬡","Rede 3D"),
+NAV=[("feed","◈","Feed"),("search","⊙","Artigos"),("knowledge","⬡","Conexões"), # Alterado para "Conexões"
      ("folders","▣","Pastas"),("analytics","▤","Análises"),
-     ("img_search","⊞","Análise de Imagem"),("chat","◻","Chat"),("settings","◎","Perfil")]
+     ("img_search","⊞","Análise Imagem"),("chat","◻","Chat"),("settings","◎","Perfil")]
 
 def render_topnav():
     u=guser()
@@ -706,12 +799,13 @@ def page_profile(target_email):
     if not is_me:
         c1,c2,_=st.columns([1,1,4])
         with c1:
-            if st.button("✓ Seguindo" if is_fol else "+ Seguir",key="btn_pf"):
+            if st.button("✓ Seguindo" if is_fol else "➕ Seguir",key="btn_pf"):
                 if is_fol:
                     st.session_state.followed.remove(target_email)
+                    tu["followers"] = tu.get("followers", 0) - 1 # Decrementa
                 else:
                     st.session_state.followed.append(target_email)
-                    tu["followers"]=tu.get("followers",0)+1
+                    tu["followers"] = tu.get("followers", 0) + 1 # Incrementa
                 save_db()
                 st.rerun()
         with c2:
@@ -773,12 +867,12 @@ def page_feed():
             for p in recs:
                 render_post(p,rec=True)
             st.markdown("<hr>",unsafe_allow_html=True)
-        with st.expander("＋  Publicar nova pesquisa"):
+        with st.expander("➕ Publicar nova pesquisa", expanded=False): # Ajuste para expandir/colapsar
             np_t=st.text_input("Título",key="np_t")
             np_ab=st.text_area("Resumo / Abstract",key="np_ab",height=90)
             np_tg=st.text_input("Tags (separadas por vírgula)",key="np_tg")
             np_st=st.selectbox("Status",["Em andamento","Publicado","Concluído"],key="np_st")
-            if st.button("Publicar pesquisa",key="btn_pub"):
+            if st.button("🚀 Publicar pesquisa",key="btn_pub"):
                 if np_t and np_ab:
                     nm=u.get("name","Usuário")
                     tags=[t.strip() for t in np_tg.split(",") if t.strip()]
@@ -832,25 +926,29 @@ def page_feed():
             is_fol=ue in st.session_state.followed
             ca,cb=st.columns([3,1])
             with ca:
-                st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:2px;">'
+                # Adiciona um botão invisível para tornar a área clicável
+                if st.button(
+                    f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:2px;" class="clickable-area">'
                     f'{avh(uin,26,uphoto)}'
                     f'<div><div style="font-size:.8rem;font-weight:500;">{uname}</div>'
                     f'<div style="font-size:.68rem;color:var(--t3);">{ud.get("area","")[:20]}</div>'
                     f'</div></div>',
-                    unsafe_allow_html=True
-                )
+                    key=f"view_profile_side_{ue}",
+                    unsafe_allow_html=True,
+                    use_container_width=True
+                ):
+                    st.session_state.profile_view = ue
+                    st.rerun()
             with cb:
-                if st.button("✓" if is_fol else "+",key=f"fol_{ue}"):
+                if st.button("✓" if is_fol else "➕",key=f"fol_{ue}"):
                     if is_fol:
                         st.session_state.followed.remove(ue)
+                        ud["followers"] = ud.get("followers", 0) - 1
                     else:
                         st.session_state.followed.append(ue)
+                        ud["followers"] = ud.get("followers", 0) + 1
                     save_db()
                     st.rerun()
-            if st.button("Ver perfil",key=f"vp_{ue}",use_container_width=True):
-                st.session_state.profile_view=ue
-                st.rerun()
             st.markdown('<div style="height:4px;"></div>',unsafe_allow_html=True)
         st.markdown('</div>',unsafe_allow_html=True)
         st.markdown('<div class="card">',unsafe_allow_html=True)
@@ -873,21 +971,49 @@ def render_post(post, rec=False, show_profile_link=True):
     aemail=post.get("author_email","")
     aphoto=get_photo(aemail)
     rec_b='<span class="b-rec" style="margin-left:6px;">Rec.</span>' if rec else ""
+
+    # Usar um container para o cabeçalho do post para torná-lo clicável
+    header_html = f"""
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:.9rem;" class="clickable-area">
+            {avh(post['avatar'],40,aphoto)}
+            <div style="flex:1;">
+                <div style="font-weight:600;font-size:.91rem;">{post['author']}</div>
+                <div style="color:var(--t3);font-size:.73rem;">{post['area']} · {post['date']}</div>
+            </div>
+            {badge(post['status'])}{rec_b}
+        </div>
+    """
+
     st.markdown(f"""
     <div class="card">
-      <div style="display:flex;align-items:center;gap:12px;margin-bottom:.9rem;">
-        {avh(post['avatar'],40,aphoto)}
-        <div style="flex:1;">
-          <div style="font-weight:600;font-size:.91rem;">{post['author']}</div>
-          <div style="color:var(--t3);font-size:.73rem;">{post['area']} · {post['date']}</div>
-        </div>
-        {badge(post['status'])}{rec_b}
-      </div>
-      <h3 style="margin-bottom:.45rem;font-size:1.03rem;line-height:1.4;">{post['title']}</h3>
-      <p style="color:var(--t2);font-size:.85rem;line-height:1.65;margin-bottom:.75rem;">{post['abstract']}</p>
-      <div>{tags_html(post['tags'])}</div>
+        {header_html}
+        <h3 style="margin-bottom:.45rem;font-size:1.03rem;line-height:1.4;">{post['title']}</h3>
+        <p style="color:var(--t2);font-size:.85rem;line-height:1.65;margin-bottom:.75rem;">{post['abstract']}</p>
+        <div>{tags_html(post['tags'])}</div>
     </div>
     """,unsafe_allow_html=True)
+
+    # Botão invisível para capturar o clique no cabeçalho
+    if show_profile_link and aemail:
+        if st.button(" ", key=f"view_profile_post_header_{post['id']}", use_container_width=True):
+            st.session_state.profile_view = aemail
+            st.rerun()
+        st.markdown(
+            """
+            <style>
+            div[data-testid*="stVerticalBlock"] > div:nth-child(1) > div > div > div > button[key*="view_profile_post_header_"] {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                opacity: 0;
+                z-index: 1;
+            }
+            </style>
+            """, unsafe_allow_html=True
+        )
+
     c1,c2,c3,c4,c5,_=st.columns([.9,.9,.7,.7,1.1,1.5])
     with c1:
         if st.button(f"{'❤' if liked else '♡'} {post['likes']}",key=f"lk_{post['id']}"):
@@ -939,6 +1065,10 @@ def render_post(post, rec=False, show_profile_link=True):
                 record(post["tags"],.8)
                 save_db()
                 st.rerun()
+
+# --- Callback para definir a query de busca ---
+def _set_search_query(value: str):
+    st.session_state.sq = value
 
 # ─── BUSCA DE ARTIGOS (real internet) ───────
 def page_search():
@@ -1010,11 +1140,15 @@ def page_search():
         if tags:
             st.markdown(f'<div style="color:var(--t2);font-size:.83rem;margin-bottom:.8rem;">💡 Sugestões para <strong>{u.get("area","")}</strong>:</div>',unsafe_allow_html=True)
             cols=st.columns(5)
-            for i,t in enumerate(tags[:5]):
-                with cols[i%5]:
-                    if st.button(f"🔎 {t}",key=f"sug_{t}",use_container_width=True):
-                        st.session_state["sq"]=t
-                        st.rerun()
+            for i, t in enumerate(tags[:5]):
+                with cols[i % 5]:
+                    st.button(
+                        f"🔎 {t}",
+                        key=f"sug_{t}",
+                        use_container_width=True,
+                        on_click=_set_search_query,
+                        kwargs={"value": t},
+                    )
         st.markdown('<p style="color:var(--t3);font-size:.82rem;margin-top:1rem;">Digite um termo para buscar artigos na Nebula e em bases acadêmicas globais (Semantic Scholar + CrossRef) em tempo real.</p>',unsafe_allow_html=True)
     st.markdown('</div>',unsafe_allow_html=True)
 
@@ -1051,7 +1185,7 @@ def render_web_article(a):
         <span style="font-size:.67rem;color:{src_color};background:rgba(6,182,212,.08);border-radius:8px;padding:2px 7px;white-space:nowrap;flex-shrink:0;">{src_name}</span>
       </div>
       <div style="color:var(--t3);font-size:.73rem;margin-bottom:.4rem;">{a['authors']} · <em>{a['source']}</em> · {a['year']}{cite}</div>
-      <div style="color:var(--t2);font-size:.83rem;line-height:1.6;margin-bottom:.4rem;">{a['abstract']}</div>
+      <div style="color:var(--t2);font-size:.83rem;line-height:1.6;margin-bottom:.4rem;">{a['abstract'][:220]}…</div>
       <div style="font-size:.69rem;color:var(--t3);">DOI/ID: {a['doi']}</div>
     </div>
     """,unsafe_allow_html=True)
@@ -1079,128 +1213,209 @@ def render_web_article(a):
                 unsafe_allow_html=True
             )
 
-# ─── REDE DE CONHECIMENTO 3D ─────────────────
+# ─── REDE DE CONEXÕES (Antiga Rede de Conhecimento 3D) ─────────────────
 def page_knowledge():
     st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1>Rede de Conhecimento 3D</h1>',unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--t3);font-size:.86rem;margin-bottom:.8rem;">Grafo 3D interativo — arraste, gire, explore conexões entre áreas. Hover nos nós para detalhes.</p>',unsafe_allow_html=True)
-    nodes=st.session_state.knowledge_nodes
-    node_map={n["id"]:n for n in nodes}
+    st.markdown('<h1>Rede de Conexões</h1>',unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--t3);font-size:.86rem;margin-bottom:.8rem;">Explore as conexões entre pesquisadores, interesses e pesquisas em comum.</p>',unsafe_allow_html=True)
+
+    # Gerar nós dinamicamente
+    current_nodes = {n["id"]: n for n in st.session_state.knowledge_nodes}
+
+    # Adicionar pesquisadores como nós
+    users = st.session_state.users if isinstance(st.session_state.users, dict) else {}
+    for email, user_data in users.items():
+        if email not in current_nodes:
+            current_nodes[email] = {
+                "id": email,
+                "type": "researcher",
+                "x": random.uniform(.05,.92),
+                "y": random.uniform(.05,.92),
+                "z": random.uniform(.05,.92),
+                "connections": [],
+                "color": "#6366f1", # Cor para pesquisadores
+                "size": 20,
+                "name": user_data.get("name", email.split('@')[0]),
+                "area": user_data.get("area", "Indefinida")
+            }
+        else: # Atualiza dados do pesquisador se já existir
+            current_nodes[email].update({
+                "name": user_data.get("name", email.split('@')[0]),
+                "area": user_data.get("area", "Indefinida")
+            })
+
+    # Adicionar tags de pesquisas e pastas como nós e conectar
+    for p in st.session_state.feed_posts:
+        author_email = p.get("author_email")
+        for tag in p.get("tags", []):
+            tag_id = tag.lower().replace(" ", "-")
+            if tag_id not in current_nodes:
+                current_nodes[tag_id] = {
+                    "id": tag_id,
+                    "type": "topic",
+                    "x": random.uniform(.05,.92),
+                    "y": random.uniform(.05,.92),
+                    "z": random.uniform(.05,.92),
+                    "connections": [],
+                    "color": "#06b6d4", # Cor para tópicos
+                    "size": 12
+                }
+            # Conectar pesquisador ao tópico
+            if author_email and tag_id not in current_nodes[author_email]["connections"]:
+                current_nodes[author_email]["connections"].append(tag_id)
+            if author_email and current_nodes[tag_id]["id"] not in current_nodes[author_email]["connections"]:
+                current_nodes[tag_id]["connections"].append(author_email) # Conexão bidirecional
+
+    # Adicionar tags de análise de pastas
+    for folder_name, folder_data in st.session_state.folders.items():
+        if isinstance(folder_data, dict) and folder_data.get("analysis_tags"):
+            for tag in folder_data["analysis_tags"]:
+                tag_id = tag.lower().replace(" ", "-")
+                if tag_id not in current_nodes:
+                    current_nodes[tag_id] = {
+                        "id": tag_id,
+                        "type": "topic",
+                        "x": random.uniform(.05,.92),
+                        "y": random.uniform(.05,.92),
+                        "z": random.uniform(.05,.92),
+                        "connections": [],
+                        "color": "#06b6d4",
+                        "size": 12
+                    }
+                # Conectar usuário atual (dono da pasta) ao tópico
+                current_user_email = st.session_state.current_user
+                if current_user_email and tag_id not in current_nodes[current_user_email]["connections"]:
+                    current_nodes[current_user_email]["connections"].append(tag_id)
+                if current_user_email and current_nodes[tag_id]["id"] not in current_nodes[current_user_email]["connections"]:
+                    current_nodes[tag_id]["connections"].append(current_user_email)
+
+
+    st.session_state.knowledge_nodes = list(current_nodes.values())
+    nodes = st.session_state.knowledge_nodes
+    node_map = {n["id"]: n for n in nodes}
+
     ex,ey,ez=[],[],[]
     for n in nodes:
-        for conn in n.get("connections",[]):
-            if conn in node_map:
-                t=node_map[conn]
-                ex+=[n["x"],t["x"],None]
-                ey+=[n["y"],t["y"],None]
-                ez+=[n["z"],t["z"],None]
+        for conn_id in n.get("connections",[]):
+            if conn_id in node_map:
+                t=node_map[conn_id]
+                ex+=[n["x"],t["x"],None]; ey+=[n["y"],t["y"],None]; ez+=[n["z"],t["z"],None]
+
+    # Cores e tamanhos dinâmicos para pesquisadores e tópicos
+    node_sizes = []
+    node_colors = []
+    node_hovertemplates = []
+    node_customdata = []
+
+    for n in nodes:
+        if n.get("type") == "researcher":
+            node_sizes.append(n.get("size", 20))
+            node_colors.append(n.get("color", "#6366f1"))
+            node_hovertemplates.append(f"<b>{n.get('name', n['id'])}</b><br>E-mail: {n['id']}<br>Área: {n.get('area', 'N/A')}<br>Conexões: {len(n.get('connections',[]))}<extra></extra>")
+            node_customdata.append(n['id']) # Usar email para customdata para cliques
+        else: # Tópico
+            node_sizes.append(n.get("size", 12))
+            node_colors.append(n.get("color", "#06b6d4"))
+            node_hovertemplates.append(f"<b>Tópico: {n['id'].replace('-', ' ').title()}</b><br>Conexões: {len(n.get('connections',[]))}<extra></extra>")
+            node_customdata.append(n['id']) # Usar ID do tópico para customdata para cliques
+
     fig=go.Figure()
+    fig.add_trace(go.Scatter3d(x=ex,y=ey,z=ez,mode="lines",line=dict(color="rgba(37,99,235,.28)",width=2.5),hoverinfo="none",showlegend=False))
     fig.add_trace(go.Scatter3d(
-        x=ex,y=ey,z=ez,
-        mode="lines",
-        line=dict(color="rgba(37,99,235,.28)",width=2.5),
-        hoverinfo="none",
-        showlegend=False
-    ))
-    fig.add_trace(go.Scatter3d(
-        x=[n["x"] for n in nodes],
-        y=[n["y"] for n in nodes],
-        z=[n["z"] for n in nodes],
+        x=[n["x"] for n in nodes],y=[n["y"] for n in nodes],z=[n["z"] for n in nodes],
         mode="markers+text",
-        marker=dict(
-            size=[n.get("size",16) for n in nodes],
-            color=[n.get("color","#2563eb") for n in nodes],
-            opacity=.90,
-            line=dict(color="rgba(200,220,255,.28)",width=1.5)
-        ),
-        text=[n["id"] for n in nodes],
+        marker=dict(size=node_sizes,color=node_colors,opacity=.90,line=dict(color="rgba(200,220,255,.28)",width=1.5)),
+        text=[n["id"] if n.get("type") == "topic" else n.get("name", n["id"].split('@')[0]) for n in nodes],
         textposition="top center",
         textfont=dict(color="#b0c4de",size=9,family="DM Sans"),
-        hovertemplate="<b>%{text}</b><br>Conexões diretas: %{customdata}<extra></extra>",
-        customdata=[len(n.get("connections",[])) for n in nodes],
+        hovertemplate=node_hovertemplates,
+        customdata=node_customdata,
         showlegend=False,
     ))
-    fig.update_layout(
-        height=540,
-        scene=dict(
-            xaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
-            yaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
-            zaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
-            bgcolor="rgba(0,0,0,0)",
-            camera=dict(eye=dict(x=1.6,y=1.4,z=1.0))
-        ),
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=0,r=0,t=0,b=0),
-        font=dict(color="#94a8d0"),
+    fig.update_layout(height=540,
+        scene=dict(xaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),yaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),zaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),bgcolor="rgba(0,0,0,0)",camera=dict(eye=dict(x=1.6,y=1.4,z=1.0))),
+        paper_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=0,t=0,b=0),font=dict(color="#94a8d0"),
     )
     st.plotly_chart(fig,use_container_width=True)
+
+    # Capturar cliques nos nós (requer JS, mas podemos simular com botões)
+    # Streamlit não tem um callback direto para cliques em gráficos Plotly 3D sem JS customizado.
+    # Para uma interação mais profunda, seria necessário usar componentes customizados.
+    # Por enquanto, vamos manter a visualização e a edição via selectbox.
+
     total_conn=sum(len(n.get("connections",[])) for n in nodes)
     c1,c2,c3,c4=st.columns(4)
     for col,(v,l) in zip([c1,c2,c3,c4],[(len(nodes),"Nós"),(total_conn,"Conexões"),(len(st.session_state.followed),"Seguindo"),(len(st.session_state.feed_posts),"Pesquisas na rede")]):
-        with col:
-            st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>',unsafe_allow_html=True)
+        with col: st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>',unsafe_allow_html=True)
     st.markdown("<hr>",unsafe_allow_html=True)
-    tab_add,tab_map,tab_edit=st.tabs(["  ＋ Adicionar  ","  Mapa de conexões  ","  Editar nós  "])
+    tab_add,tab_map,tab_edit=st.tabs(["  ➕ Adicionar Conexão  ","  Mapa de Conexões  ","  Editar Nós  "])
     with tab_add:
         ca,cb,cc,cd=st.columns([2,2,1,1])
-        with ca:
-            t1=st.text_input("Tópico A",key="kn_t1")
-        with cb:
-            t2=st.text_input("Conectar com Tópico B",key="kn_t2")
-        with cc:
-            color=st.color_picker("Cor","#3b7cf4",key="kn_col")
+        with ca: t1=st.text_input("ID do Tópico/Pesquisador A",key="kn_t1")
+        with cb: t2=st.text_input("Conectar com Tópico/Pesquisador B",key="kn_t2")
+        with cc: color=st.color_picker("Cor (novo tópico)", "#06b6d4",key="kn_col")
         with cd:
             st.markdown("<br>",unsafe_allow_html=True)
-            if st.button("Adicionar",key="btn_kn"):
+            if st.button("➕ Adicionar Conexão",key="btn_kn"):
                 if t1 and t2:
                     ids=[n["id"] for n in nodes]
+                    # Adiciona t1 se não existir
                     if t1 not in ids:
-                        nodes.append({"id":t1,"x":random.uniform(.05,.92),"y":random.uniform(.05,.92),"z":random.uniform(.05,.92),"connections":[t2],"color":color,"size":16})
+                        nodes.append({"id":t1,"type":"topic","x":random.uniform(.05,.92),"y":random.uniform(.05,.92),"z":random.uniform(.05,.92),"connections":[t2],"color":color,"size":16})
                     else:
                         for n in nodes:
-                            if n["id"]==t1 and t2 not in n.get("connections",[]):
-                                n.setdefault("connections",[]).append(t2)
+                            if n["id"]==t1 and t2 not in n.get("connections",[]): n.setdefault("connections",[]).append(t2)
+                    # Adiciona t2 se não existir
+                    if t2 not in ids:
+                        nodes.append({"id":t2,"type":"topic","x":random.uniform(.05,.92),"y":random.uniform(.05,.92),"z":random.uniform(.05,.92),"connections":[t1],"color":color,"size":16})
+                    else:
+                        for n in nodes:
+                            if n["id"]==t2 and t1 not in n.get("connections",[]): n.setdefault("connections",[]).append(t1)
+
                     record([t1.lower(),t2.lower()],1.0)
                     st.session_state.notifications.insert(0,f"Nova conexão: {t1} ↔ {t2}")
+                    save_db()
                     st.success(f"Conexão {t1} ↔ {t2} adicionada!")
                     st.rerun()
     with tab_map:
         for n in nodes:
             if n.get("connections"):
-                conns="".join(
-                    f'<span style="background:rgba(6,182,212,.10);border:1px solid rgba(6,182,212,.22);border-radius:8px;padding:2px 9px;font-size:.79rem;margin:2px;">{c}</span>'
-                    for c in n["connections"]
-                )
+                conns="".join(f'<span style="background:rgba(6,182,212,.10);border:1px solid rgba(6,182,212,.22);border-radius:8px;padding:2px 9px;font-size:.79rem;margin:2px;">{c}</span>' for c in n["connections"])
                 st.markdown(
                     f'<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;background:var(--glass);border:1px solid var(--bdr);border-radius:12px;padding:9px 14px;margin-bottom:5px;">'
-                    f'<span style="background:{n.get("color","#2563eb")}20;border:1px solid {n.get("color","#2563eb")}55;border-radius:8px;padding:3px 11px;font-size:.82rem;font-weight:600;color:{n.get("color","#2563eb")};white-space:nowrap;">{n["id"]}</span>'
-                    f'<span style="color:var(--t3);font-size:.78rem;">→</span>'
-                    f'{conns}</div>',
+                    f'<span style="background:{n.get("color","#2563eb")}20;border:1px solid {n.get("color","#2563eb")}55;border-radius:8px;padding:3px 11px;font-size:.82rem;font-weight:600;color:{n.get("color","#2563eb")};white-space:nowrap;">'
+                    f'{"👤 " if n.get("type") == "researcher" else "💡 "}{n.get("name", n["id"])}'
+                    f'</span>'
+                    f'<span style="color:var(--t3);font-size:.78rem;">→</span>{conns}</div>',
                     unsafe_allow_html=True
                 )
     with tab_edit:
-        sel=st.selectbox("Nó para editar",[n["id"] for n in nodes],key="sel_node")
-        node_obj=next((n for n in nodes if n["id"]==sel),None)
-        if node_obj:
-            cn1,cn2,cn3=st.columns(3)
-            with cn1:
-                nx=st.slider("X",0.0,1.0,float(node_obj["x"]),key="nx")
-                ny=st.slider("Y",0.0,1.0,float(node_obj["y"]),key="ny")
-            with cn2:
-                nz=st.slider("Z",0.0,1.0,float(node_obj["z"]),key="nz")
-                ns=st.slider("Tamanho",8,40,int(node_obj.get("size",16)),key="ns")
-            with cn3:
-                nc=st.color_picker("Cor",node_obj.get("color","#2563eb"),key="nc")
-            c_save,c_del,_=st.columns([1,1,2])
-            with c_save:
-                if st.button("Salvar edição",key="btn_edit_node"):
-                    node_obj.update({"x":nx,"y":ny,"z":nz,"size":ns,"color":nc})
-                    st.success("Nó atualizado!")
-                    st.rerun()
-            with c_del:
-                if st.button("Remover nó",key="btn_rm_node"):
-                    st.session_state.knowledge_nodes=[n for n in nodes if n["id"]!=sel]
-                    st.rerun()
+        sel_options = [n["id"] for n in nodes]
+        if not sel_options:
+            st.info("Nenhum nó para editar ainda. Adicione conexões primeiro.")
+        else:
+            sel=st.selectbox("Nó para editar", sel_options, key="sel_node")
+            node_obj=next((n for n in nodes if n["id"]==sel),None)
+            if node_obj:
+                cn1,cn2,cn3=st.columns(3)
+                with cn1: nx=st.slider("X",0.0,1.0,float(node_obj["x"]),key="nx"); ny=st.slider("Y",0.0,1.0,float(node_obj["y"]),key="ny")
+                with cn2: nz=st.slider("Z",0.0,1.0,float(node_obj["z"]),key="nz"); ns=st.slider("Tamanho",8,40,int(node_obj.get("size",16)),key="ns")
+                with cn3: nc=st.color_picker("Cor",node_obj.get("color","#2563eb"),key="nc")
+                c_save,c_del,_=st.columns([1,1,2])
+                with c_save:
+                    if st.button("💾 Salvar edição",key="btn_edit_node"):
+                        node_obj.update({"x":nx,"y":ny,"z":nz,"size":ns,"color":nc})
+                        save_db()
+                        st.success("Nó atualizado!")
+                        st.rerun()
+                with c_del:
+                    if st.button("🗑️ Remover nó",key="btn_rm_node"):
+                        st.session_state.knowledge_nodes=[n for n in nodes if n["id"]!=sel]
+                        # Remover conexões para este nó também
+                        for n in st.session_state.knowledge_nodes:
+                            n["connections"] = [c for c in n.get("connections", []) if c != sel]
+                        save_db()
+                        st.rerun()
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ─── PASTAS ─────────────────────────────────
@@ -1209,21 +1424,15 @@ def page_folders():
     st.markdown('<h1>Pastas de Pesquisa</h1>',unsafe_allow_html=True)
     st.markdown('<p style="color:var(--t3);font-size:.86rem;margin-bottom:1rem;">Crie e organize suas pastas do jeito que preferir</p>',unsafe_allow_html=True)
     c1,c2,_=st.columns([2,1.2,1.5])
-    with c1:
-        nf_name=st.text_input("Nome da pasta",placeholder="Ex: Genômica Comparativa",key="nf_n")
-    with c2:
-        nf_desc=st.text_input("Descrição",placeholder="Breve descrição",key="nf_d")
-    if st.button("Criar pasta",key="btn_nf"):
+    with c1: nf_name=st.text_input("Nome da pasta",placeholder="Ex: Genômica Comparativa",key="nf_n")
+    with c2: nf_desc=st.text_input("Descrição",placeholder="Breve descrição",key="nf_d")
+    if st.button("➕ Criar pasta",key="btn_nf"):
         if nf_name.strip():
             if nf_name not in st.session_state.folders:
-                st.session_state.folders[nf_name]={"desc":nf_desc,"files":[],"notes":""}
-                save_db()
-                st.success(f"Pasta '{nf_name}' criada!")
-                st.rerun()
-            else:
-                st.warning("Pasta já existe.")
-        else:
-            st.warning("Digite um nome para a pasta.")
+                st.session_state.folders[nf_name]={"desc":nf_desc,"files":[],"notes":"","analysis_tags":[]} # Adiciona analysis_tags
+                save_db(); st.success(f"Pasta '{nf_name}' criada!"); st.rerun()
+            else: st.warning("Pasta já existe.")
+        else: st.warning("Digite um nome para a pasta.")
     st.markdown("<hr>",unsafe_allow_html=True)
     if not st.session_state.folders:
         st.markdown('<div class="card" style="text-align:center;padding:3rem;"><div style="font-size:3rem;margin-bottom:1rem;">📂</div><div style="color:var(--t2);font-family:\'Playfair Display\',serif;font-size:1rem;">Nenhuma pasta criada ainda</div><div style="color:var(--t3);font-size:.84rem;margin-top:.4rem;">Use o formulário acima para criar sua primeira pasta</div></div>',unsafe_allow_html=True)
@@ -1232,6 +1441,8 @@ def page_folders():
         for idx,(fname,fdata) in enumerate(list(st.session_state.folders.items())):
             files=fdata["files"] if isinstance(fdata,dict) else fdata
             desc=fdata.get("desc","") if isinstance(fdata,dict) else ""
+            analysis_tags = fdata.get("analysis_tags", []) if isinstance(fdata, dict) else []
+
             with cols[idx%3]:
                 st.markdown(
                     f'<div class="card" style="text-align:center;">'
@@ -1242,29 +1453,51 @@ def page_folders():
                     f'</div>',
                     unsafe_allow_html=True
                 )
-                with st.expander("Abrir pasta"):
+                with st.expander(f"Abrir '{fname}'"):
                     if isinstance(fdata,dict) and fdata.get("notes"):
                         st.markdown(f'<div style="color:var(--t2);font-size:.81rem;margin-bottom:.5rem;">📝 {fdata["notes"]}</div>',unsafe_allow_html=True)
-                    for f in files:
-                        st.markdown(f'<div style="font-size:.81rem;padding:3px 0;color:var(--t2);border-bottom:1px solid var(--bdr);">📄 {f}</div>',unsafe_allow_html=True)
+
+                    st.markdown("<h4>Arquivos:</h4>", unsafe_allow_html=True)
+                    if files:
+                        for f in files:
+                            st.markdown(f'<div style="font-size:.81rem;padding:3px 0;color:var(--t2);border-bottom:1px solid var(--bdr);">📄 {f}</div>',unsafe_allow_html=True)
+                    else:
+                        st.markdown('<p style="color:var(--t3);font-size:.8rem;">Nenhum arquivo nesta pasta.</p>', unsafe_allow_html=True)
+
                     up=st.file_uploader("Adicionar arquivo",key=f"up_{fname}",label_visibility="collapsed")
                     if up:
                         lst=fdata["files"] if isinstance(fdata,dict) else fdata
                         if up.name not in lst:
                             lst.append(up.name)
-                        save_db()
-                        st.success("Adicionado!")
-                        st.rerun()
-                    note=st.text_input("Nota",key=f"note_{fname}",placeholder="Observação rápida…")
-                    if st.button("Salvar nota",key=f"sn_{fname}"):
-                        if isinstance(fdata,dict):
-                            fdata["notes"]=note
-                        save_db()
-                        st.success("Nota salva!")
-                if st.button(f"Excluir '{fname}'",key=f"df_{fname}"):
-                    del st.session_state.folders[fname]
-                    save_db()
-                    st.rerun()
+                        save_db(); st.success("Adicionado!"); st.rerun()
+
+                    st.markdown("<h4>Análise de Conteúdo:</h4>", unsafe_allow_html=True)
+                    if st.button("🔬 Analisar Conteúdo da Pasta", key=f"analyze_folder_{fname}"):
+                        if files:
+                            # Simula a leitura de um arquivo para análise
+                            # Em um cenário real, você leria o conteúdo do arquivo real
+                            sample_content = f"Este é um resumo do conteúdo de {files[0]}. Inclui informações sobre {random.choice(['genômica', 'IA', 'neurociência', 'física quântica'])} e {random.choice(['biologia celular', 'algoritmos', 'memória', 'astrofísica'])}."
+                            analysis_result = analyze_document_content(files[0], sample_content)
+
+                            if isinstance(fdata, dict):
+                                fdata["analysis_tags"] = analysis_result["tags"]
+                                fdata["notes"] = (fdata["notes"] + "\n\n" if fdata["notes"] else "") + f"Análise: {analysis_result['summary']}"
+                            save_db()
+                            record(analysis_result["tags"], 1.0) # Registra as tags para recomendações
+                            st.success("Análise de conteúdo concluída e tags adicionadas!")
+                            st.rerun()
+                        else:
+                            st.warning("Adicione arquivos à pasta antes de analisar o conteúdo.")
+
+                    if analysis_tags:
+                        st.markdown(f'<div style="font-size:.75rem;color:var(--t3);margin-top:.5rem;">Tags da análise: {tags_html(analysis_tags)}</div>', unsafe_allow_html=True)
+
+                    note=st.text_area("Notas da pasta",value=fdata.get("notes","") if isinstance(fdata,dict) else "",key=f"note_{fname}",height=80,placeholder="Observação rápida…")
+                    if st.button("💾 Salvar nota",key=f"sn_{fname}"):
+                        if isinstance(fdata,dict): fdata["notes"]=note
+                        save_db(); st.success("Nota salva!")
+                if st.button(f"🗑️ Excluir '{fname}'",key=f"df_{fname}"):
+                    del st.session_state.folders[fname]; save_db(); st.rerun()
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ─── ANALYTICS ──────────────────────────────
@@ -1441,7 +1674,7 @@ def page_analytics():
             with vc2[i]:
                 new_views.append(st.number_input(m,0,value=v,key=f"ev_{i+6}"))
         new_notes=st.text_area("Notas da pesquisa",value=d.get("notes",""),key="e_notes",height=80)
-        if st.button("Salvar métricas",key="btn_save_m"):
+        if st.button("💾 Salvar métricas",key="btn_save_m"):
             d.update({"h_index":new_h,"fator_impacto":new_fi,"aceitacao":new_ac,"views":new_views,"notes":new_notes})
             st.success("Métricas atualizadas!")
             st.rerun()
@@ -1601,7 +1834,7 @@ def page_chat():
         # Add contact by email
         st.markdown("<hr>",unsafe_allow_html=True)
         new_contact=st.text_input("",placeholder="Adicionar por e-mail…",key="new_ct",label_visibility="collapsed")
-        if st.button("Adicionar",key="btn_add_ct"):
+        if st.button("➕ Adicionar",key="btn_add_ct"):
             if isinstance(st.session_state.users, dict) and new_contact in st.session_state.users and new_contact!=st.session_state.current_user:
                 if new_contact not in st.session_state.chat_contacts:
                     st.session_state.chat_contacts.append(new_contact)
@@ -1694,7 +1927,7 @@ def page_settings():
         new_e=st.text_input("E-mail",value=email,key="cfg_e")
         new_a=st.text_input("Área de pesquisa",value=u.get("area",""),key="cfg_a")
         new_b=st.text_area("Biografia",value=u.get("bio",""),key="cfg_b",height=90,placeholder="Fale sobre sua pesquisa, instituição e interesses…")
-        if st.button("Salvar perfil",key="btn_sp"):
+        if st.button("💾 Salvar perfil",key="btn_sp"):
             if not isinstance(st.session_state.users, dict):
                 st.session_state.users = {}
             st.session_state.users[email]["name"]=new_n
@@ -1713,7 +1946,7 @@ def page_settings():
         op=st.text_input("Senha atual",type="password",key="op")
         np_=st.text_input("Nova senha",type="password",key="np_")
         np2=st.text_input("Confirmar",type="password",key="np2")
-        if st.button("Alterar senha",key="btn_cpw"):
+        if st.button("🔑 Alterar senha",key="btn_cpw"):
             if hp(op)!=u["password"]:
                 st.error("Senha atual incorreta.")
             elif np_!=np2:
@@ -1766,7 +1999,7 @@ def page_settings():
         with c2:
             st.selectbox("Estatísticas",["Público","Privado"],key="vs")
             st.selectbox("Rede de conhecimento",["Público","Só seguidores","Privado"],key="vn")
-        if st.button("Salvar privacidade",key="btn_priv"):
+        if st.button("💾 Salvar privacidade",key="btn_priv"):
             st.success("✓ Configurações de privacidade salvas!")
     st.markdown('</div>',unsafe_allow_html=True)
 
@@ -1791,7 +2024,7 @@ def main():
     {
         "feed":page_feed,
         "search":page_search,
-        "knowledge":page_knowledge,
+        "knowledge":page_knowledge, # Alterado para page_knowledge
         "folders":page_folders,
         "analytics":page_analytics,
         "img_search":page_img_search,
