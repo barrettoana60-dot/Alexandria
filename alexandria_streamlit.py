@@ -38,7 +38,8 @@ def save_db():
         prefs_serializable = {k: dict(v) for k,v in st.session_state.user_prefs.items()}
         with open(DB_FILE,"w",encoding="utf-8") as f:
             json.dump({"users":st.session_state.users,"feed_posts":st.session_state.feed_posts,
-                       "folders":st.session_state.folders,"user_prefs":prefs_serializable}, f,
+                       "folders":st.session_state.folders,"user_prefs":prefs_serializable,
+                       "saved_articles":st.session_state.saved_articles}, f, # Save saved_articles
                       ensure_ascii=False, indent=2)
     except: pass
 
@@ -353,55 +354,83 @@ def analyze_image_advanced(uploaded_file):
         if edge_intensity>30: shapes.append("Contornos Nítidos")
         if not shapes: shapes.append("Formas Irregulares")
 
-        if skin_pct>0.15:
-            cat="Tecido Biológico / Histologia"
-            desc=f"Tonalidade orgânica em {skin_pct*100:.0f}% da área. Possível histologia ou fotografia de organismo."
-            kw="histology tissue biology microscopy"
-        elif has_grid and edge_intensity>20:
-            cat="Cristalografia / Difração"
-            desc=f"Padrão periódico detectado via análise FFT. Difração de raios-X ou microscopia eletrônica."
-            kw="crystallography X-ray diffraction electron microscopy"
-        elif mg>165 and mr<130:
-            cat="Fluorescência Verde — GFP/FITC"
-            desc=f"Canal verde dominante (G={mg:.0f}). Marcador GFP, FITC ou fluorescência celular."
-            kw="GFP fluorescence microscopy cell biology"
-        elif mb>165 and mr<130:
-            cat="Fluorescência Azul — DAPI/Hoechst"
-            desc=f"Canal azul dominante (B={mb:.0f}). Núcleos celulares marcados com DAPI ou Hoechst."
-            kw="DAPI nuclear staining fluorescence microscopy"
-        elif mr>185 and mg<110 and mb<110:
-            cat="Coloração H&E (Histoquímica)"
-            desc=f"Vermelho dominante R={mr:.0f}. Hematoxilina & Eosina ou imuno-histoquímica."
-            kw="hematoxylin eosin histology staining pathology"
-        elif has_circular and edge_intensity>25:
-            cat="Estrutura Celular / Microscopia Óptica"
-            desc=f"Formas circulares com contornos definidos. Microscopia óptica ou eletrônica de células."
-            kw="cell microscopy organelle nucleus structure"
-        elif entropy>6.0:
-            cat="Imagem Multispectral / Satélite"
-            desc=f"Entropia alta ({entropy:.2f} bits). Imagem de satélite, mapa de calor ou composição multiespectral."
-            kw="satellite remote sensing multispectral imaging"
-        elif edge_intensity>38:
-            cat="Gráfico / Diagrama Científico"
-            desc=f"Bordas muito definidas (I={edge_intensity:.1f}). Gráfico, diagrama ou esquema técnico."
-            kw="scientific visualization data chart diagram"
-        elif sym>0.82:
-            cat="Estrutura Molecular / Simétrica"
-            desc=f"Alta simetria (score={sym:.3f}). Possível estrutura molecular, proteína ou padrão geométrico."
-            kw="molecular structure protein crystal symmetry"
+        # --- Enhanced Category and Object/Material Detection ---
+        cat_info = {"category": "Imagem Científica Geral", "description": "", "kw": "scientific image analysis", "material": "Desconhecido", "object_type": "Estrutura Genérica"}
+
+        if skin_pct > 0.15:
+            cat_info["category"] = "Tecido Biológico / Histologia"
+            cat_info["description"] = f"Tonalidade orgânica em {skin_pct*100:.0f}% da área. Possível histologia ou fotografia de organismo."
+            cat_info["kw"] = "histology tissue biology microscopy organic"
+            cat_info["material"] = "Tecido Biológico"
+            cat_info["object_type"] = "Células, Tecidos"
+        elif has_grid and edge_intensity > 20:
+            cat_info["category"] = "Cristalografia / Difração"
+            cat_info["description"] = f"Padrão periódico detectado via análise FFT. Sugere difração de raios-X ou microscopia eletrônica de materiais cristalinos."
+            cat_info["kw"] = "crystallography X-ray diffraction electron microscopy material science crystal lattice"
+            cat_info["material"] = "Material Cristalino"
+            cat_info["object_type"] = "Estrutura Atômica, Cristais"
+        elif mg > 165 and mr < 130:
+            cat_info["category"] = "Fluorescência Verde — GFP/FITC"
+            cat_info["description"] = f"Canal verde dominante (G={mg:.0f}). Indicativo de marcador GFP, FITC ou fluorescência celular."
+            cat_info["kw"] = "GFP fluorescence microscopy cell biology protein expression"
+            cat_info["material"] = "Proteínas Fluorescentes"
+            cat_info["object_type"] = "Células, Proteínas Marcadas"
+        elif mb > 165 and mr < 130:
+            cat_info["category"] = "Fluorescência Azul — DAPI/Hoechst"
+            cat_info["description"] = f"Canal azul dominante (B={mb:.0f}). Sugere núcleos celulares marcados com DAPI ou Hoechst."
+            cat_info["kw"] = "DAPI nuclear staining fluorescence microscopy DNA chromatin"
+            cat_info["material"] = "DNA/Cromatina"
+            cat_info["object_type"] = "Núcleos Celulares"
+        elif mr > 185 and mg < 110 and mb < 110:
+            cat_info["category"] = "Coloração H&E (Histoquímica)"
+            cat_info["description"] = f"Vermelho dominante R={mr:.0f}. Padrão de coloração Hematoxilina & Eosina ou imuno-histoquímica."
+            cat_info["kw"] = "hematoxylin eosin histology staining pathology tissue biopsy"
+            cat_info["material"] = "Tecido Corado"
+            cat_info["object_type"] = "Amostra Histopatológica"
+        elif has_circular and edge_intensity > 25:
+            cat_info["category"] = "Estrutura Celular / Microscopia Óptica"
+            cat_info["description"] = f"Formas circulares com contornos definidos. Comum em microscopia óptica ou eletrônica de células e organelas."
+            cat_info["kw"] = "cell microscopy organelle nucleus structure biology"
+            cat_info["material"] = "Componentes Celulares"
+            cat_info["object_type"] = "Células, Organelas"
+        elif entropy > 6.0:
+            cat_info["category"] = "Imagem Multispectral / Satélite"
+            cat_info["description"] = f"Entropia alta ({entropy:.2f} bits). Característica de imagem de satélite, mapa de calor ou composição multiespectral."
+            cat_info["kw"] = "satellite remote sensing multispectral imaging geospatial environmental"
+            cat_info["material"] = "Dados Geográficos/Ambientais"
+            cat_info["object_type"] = "Paisagem, Mapas, Dados Espaciais"
+        elif edge_intensity > 38:
+            cat_info["category"] = "Gráfico / Diagrama Científico"
+            cat_info["description"] = f"Bordas muito definidas (I={edge_intensity:.1f}). Sugere um gráfico, diagrama ou esquema técnico."
+            cat_info["kw"] = "scientific visualization data chart diagram technical illustration"
+            cat_info["material"] = "Dados Abstratos"
+            cat_info["object_type"] = "Gráfico, Fluxograma, Esquema"
+        elif sym > 0.82:
+            cat_info["category"] = "Estrutura Molecular / Simétrica"
+            cat_info["description"] = f"Alta simetria (score={sym:.3f}). Possível estrutura molecular, proteína ou padrão geométrico."
+            cat_info["kw"] = "molecular structure protein crystal symmetry chemistry biology"
+            cat_info["material"] = "Moléculas, Proteínas"
+            cat_info["object_type"] = "Estrutura Molecular, Geometria"
         else:
-            cat="Imagem Científica Geral"
-            desc=f"Temperatura {'quente' if warm else ('fria' if cool else 'neutra')}. Brilho médio {(mr+mg+mb)/3:.0f}/255."
-            kw="scientific image analysis"
+            cat_info["description"] = f"Temperatura {'quente' if warm else ('fria' if cool else 'neutra')}. Brilho médio {(mr+mg+mb)/3:.0f}/255."
+            cat_info["material"] = "Variado"
+            cat_info["object_type"] = "Imagem Científica"
 
         conf = min(97, 50+edge_intensity/2+entropy*3+sym*5)
-        return {"category":cat,"description":desc,"kw":kw,"confidence":round(conf,1),
-                "lines":{"direction":line_dir,"intensity":round(edge_intensity,2),"h":round(h_strength,2),"v":round(v_strength,2)},
-                "shapes":shapes,"symmetry":round(sym,3),"circular":has_circular,"grid":has_grid,
-                "color":{"r":round(mr,1),"g":round(mg,1),"b":round(mb,1),"warm":warm,"cool":cool},
-                "texture":{"entropy":round(entropy,3),"contrast":round(contrast,2),
-                           "complexity":"Alta" if entropy>5.5 else ("Média" if entropy>4 else "Baixa")},
-                "palette":palette,"size":orig,"skin_pct":round(skin_pct*100,1)}
+        return {
+            "category": cat_info["category"],
+            "description": cat_info["description"],
+            "kw": cat_info["kw"],
+            "material": cat_info["material"],
+            "object_type": cat_info["object_type"],
+            "confidence": round(conf,1),
+            "lines":{"direction":line_dir,"intensity":round(edge_intensity,2),"h":round(h_strength,2),"v":round(v_strength,2)},
+            "shapes":shapes,"symmetry":round(sym,3),"circular":has_circular,"grid":has_grid,
+            "color":{"r":round(mr,1),"g":round(mg,1),"b":round(mb,1),"warm":warm,"cool":cool},
+            "texture":{"entropy":round(entropy,3),"contrast":round(contrast,2),
+                       "complexity":"Alta" if entropy>5.5 else ("Média" if entropy>4 else "Baixa")},
+            "palette":palette,"size":orig,"skin_pct":round(skin_pct*100,1)
+        }
     except Exception as e:
         st.error(f"Erro ao analisar imagem: {e}")
         return None
@@ -534,13 +563,9 @@ def search_image_in_folders(rep):
     category_words = rep.get("category","").lower().split()
     all_kw = list(set(kw + category_words))
     matches = []
-    current_user_email = st.session_state.current_user
 
     for fname, fdata in st.session_state.folders.items():
         if not isinstance(fdata, dict): continue
-        # Consider only folders of the current user for this search
-        # (Assuming folders are implicitly owned by the current user for simplicity,
-        # or you'd need a 'owner_email' field in folder data)
 
         folder_tags = [t.lower() for t in fdata.get("analysis_tags", [])]
 
@@ -549,14 +574,14 @@ def search_image_in_folders(rep):
             if len(k) > 3 and any(k in t for t in folder_tags):
                 folder_score += 1
 
-        for f in fdata.get("files", []): # Corrected to use fdata.get("files", [])
+        for f in fdata.get("files", []):
             file_lower = f.lower()
             for k in all_kw:
                 if len(k) > 3 and k in file_lower:
-                    folder_score += 1 # Increment score for file match
+                    folder_score += 1
 
         if folder_score > 0:
-            matches.append({"folder": fname, "tags": fdata.get("analysis_tags",[]), "files": fdata.get("files",[]), "score": folder_score}) # Corrected to use fdata.get("files",[])
+            matches.append({"folder": fname, "tags": fdata.get("analysis_tags",[]), "files": fdata.get("files",[]), "score": folder_score})
 
     matches.sort(key=lambda x: -x["score"])
     return matches[:4]
@@ -680,7 +705,7 @@ def init():
     st.session_state.setdefault("followed",["carlos@nebula.ai","luana@nebula.ai"])
     st.session_state.setdefault("notifications",["Carlos curtiu sua pesquisa","Nova conexão detectada"])
     st.session_state.setdefault("scholar_cache",{})
-    st.session_state.setdefault("saved_articles",[])
+    st.session_state.setdefault("saved_articles",disk.get("saved_articles",[])) # Load saved_articles
     st.session_state.setdefault("img_analysis_result", None)
     st.session_state.setdefault("img_search_done", False)
 
@@ -939,7 +964,7 @@ def render_post(post, rec=False, show_profile_link=True, ctx="general"): # Added
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:.95rem;">
         <div style="flex-shrink:0;">{avh(ain,44,aphoto)}</div>
         <div style="flex:1;min-width:0;">
-          <div class="clickable-author" onclick="document.getElementById('{author_link_key}').click()">
+          <div class="clickable-author" id="{author_link_key}_html_wrapper">
             <span class="clickable-author-name">{post['author']}</span>
           </div>
           <div style="color:var(--t3);font-size:.70rem;margin-top:1px;">{post['area']} · {post['date']}</div>
@@ -953,16 +978,17 @@ def render_post(post, rec=False, show_profile_link=True, ctx="general"): # Added
 
     # Invisible button for author profile click
     if show_profile_link and aemail:
+        # Streamlit button needs to be rendered to be clickable
         if st.button("", key=author_link_key, help="Ver perfil completo", use_container_width=True):
             st.session_state.profile_view = aemail
             st.rerun()
-        # Overlay the invisible button over the author name area
+        # Overlay the invisible button over the author name area using CSS
         st.markdown(f"""
         <style>
             .stButton[data-testid="stButton"] > button[key="{author_link_key}"] {{
                 position: absolute;
                 top: 1.35rem; /* Adjust to align with author name */
-                left: 1.5rem; /* Adjust to align with author name */
+                left: 1.5rem; /* Adjust to align with avatar */
                 width: 200px; /* Make it wide enough to cover the name and area */
                 height: 50px; /* Make it tall enough */
                 z-index: 1; /* Ensure it's above the card content but below other buttons */
@@ -1056,21 +1082,21 @@ def page_search():
         tab_all,tab_neb,tab_web=st.tabs([f"  Todos ({len(neb_res)+len(web_res)})  ",f"  Nebula ({len(neb_res)})  ",f"  Internet ({len(web_res)})  "])
         with tab_neb:
             if neb_res:
-                for p in neb_res: render_search_post(p)
+                for p in neb_res: render_search_post(p, ctx="search_neb") # Pass ctx
             else: st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Nenhum resultado na Nebula.</div>',unsafe_allow_html=True)
         with tab_web:
             if src=="Só Nebula": st.info("Busca na internet desativada.")
             elif web_res:
-                for idx,a in enumerate(web_res): render_web_article(a,idx, ctx="web_tab") # Pass ctx="web_tab"
+                for idx,a in enumerate(web_res): render_web_article(a,idx, ctx="search_web_tab") # Pass ctx
             else: st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Sem resultados. Verifique conexão ou tente outros termos.</div>',unsafe_allow_html=True)
         with tab_all:
             if neb_res:
                 st.markdown('<div style="font-size:.68rem;color:var(--b300);font-weight:600;margin-bottom:.5rem;letter-spacing:.06em;text-transform:uppercase;">NEBULA</div>',unsafe_allow_html=True)
-                for p in neb_res: render_search_post(p)
+                for p in neb_res: render_search_post(p, ctx="search_all_neb") # Pass ctx
             if web_res:
                 if neb_res: st.markdown("<hr>",unsafe_allow_html=True)
                 st.markdown('<div style="font-size:.68rem;color:var(--cyanl);font-weight:600;margin-bottom:.5rem;letter-spacing:.06em;text-transform:uppercase;">BASE ACADÊMICA GLOBAL</div>',unsafe_allow_html=True)
-                for idx,a in enumerate(web_res): render_web_article(a,idx, ctx="all_tab") # Pass ctx="all_tab"
+                for idx,a in enumerate(web_res): render_web_article(a,idx, ctx="search_all_web") # Pass ctx
             if not neb_res and not web_res:
                 st.markdown('<div class="card" style="text-align:center;padding:3rem;"><div style="font-size:2.5rem;margin-bottom:1rem;">🔭</div><div style="color:var(--t3);">Nenhum resultado encontrado</div></div>',unsafe_allow_html=True)
     else:
@@ -1082,7 +1108,7 @@ def page_search():
                 with cols[i%5]: st.button(f"🔎 {t}",key=f"sug_{t}",use_container_width=True,on_click=_set_sq,kwargs={"v":t})
     st.markdown('</div>',unsafe_allow_html=True)
 
-def render_search_post(post):
+def render_search_post(post, ctx="search_results"): # Added ctx parameter
     aemail=post.get("author_email",""); aphoto=get_photo(aemail); ain=post.get("avatar","??")
     cm,cb=st.columns([8,1])
     with cm:
@@ -1090,7 +1116,7 @@ def render_search_post(post):
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:.55rem;">
             {avh(ain,30,aphoto)}
             <div style="flex:1;">
-              <div class="clickable-author" onclick="document.getElementById('search_author_link_{post['id']}').click()">
+              <div class="clickable-author" id="search_author_link_{ctx}_{post['id']}_html_wrapper">
                 <span class="clickable-author-name" style="font-size:.80rem;">{post['author']}</span>
               </div>
             <div style="font-size:.68rem;color:var(--t3);">{post['area']} · {post['date']} · {badge(post['status'])}</div></div>
@@ -1101,16 +1127,16 @@ def render_search_post(post):
           <div>{tags_html(post['tags'])}</div></div>""",unsafe_allow_html=True)
     with cb:
         st.markdown("<div style='height:18px'></div>",unsafe_allow_html=True)
-        if aemail and st.button("👤",key=f"vpa_s_{post['id']}",use_container_width=True,help="Ver perfil"):
+        if aemail and st.button("👤",key=f"vpa_s_{ctx}_{post['id']}",use_container_width=True,help="Ver perfil"): # Use ctx
             st.session_state.profile_view=aemail; st.rerun()
     # Invisible button for author profile click in search results
     if aemail:
-        if st.button("", key=f"search_author_link_{post['id']}", help="Ver perfil completo", use_container_width=True):
+        if st.button("", key=f"search_author_link_{ctx}_{post['id']}", help="Ver perfil completo", use_container_width=True): # Use ctx
             st.session_state.profile_view = aemail
             st.rerun()
         st.markdown(f"""
         <style>
-            .stButton[data-testid="stButton"] > button[key="search_author_link_{post['id']}"] {{
+            .stButton[data-testid="stButton"] > button[key="search_author_link_{ctx}_{post['id']}"] {{
                 position: absolute;
                 top: 1.1rem; /* Adjust to align with author name */
                 left: 1.3rem; /* Adjust to align with author name */
@@ -1119,7 +1145,7 @@ def render_search_post(post):
                 z-index: 1; /* Ensure it's above the card content but below other buttons */
                 opacity: 0; /* Make it invisible */
             }}
-            .stButton[data-testid="stButton"] > button[key="search_author_link_{post['id']}"]:hover {{
+            .stButton[data-testid="stButton"] > button[key="search_author_link_{ctx}_{post['id']}"]:hover {{
                 opacity: 0.1; /* Slightly visible on hover for debugging, remove in production */
                 background: rgba(90,158,240,.1); /* Visual feedback on hover */
             }}
@@ -1147,7 +1173,7 @@ def render_web_article(a, idx=0, ctx="general_web"): # Added ctx parameter
         if st.button("🔖 Salvo" if is_saved else "📌 Salvar",key=f"sv_w_{uid}"): # Use uid in key
             if is_saved: st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]; st.toast("Removido dos salvos")
             else: st.session_state.saved_articles.append(a); st.toast("Salvo!")
-            st.rerun()
+            save_db(); st.rerun()
     with cb:
         if st.button("📋 Citar APA",key=f"ct_w_{uid}"): # Use uid in key
             st.toast(f'{a["authors"]} ({a["year"]}). {a["title"]}. {a["source"]}.')
@@ -1534,6 +1560,16 @@ def page_img_search():
                     <span style="font-size:.70rem;color:var(--t3);">{rep['size'][0]}×{rep['size'][1]}px</span>
                     {"<span style='font-size:.70rem;color:var(--warn);'>Tecido detectado: "+str(rep['skin_pct'])+"%</span>" if rep['skin_pct']>10 else ""}
                   </div></div>""",unsafe_allow_html=True)
+
+                # --- New Object/Material Information ---
+                st.markdown(f"""<div class="pbox">
+                  <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.7rem;color:var(--cyanl);">✨ Informações do Objeto/Tema</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.79rem;color:var(--t2);margin-bottom:.7rem;">
+                    <div><span style="color:var(--t3);">Material/Composição:</span><br><strong>{rep['material']}</strong></div>
+                    <div><span style="color:var(--t3);">Tipo de Objeto/Estrutura:</span><br><strong>{rep['object_type']}</strong></div>
+                  </div>
+                </div>""",unsafe_allow_html=True)
+
                 c1,c2,c3=st.columns(3)
                 with c1: st.markdown(f'<div class="mbox"><div style="font-family:\'Syne\',sans-serif;font-size:1.2rem;font-weight:700;color:var(--b300);">{rep["texture"]["complexity"]}</div><div class="mlbl">Complexidade</div></div>',unsafe_allow_html=True)
                 with c2: st.markdown(f'<div class="mbox"><div style="font-family:\'Syne\',sans-serif;font-size:1.1rem;font-weight:700;color:var(--b300);">{"Alta" if rep["symmetry"]>0.78 else ("Média" if rep["symmetry"]>0.52 else "Baixa")}</div><div class="mlbl">Simetria ({rep["symmetry"]})</div></div>',unsafe_allow_html=True)
@@ -1693,7 +1729,7 @@ def page_settings():
     st.markdown('<div class="pw">',unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:1.4rem;">Perfil e Configurações</h1>',unsafe_allow_html=True)
     u=guser(); email=st.session_state.current_user; in_=ini(u.get("name","?")); photo=u.get("photo_b64")
-    tab_p,tab_s,tab_pr=st.tabs(["  Meu Perfil  ","  Segurança  ","  Privacidade  "])
+    tab_p,tab_s,tab_pr,tab_saved=st.tabs(["  Meu Perfil  ","  Segurança  ","  Privacidade  ","  Artigos Salvos  "]) # Added tab_saved
     with tab_p:
         # Profile hero
         photo_html=f"<img src='{photo}'/>" if photo else f'<span style="font-size:2.2rem;">{in_}</span>'
@@ -1757,6 +1793,34 @@ def page_settings():
             st.selectbox("Estatísticas",["Público","Privado"],key="vs")
             st.selectbox("Rede de conexões",["Público","Só seguidores","Privado"],key="vn")
         if st.button("Salvar privacidade",key="btn_priv"): st.success("✓ Configurações salvas!")
+
+    with tab_saved: # New tab for saved articles
+        st.markdown('<h3>Artigos Salvos</h3>', unsafe_allow_html=True)
+        if st.session_state.saved_articles:
+            for idx, a in enumerate(st.session_state.saved_articles):
+                src_color="#22d3ee" if a.get("origin")=="semantic" else "#a78bfa"
+                src_name="Semantic Scholar" if a.get("origin")=="semantic" else "CrossRef"
+                cite=f" · {a['citations']} cit." if a.get("citations") else ""
+                uid=re.sub(r'[^a-zA-Z0-9]','',f"saved_{a.get('doi','nodoi')}_{idx}")[:30]
+                st.markdown(f"""<div class="scard">
+                  <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:.38rem;">
+                    <div style="flex:1;font-family:'Syne',sans-serif;font-size:.92rem;font-weight:700;">{a['title']}</div>
+                    <span style="font-size:.63rem;color:{src_color};background:rgba(6,182,212,.07);border-radius:8px;padding:2px 8px;white-space:nowrap;flex-shrink:0;">{src_name}</span>
+                  </div>
+                  <div style="color:var(--t3);font-size:.70rem;margin-bottom:.4rem;">{a['authors']} · <em>{a['source']}</em> · {a['year']}{cite}</div>
+                  <div style="color:var(--t2);font-size:.80rem;line-height:1.6;">{a['abstract'][:250]}{"…" if len(a['abstract'])>250 else ""}.</div>
+                </div>""",unsafe_allow_html=True)
+                c1,c2=st.columns([1,2])
+                with c1:
+                    if st.button("🗑️ Remover", key=f"remove_saved_{uid}"):
+                        st.session_state.saved_articles = [s for s in st.session_state.saved_articles if s.get('doi') != a.get('doi')]
+                        save_db(); st.toast("Artigo removido dos salvos!"); st.rerun()
+                with c2:
+                    if a.get("url"):
+                        st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:var(--b300);font-size:.80rem;text-decoration:none;line-height:2.5;display:block;">Abrir Artigo ↗</a>',unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="card" style="text-align:center;padding:2rem;color:var(--t3);">Nenhum artigo salvo ainda. Salve artigos da busca para vê-los aqui.</div>',unsafe_allow_html=True)
+
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════
