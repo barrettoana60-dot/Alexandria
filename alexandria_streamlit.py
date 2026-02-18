@@ -357,7 +357,14 @@ def analyze_image_advanced(uploaded_file):
         # --- Enhanced Category and Object/Material Detection ---
         cat_info = {"category": "Imagem Científica Geral", "description": "", "kw": "scientific image analysis", "material": "Desconhecido", "object_type": "Estrutura Genérica"}
 
-        if skin_pct > 0.15:
+        # Prioritize specific detections
+        if skin_pct > 0.15 and mr > 185 and mg < 110 and mb < 110:
+            cat_info["category"] = "Coloração H&E (Histoquímica)"
+            cat_info["description"] = f"Vermelho dominante R={mr:.0f} e tonalidade orgânica em {skin_pct*100:.0f}% da área. Fortemente indicativo de Hematoxilina & Eosina ou imuno-histoquímica."
+            cat_info["kw"] = "hematoxylin eosin histology staining pathology tissue biopsy organic"
+            cat_info["material"] = "Tecido Biológico Corado"
+            cat_info["object_type"] = "Amostra Histopatológica"
+        elif skin_pct > 0.15:
             cat_info["category"] = "Tecido Biológico / Histologia"
             cat_info["description"] = f"Tonalidade orgânica em {skin_pct*100:.0f}% da área. Possível histologia ou fotografia de organismo."
             cat_info["kw"] = "histology tissue biology microscopy organic"
@@ -381,19 +388,13 @@ def analyze_image_advanced(uploaded_file):
             cat_info["kw"] = "DAPI nuclear staining fluorescence microscopy DNA chromatin"
             cat_info["material"] = "DNA/Cromatina"
             cat_info["object_type"] = "Núcleos Celulares"
-        elif mr > 185 and mg < 110 and mb < 110:
-            cat_info["category"] = "Coloração H&E (Histoquímica)"
-            cat_info["description"] = f"Vermelho dominante R={mr:.0f}. Padrão de coloração Hematoxilina & Eosina ou imuno-histoquímica."
-            cat_info["kw"] = "hematoxylin eosin histology staining pathology tissue biopsy"
-            cat_info["material"] = "Tecido Corado"
-            cat_info["object_type"] = "Amostra Histopatológica"
         elif has_circular and edge_intensity > 25:
             cat_info["category"] = "Estrutura Celular / Microscopia Óptica"
             cat_info["description"] = f"Formas circulares com contornos definidos. Comum em microscopia óptica ou eletrônica de células e organelas."
             cat_info["kw"] = "cell microscopy organelle nucleus structure biology"
             cat_info["material"] = "Componentes Celulares"
             cat_info["object_type"] = "Células, Organelas"
-        elif entropy > 6.0:
+        elif entropy > 6.0 and edge_intensity < 20: # High entropy, low edge intensity suggests complex texture, not sharp diagrams
             cat_info["category"] = "Imagem Multispectral / Satélite"
             cat_info["description"] = f"Entropia alta ({entropy:.2f} bits). Característica de imagem de satélite, mapa de calor ou composição multiespectral."
             cat_info["kw"] = "satellite remote sensing multispectral imaging geospatial environmental"
@@ -412,7 +413,9 @@ def analyze_image_advanced(uploaded_file):
             cat_info["material"] = "Moléculas, Proteínas"
             cat_info["object_type"] = "Estrutura Molecular, Geometria"
         else:
+            cat_info["category"] = "Imagem Científica Geral"
             cat_info["description"] = f"Temperatura {'quente' if warm else ('fria' if cool else 'neutra')}. Brilho médio {(mr+mg+mb)/3:.0f}/255."
+            cat_info["kw"] = "scientific image analysis research data"
             cat_info["material"] = "Variado"
             cat_info["object_type"] = "Imagem Científica"
 
