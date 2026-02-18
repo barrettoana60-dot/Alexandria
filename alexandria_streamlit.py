@@ -43,7 +43,7 @@ def img_to_b64(file_obj):
     try:
         file_obj.seek(0); data = file_obj.read()
         ext = getattr(file_obj, "name", "img.png").split(".")[-1].lower()
-        mime = {"jpg":"jpeg","jpeg":"jpeg","png":"png","gif":"gif","webp":"webp"}.get(ext, "png")
+        mime = {"jpg":"jpeg","jpeg":"png","png":"png","gif":"gif","webp":"webp","tiff":"tiff"}.get(ext, "png")
         return f"data:image/{mime};base64,{base64.b64encode(data).decode()}"
     except: return None
 
@@ -597,11 +597,11 @@ def area_to_tags(area):
 
 # ─── SEED DATA ────────────────────────────────────────────────────────────────
 SEED_POSTS = [
-    {"id":1,"author":"Carlos Mendez","author_email":"carlos@nebula.ai","avatar":"CM","area":"Neurociência","title":"Efeitos da Privação de Sono na Plasticidade Sináptica","abstract":"Investigamos como 24h de privação de sono afetam espinhas dendríticas em ratos Wistar, com redução de 34% na plasticidade hipocampal. Nossos dados sugerem janela crítica nas primeiras 6h de recuperação.","tags":["neurociência","sono","memória","hipocampo"],"likes":47,"comments":[{"user":"Maria Silva","text":"Excelente metodologia!"},{"user":"João Lima","text":"Quais os critérios de exclusão?"}],"status":"Em andamento","date":"2026-02-10","liked_by":[],"saved_by":[],"connections":["sono","memória","hipocampo"]},
-    {"id":2,"author":"Luana Freitas","author_email":"luana@nebula.ai","avatar":"LF","area":"Biomedicina","title":"CRISPR-Cas9 no Tratamento de Distrofias Musculares Raras","abstract":"Desenvolvemos vetor AAV9 modificado para entrega precisa de CRISPR no gene DMD, com eficiência de 78% em modelos murinos mdx. Publicação em Cell prevista para Q2 2026.","tags":["CRISPR","gene terapia","músculo","AAV9"],"likes":93,"comments":[{"user":"Ana","text":"Próximos passos para trials humanos?"}],"status":"Publicado","date":"2026-01-28","liked_by":[],"saved_by":[],"connections":["genômica","distrofia"]},
-    {"id":3,"author":"Rafael Souza","author_email":"rafael@nebula.ai","avatar":"RS","area":"Computação","title":"Redes Neurais Quântico-Clássicas para Otimização Combinatória","abstract":"Arquitetura híbrida variacional combinando qubits supercondutores com camadas densas para resolver TSP com 40% menos iterações que métodos clássicos.","tags":["quantum ML","otimização","TSP","computação quântica"],"likes":201,"comments":[],"status":"Em andamento","date":"2026-02-15","liked_by":[],"saved_by":[],"connections":["computação quântica","machine learning"]},
-    {"id":4,"author":"Priya Nair","author_email":"priya@nebula.ai","avatar":"PN","area":"Astrofísica","title":"Detecção de Matéria Escura via Lentes Gravitacionais Fracas","abstract":"Mapeamento de matéria escura com precisão sub-arcminuto usando 100M de galáxias do DES Y3. Tensão com ΛCDM em escalas < 1 Mpc.","tags":["astrofísica","matéria escura","cosmologia"],"likes":312,"comments":[],"status":"Publicado","date":"2026-02-01","liked_by":[],"saved_by":[],"connections":["cosmologia","lentes gravitacionais"]},
-    {"id":5,"author":"João Lima","author_email":"joao@nebula.ai","avatar":"JL","area":"Psicologia","title":"Viés de Confirmação em Decisões Médicas Assistidas por IA","abstract":"Estudo duplo-cego com 240 médicos revelou que sistemas de IA mal calibrados amplificam vieses cognitivos em 22% dos casos clínicos analisados.","tags":["psicologia","IA","cognição","medicina"],"likes":78,"comments":[],"status":"Publicado","date":"2026-02-08","liked_by":[],"saved_by":[],"connections":["cognição","IA"]},
+    {"id":1,"author":"Carlos Mendez","author_email":"carlos@nebula.ai","avatar":"CM","area":"Neurociência","title":"Efeitos da Privação de Sono na Plasticidade Sináptica","abstract":"Investigamos como 24h de privação de sono afetam espinhas dendríticas em ratos Wistar, com redução de 34% na plasticidade hipocampal. Nossos dados sugerem janela crítica nas primeiras 6h de recuperação.","tags":["neurociência","sono","memória","hipocampo"],"likes":47,"comments":[{"user":"Maria Silva","text":"Excelente metodologia!"},{"user":"João Lima","text":"Quais os critérios de exclusão?"}],"status":"Em andamento","date":"2026-02-10","liked_by":[],"saved_by_posts":[],"connections":["sono","memória","hipocampo"]},
+    {"id":2,"author":"Luana Freitas","author_email":"luana@nebula.ai","avatar":"LF","area":"Biomedicina","title":"CRISPR-Cas9 no Tratamento de Distrofias Musculares Raras","abstract":"Desenvolvemos vetor AAV9 modificado para entrega precisa de CRISPR no gene DMD, com eficiência de 78% em modelos murinos mdx. Publicação em Cell prevista para Q2 2026.","tags":["CRISPR","gene terapia","músculo","AAV9"],"likes":93,"comments":[{"user":"Ana","text":"Próximos passos para trials humanos?"}],"status":"Publicado","date":"2026-01-28","liked_by":[],"saved_by_posts":[],"connections":["genômica","distrofia"]},
+    {"id":3,"author":"Rafael Souza","author_email":"rafael@nebula.ai","avatar":"RS","area":"Computação","title":"Redes Neurais Quântico-Clássicas para Otimização Combinatória","abstract":"Arquitetura híbrida variacional combinando qubits supercondutores com camadas densas para resolver TSP com 40% menos iterações que métodos clássicos.","tags":["quantum ML","otimização","TSP","computação quântica"],"likes":201,"comments":[],"status":"Em andamento","date":"2026-02-15","liked_by":[],"saved_by_posts":[],"connections":["computação quântica","machine learning"]},
+    {"id":4,"author":"Priya Nair","author_email":"priya@nebula.ai","avatar":"PN","area":"Astrofísica","title":"Detecção de Matéria Escura via Lentes Gravitacionais Fracas","abstract":"Mapeamento de matéria escura com precisão sub-arcminuto usando 100M de galáxias do DES Y3. Tensão com ΛCDM em escalas < 1 Mpc.","tags":["astrofísica","matéria escura","cosmologia"],"likes":312,"comments":[],"status":"Publicado","date":"2026-02-01","liked_by":[],"saved_by_posts":[],"connections":["cosmologia","lentes gravitacionais"]},
+    {"id":5,"author":"João Lima","author_email":"joao@nebula.ai","avatar":"JL","area":"Psicologia","title":"Viés de Confirmação em Decisões Médicas Assistidas por IA","abstract":"Estudo duplo-cego com 240 médicos revelou que sistemas de IA mal calibrados amplificam vieses cognitivos em 22% dos casos clínicos analisados.","tags":["psicologia","IA","cognição","medicina"],"likes":78,"comments":[],"status":"Publicado","date":"2026-02-08","liked_by":[],"saved_by_posts":[],"connections":["cognição","IA"]},
 ]
 SEED_USERS = {
     "demo@nebula.ai":{"name":"Ana Pesquisadora","password":hp("demo123"),"bio":"Pesquisadora em IA e Ciências Cognitivas | UFMG","area":"Inteligência Artificial","followers":128,"following":47,"verified":True,"2fa_enabled":False,"photo_b64":None},
@@ -644,6 +644,7 @@ def init():
     st.session_state.setdefault("stats_data", {"views":[12,34,28,67,89,110,95,134,160,178,201,230],"citations":[0,1,1,2,3,4,4,6,7,8,10,12],"months":["Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez","Jan","Fev"],"h_index":4,"fator_impacto":3.8,"notes":""})
     st.session_state.setdefault("scholar_cache", {})
     st.session_state.setdefault("img_connections", [])
+    st.session_state.setdefault("saved_web_articles", []) # Novo para salvar artigos da web
 
 init()
 
@@ -817,83 +818,42 @@ def page_feed():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:1.2rem;">Feed de Pesquisas</h1>', unsafe_allow_html=True)
     email = st.session_state.current_user; u = guser()
-    col_main, col_side = st.columns([2.2, 0.9])
 
-    with col_main:
-        recs = get_recs(email)
-        if recs:
-            st.markdown('<span class="badge-rec">✦ RECOMENDADO PARA VOCÊ</span><br>', unsafe_allow_html=True)
-            for p in recs: render_post(p, rec=True)
-            st.markdown("<hr>", unsafe_allow_html=True)
-        with st.expander("➕ Publicar nova pesquisa"):
-            np_t = st.text_input("Título da pesquisa", key="np_t")
-            np_ab = st.text_area("Resumo / Abstract", key="np_ab", height=90)
-            np_tg = st.text_input("Tags (separadas por vírgula)", key="np_tg")
-            np_st = st.selectbox("Status", ["Em andamento","Publicado","Concluído"], key="np_st")
-            if st.button("🚀 Publicar", key="btn_pub"):
-                if np_t and np_ab:
-                    nm = u.get("name","Usuário"); tags = [t.strip() for t in np_tg.split(",") if t.strip()]
-                    st.session_state.feed_posts.insert(0,{"id":len(st.session_state.feed_posts)+1,"author":nm,"author_email":email,"avatar":ini(nm),"area":u.get("area",""),"title":np_t,"abstract":np_ab,"tags":tags,"likes":0,"comments":[],"status":np_st,"date":datetime.now().strftime("%Y-%m-%d"),"liked_by":[],"saved_by":[],"connections":tags[:3]})
-                    record(tags, 2.0); save_db(); st.success("✓ Publicado!"); st.rerun()
-        st.markdown("<br>", unsafe_allow_html=True)
-        ff = st.selectbox("Filtrar", ["Todos","Seguidos","Salvos"], key="ff", label_visibility="collapsed")
-        posts = st.session_state.feed_posts
-        if ff == "Seguidos": posts = [p for p in posts if p.get("author_email") in st.session_state.followed]
-        elif ff == "Salvos": posts = [p for p in posts if email in p.get("saved_by",[])]
-        for p in posts: render_post(p)
+    recs = get_recs(email)
+    if recs:
+        st.markdown('<span class="badge-rec">✦ RECOMENDADO PARA VOCÊ</span><br>', unsafe_allow_html=True)
+        for p in recs: render_post(p, rec=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
+    with st.expander("➕ Publicar nova pesquisa"):
+        np_t = st.text_input("Título da pesquisa", key="np_t")
+        np_ab = st.text_area("Resumo / Abstract", key="np_ab", height=90)
+        np_tg = st.text_input("Tags (separadas por vírgula)", key="np_tg")
+        np_st = st.selectbox("Status", ["Em andamento","Publicado","Concluído"], key="np_st")
+        if st.button("🚀 Publicar", key="btn_pub"):
+            if np_t and np_ab:
+                nm = u.get("name","Usuário"); tags = [t.strip() for t in np_tg.split(",") if t.strip()]
+                st.session_state.feed_posts.insert(0,{"id":len(st.session_state.feed_posts)+1,"author":nm,"author_email":email,"avatar":ini(nm),"area":u.get("area",""),"title":np_t,"abstract":np_ab,"tags":tags,"likes":0,"comments":[],"status":np_st,"date":datetime.now().strftime("%Y-%m-%d"),"liked_by":[],"saved_by_posts":[],"connections":tags[:3]})
+                record(tags, 2.0); save_db(); st.success("✓ Publicado!"); st.rerun()
+    st.markdown("<br>", unsafe_allow_html=True)
+    ff = st.selectbox("Filtrar", ["Todos","Seguidos","Salvos"], key="ff", label_visibility="collapsed")
+    posts = st.session_state.feed_posts
+    if ff == "Seguidos": posts = [p for p in posts if p.get("author_email") in st.session_state.followed]
+    elif ff == "Salvos": posts = [p for p in posts if email in p.get("saved_by_posts",[])]
+    for p in posts: render_post(p)
 
-    with col_side:
-        sq = st.text_input("", placeholder="🔍 Pesquisadores…", key="ppl_s", label_visibility="collapsed")
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.9rem;">Pesquisadores</div>', unsafe_allow_html=True)
-        users = st.session_state.users if isinstance(st.session_state.users, dict) else {}
-        shown = 0
-        for ue, ud in list(users.items()):
-            if ue == email: continue
-            uname = ud.get("name","?")
-            if sq and sq.lower() not in uname.lower() and sq.lower() not in ud.get("area","").lower(): continue
-            if shown >= 6: break
-            shown += 1
-            uin = ini(uname); uphoto = ud.get("photo_b64"); is_fol = ue in st.session_state.followed
-
-            # Whole card is clickable to view profile
-            st.markdown(f"""<div class="res-card" id="rc_{ue}">
-              <div style="display:flex;align-items:center;gap:8px;">
-                {avh(uin, 28, uphoto)}
-                <div style="flex:1;min-width:0;">
-                  <div style="font-size:.80rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{uname}</div>
-                  <div style="font-size:.68rem;color:var(--t3);">{ud.get("area","")[:22]}</div>
-                </div>
-                <span style="font-size:.72rem;color:{'var(--ok)' if is_fol else 'var(--t3)'};">{"✓" if is_fol else ""}</span>
-              </div></div>""", unsafe_allow_html=True)
-
-            c_view, c_fol = st.columns([3,1])
-            with c_view:
-                if st.button(f"Ver perfil", key=f"vps_{ue}", use_container_width=True):
-                    st.session_state.profile_view = ue; st.rerun()
-            with c_fol:
-                if st.button("✓" if is_fol else "+", key=f"fol_{ue}", use_container_width=True):
-                    if is_fol: st.session_state.followed.remove(ue); ud["followers"] = max(0,ud.get("followers",0)-1)
-                    else: st.session_state.followed.append(ue); ud["followers"] = ud.get("followers",0)+1
-                    save_db(); st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown('<div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.8rem;">Áreas em Alta</div>', unsafe_allow_html=True)
-        for area, cnt in [("Quantum ML",42),("CRISPR 2026",38),("Neuroplasticidade",31),("LLMs Científicos",27)]:
-            pct = cnt/42
-            st.markdown(f'<div style="margin-bottom:.7rem;"><div style="display:flex;justify-content:space-between;font-size:.77rem;margin-bottom:3px;"><span style="color:var(--t2);">{area}</span><span style="color:var(--b300);font-weight:600;">{cnt}</span></div><div style="height:3px;background:var(--gbd);border-radius:2px;"><div style="height:100%;width:{int(pct*100)}%;background:linear-gradient(90deg,var(--b500),var(--cyan));border-radius:2px;"></div></div></div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_post(post, rec=False, show_profile_link=True):
     email = st.session_state.current_user
-    liked = email in post["liked_by"]; saved = email in post.get("saved_by",[])
+    liked = email in post["liked_by"]; saved = email in post.get("saved_by_posts",[])
     aemail = post.get("author_email",""); aphoto = get_photo(aemail); ain = post.get("avatar","??")
     rec_b = '<span class="badge-rec" style="margin-left:6px;">Rec.</span>' if rec else ""
     first_name = post['author'].split()[0] if post.get('author') else "Autor"
 
-    st.markdown(f"""<div class="card">
+    # Make the entire card clickable to view profile
+    # Using a custom HTML button to capture clicks on the card area
+    card_html = f"""
+    <div class="card res-card" onclick="document.getElementById('view_profile_btn_{post['id']}').click()">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:.9rem;">
         {avh(ain, 42, aphoto)}
         <div style="flex:1;">
@@ -905,9 +865,18 @@ def render_post(post, rec=False, show_profile_link=True):
       <h3 style="margin-bottom:.45rem;font-size:1rem;line-height:1.45;">{post['title']}</h3>
       <p style="color:var(--t2);font-size:.84rem;line-height:1.68;margin-bottom:.8rem;">{post['abstract']}</p>
       <div>{tags_html(post['tags'])}</div>
-    </div>""", unsafe_allow_html=True)
+    </div>
+    """
+    st.markdown(card_html, unsafe_allow_html=True)
 
-    c1,c2,c3,c4,c5,_ = st.columns([1,1,.8,.8,1.4,1])
+    # Hidden button to trigger Streamlit callback
+    if show_profile_link and aemail:
+        if st.button(" ", key=f"view_profile_btn_{post['id']}", help="Ver perfil", use_container_width=False):
+            st.session_state.profile_view = aemail; st.rerun()
+        st.markdown(f'<style>div[data-testid="stButton"] > button[key="view_profile_btn_{post["id"]}"] {{ display: none; }}</style>', unsafe_allow_html=True)
+
+
+    c1,c2,c3,c4,_ = st.columns([1,1,.8,.8,3]) # Adjusted columns, removed c5
     with c1:
         if st.button(f"{'❤' if liked else '♡'} {post['likes']}", key=f"lk_{post['id']}"):
             if liked: post["liked_by"].remove(email); post["likes"] -= 1
@@ -917,17 +886,14 @@ def render_post(post, rec=False, show_profile_link=True):
         if st.button(f"💬 {len(post['comments'])}", key=f"cm_t_{post['id']}"):
             k = f"sc_{post['id']}"; st.session_state[k] = not st.session_state.get(k,False); st.rerun()
     with c3:
-        if st.button("🔖" if saved else "📌", key=f"sv_{post['id']}"):
-            if saved: post["saved_by"].remove(email)
-            else: post["saved_by"].append(email)
+        if st.button("🔖" if saved else "📌", key=f"sv_post_{post['id']}"): # Changed key to sv_post_
+            if saved: post["saved_by_posts"].remove(email)
+            else: post["saved_by_posts"].append(email)
             save_db(); st.rerun()
     with c4:
         if st.button("↗", key=f"sh_{post['id']}"):
             k = f"sopen_{post['id']}"; st.session_state[k] = not st.session_state.get(k,False); st.rerun()
-    with c5:
-        if show_profile_link and aemail:
-            if st.button(f"👤 {first_name}", key=f"vpa_{post['id']}"):
-                st.session_state.profile_view = aemail; st.rerun()
+
     if st.session_state.get(f"sopen_{post['id']}", False):
         url = f"https://nebula.ai/post/{post['id']}"
         st.markdown(f'<div class="card" style="padding:1rem;"><div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.86rem;margin-bottom:.5rem;">Compartilhar</div><div style="display:flex;gap:.5rem;flex-wrap:wrap;"><a href="https://twitter.com/intent/tweet?text={post["title"][:60]}&url={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.5rem .8rem;font-size:.73rem;color:var(--t2);">𝕏 Twitter</div></a><a href="https://www.linkedin.com/sharing/share-offsite/?url={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.5rem .8rem;font-size:.73rem;color:var(--t2);">in LinkedIn</div></a><a href="https://wa.me/?text={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.5rem .8rem;font-size:.73rem;color:var(--t2);">📱 WhatsApp</div></a></div></div>', unsafe_allow_html=True)
@@ -1021,8 +987,10 @@ def render_web_article(a, idx=0):
     src_color = "#22d3ee" if a.get("origin")=="semantic" else "#a78bfa"
     src_name = "Semantic Scholar" if a.get("origin")=="semantic" else "CrossRef"
     cite = f" · {a['citations']} cit." if a.get("citations") else ""
-    doi_safe = re.sub(r'[^a-zA-Z0-9]', '', str(a.get("doi",""))[:12])
-    uid = f"{idx}_{doi_safe}"
+    # Use a combinação de DOI e índice para uma chave mais robusta
+    unique_id = f"{a.get('doi', 'no_doi')}_{idx}"
+    uid = re.sub(r'[^a-zA-Z0-9]', '', unique_id)[:20] # Sanitiza para chave Streamlit
+
     st.markdown(f"""<div class="scard">
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:.35rem;">
         <div style="flex:1;font-family:'Syne',sans-serif;font-size:.91rem;font-weight:700;">{a['title']}</div>
@@ -1032,13 +1000,16 @@ def render_web_article(a, idx=0):
       <div style="color:var(--t2);font-size:.81rem;line-height:1.6;margin-bottom:.4rem;">{a['abstract'][:220]}…</div></div>""", unsafe_allow_html=True)
     ca,cb,cc = st.columns([1,1,1])
     with ca:
-        if st.button("📌 Salvar", key=f"sv_w_{uid}"):
-            if st.session_state.folders:
-                first = list(st.session_state.folders.keys())[0]; fn = f"{a['title'][:28]}.pdf"
-                fd = st.session_state.folders[first]; lst = fd["files"] if isinstance(fd,dict) else fd
-                if fn not in lst: lst.append(fn)
-                save_db(); st.toast(f"Salvo em '{first}'")
-            else: st.toast("Crie uma pasta primeiro!")
+        # Check if already saved
+        is_saved = any(item.get('doi') == a.get('doi') for item in st.session_state.saved_web_articles)
+        if st.button("🔖 Salvo" if is_saved else "📌 Salvar", key=f"sv_w_{uid}"):
+            if is_saved:
+                st.session_state.saved_web_articles = [item for item in st.session_state.saved_web_articles if item.get('doi') != a.get('doi')]
+                st.toast("Artigo removido dos salvos!")
+            else:
+                st.session_state.saved_web_articles.append(a)
+                st.toast("Artigo salvo!")
+            save_db(); st.rerun()
     with cb:
         if st.button("📋 Citar", key=f"ct_w_{uid}"):
             st.toast(f'{a["authors"]} ({a["year"]}). {a["title"]}. {a["source"]}.')
@@ -1103,7 +1074,7 @@ def page_knowledge():
         with col: st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>', unsafe_allow_html=True)
 
     st.markdown("<hr>", unsafe_allow_html=True)
-    tab_map, tab_my = st.tabs(["  Mapa de Conexões  ","  Minhas Conexões  "])
+    tab_map, tab_my, tab_all_researchers = st.tabs(["  Mapa de Conexões  ","  Minhas Conexões  ", "  Todos Pesquisadores  "])
     with tab_map:
         if edges:
             for e1,e2,common in edges[:20]:
@@ -1124,6 +1095,42 @@ def page_knowledge():
                 with cm:
                     if st.button("💬 Chat", key=f"kn_ch_{other_email}"): st.session_state.active_chat=other_email; st.session_state.page="chat"; st.rerun()
         else: st.markdown('<div class="card" style="text-align:center;padding:2rem;color:var(--t3);">Nenhuma conexão ainda. Publique pesquisas com tags!</div>', unsafe_allow_html=True)
+    with tab_all_researchers:
+        st.markdown('<h3>Todos os Pesquisadores</h3>', unsafe_allow_html=True)
+        sq = st.text_input("🔍 Buscar pesquisadores...", key="all_ppl_s", label_visibility="collapsed")
+        users_list = [ud for ue, ud in users.items() if ue != email]
+        if sq:
+            users_list = [ud for ud in users_list if sq.lower() in ud.get("name","").lower() or sq.lower() in ud.get("area","").lower()]
+
+        if users_list:
+            for ud in users_list:
+                ue = next(k for k, v in users.items() if v == ud) # Get email back
+                uname = ud.get("name","?"); uin = ini(uname); uphoto = ud.get("photo_b64"); is_fol = ue in st.session_state.followed
+                st.markdown(f"""<div class="res-card" style="margin-bottom:10px;">
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    {avh(uin, 38, uphoto)}
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{uname}</div>
+                      <div style="font-size:.72rem;color:var(--t3);">{ud.get("area","")}</div>
+                    </div>
+                    <span style="font-size:.72rem;color:{'var(--ok)' if is_fol else 'var(--t3)'};">{"✓ Seguindo" if is_fol else ""}</span>
+                  </div></div>""", unsafe_allow_html=True)
+                c_view, c_fol, c_msg = st.columns([1,1,1])
+                with c_view:
+                    if st.button("👤 Perfil", key=f"all_vp_{ue}", use_container_width=True):
+                        st.session_state.profile_view = ue; st.rerun()
+                with c_fol:
+                    if st.button("✓ Seguindo" if is_fol else "➕ Seguir", key=f"all_fol_{ue}", use_container_width=True):
+                        if is_fol: st.session_state.followed.remove(ue); ud["followers"] = max(0,ud.get("followers",0)-1)
+                        else: st.session_state.followed.append(ue); ud["followers"] = ud.get("followers",0)+1
+                        save_db(); st.rerun()
+                with c_msg:
+                    if st.button("💬 Chat", key=f"all_chat_{ue}", use_container_width=True):
+                        if ue not in st.session_state.chat_messages: st.session_state.chat_messages[ue] = []
+                        st.session_state.active_chat = ue; st.session_state.page = "chat"; st.rerun()
+        else:
+            st.markdown('<div class="card" style="text-align:center;padding:2rem;color:var(--t3);">Nenhum pesquisador encontrado.</div>', unsafe_allow_html=True)
+
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── FOLDERS ──────────────────────────────────────────────────────────────────
@@ -1425,229 +1432,5 @@ def page_img_search():
                   <div style="font-size:.69rem;color:var(--t3);white-space:nowrap;">H: {int(h_val*100)}%</div>
                 </div>
                 <div style="display:flex;gap:8px;margin-bottom:.8rem;">
-                  <div style="flex:1;background:var(--gbd);border-radius:4px;height:8px;position:relative;">
-                    <div style="height:100%;width:{int(v_val*100)}%;background:linear-gradient(90deg,var(--b700),var(--cyanl));border-radius:4px;"></div>
-                  </div>
-                  <div style="font-size:.69rem;color:var(--t3);white-space:nowrap;">V: {int(v_val*100)}%</div>
-                </div>""", unsafe_allow_html=True)
+                  <div style="flex:1;background:var(--gbd);border-
 
-                # ── SHAPE ANALYSIS ──
-                sh = rep['shapes']
-                shapes_html = "".join(f'<span class="tag" style="background:rgba(6,182,212,.12);border-color:rgba(6,182,212,.22);color:var(--cyanl);">{s}</span>' for s in sh['detected'])
-                st.markdown(f"""<div class="pattern-box">
-                  <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.6rem;color:var(--cyanl);">⬡ Formas e Estruturas</div>
-                  <div style="margin-bottom:.6rem;">{shapes_html}</div>
-                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:.78rem;color:var(--t2);">
-                    <div><span style="color:var(--t3);">Simetria:</span><br><strong>{sh['symmetry']:.3f}</strong></div>
-                    <div><span style="color:var(--t3);">Circular:</span><br><strong>{'Sim' if sh['circular'] else 'Não'}</strong></div>
-                    <div><span style="color:var(--t3);">Grade/Repetição:</span><br><strong>{'Sim' if sh['grid'] else 'Não'}</strong></div>
-                  </div></div>""", unsafe_allow_html=True)
-
-                # ── COLOR ANALYSIS ──
-                r_v, g_v, b_v = rep['color']['mean_rgb']
-                hex_col = "#{:02x}{:02x}{:02x}".format(int(r_v),int(g_v),int(b_v))
-                pal_html = "".join(f'<div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><div style="width:30px;height:30px;border-radius:7px;background:rgb{str(p)};border:1px solid rgba(255,255,255,.09);"></div><div style="font-size:.58rem;color:var(--t3);">#{("{:02x}{:02x}{:02x}".format(*p)).upper()}</div></div>' for p in rep["palette"][:6])
-                st.markdown(f"""<div class="abox">
-                  <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.6rem;">🎨 Análise de Cor</div>
-                  <div style="display:flex;gap:12px;align-items:center;margin-bottom:.7rem;">
-                    <div style="width:42px;height:42px;border-radius:9px;background:{hex_col};border:1.5px solid var(--gbdl);flex-shrink:0;"></div>
-                    <div style="font-size:.79rem;color:var(--t2);">
-                      RGB: <strong>({int(r_v)},{int(g_v)},{int(b_v)})</strong> · Hex: <strong>{hex_col.upper()}</strong><br>
-                      Canal dom.: <strong>{rep['color']['dominant']}</strong> · Temperatura: <strong>{"Quente 🔴" if rep['color']['warm'] else ("Fria 🔵" if rep['color']['cool'] else "Neutra ⚪")}</strong><br>
-                      Complexidade: <strong>{rep['texture']['complexity']}</strong> · Contraste: <strong>{rep['texture']['contrast']:.1f}</strong>
-                    </div>
-                  </div>
-                  <div style="font-size:.70rem;color:var(--t3);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em;">Paleta dominante</div>
-                  <div style="display:flex;gap:6px;flex-wrap:wrap;">{pal_html}</div>
-                </div>""", unsafe_allow_html=True)
-
-                # ── TEXTURE CHART ──
-                fig_tex = go.Figure()
-                tex = rep['texture']
-                categories = ['Entropia', 'Contraste', 'Intensidade Bordas', 'Simetria']
-                max_vals = [8, 128, 80, 1]
-                values = [tex['entropy'], tex['contrast'], rep['lines']['intensity'], rep['shapes']['symmetry']]
-                norm_vals = [min(v/m, 1)*100 for v,m in zip(values, max_vals)]
-                fig_tex.add_trace(go.Bar(
-                    x=categories, y=norm_vals,
-                    marker=dict(color=norm_vals, colorscale=[[0,"#1a3a6b"],[0.5,"#2272c3"],[1,"#22d3ee"]],
-                                line=dict(color="rgba(96,165,245,.15)",width=1)),
-                    text=[f"{v:.0f}%" for v in norm_vals], textposition="outside", textfont=dict(color="#8ba8cc",size=9)
-                ))
-                fig_tex.update_layout(title=dict(text="Perfil de Textura (normalizado)",font=dict(color="#e0e8ff",family="Syne",size=12)),
-                                      height=200, plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-                                      font=dict(color="#3d5a80",family="DM Sans"),
-                                      margin=dict(l=10,r=10,t=35,b=10),
-                                      xaxis=dict(showgrid=False,color="#3d5a80"),
-                                      yaxis=dict(showgrid=True,gridcolor="rgba(59,141,224,.06)",color="#3d5a80",range=[0,120]))
-                st.plotly_chart(fig_tex, use_container_width=True)
-
-                # ── CONNECTIONS: Similar posts in Nebula ──
-                st.markdown('<h3>🔗 Pesquisas Similares na Nebula</h3>', unsafe_allow_html=True)
-                cat_l = rep['category'].lower()
-                kw = rep.get('search_kw','')
-                related = []
-                for p in st.session_state.feed_posts:
-                    score = sum(1 for t in p.get("tags",[]) if t.lower() in cat_l or any(w.lower() in t.lower() for w in kw.split()))
-                    if score > 0: related.append((score,p))
-                related.sort(key=lambda x:-x[0])
-                if related:
-                    for _,p in related[:2]:
-                        aemail = p.get("author_email",""); aphoto = get_photo(aemail); ain = p.get("avatar","??")
-                        st.markdown(f"""<div class="scard">
-                          <div style="display:flex;align-items:center;gap:8px;margin-bottom:.5rem;">
-                            {avh(ain,28,aphoto)}
-                            <div><div><strong style="font-size:.78rem;font-weight:600;">{p['author']}</strong></div>
-                            <div style="font-size:.67rem;color:var(--t3);">{p['area']}</div></div>
-                          </div>
-                          <div style="font-family:'Syne',sans-serif;font-size:.88rem;font-weight:700;margin-bottom:.25rem;">{p['title'][:70]}</div>
-                          <div>{tags_html(p['tags'][:4])}</div></div>""", unsafe_allow_html=True)
-                        if aemail and st.button(f"👤 Ver perfil", key=f"img_vp_{p['id']}", use_container_width=False):
-                            st.session_state.profile_view = aemail; st.rerun()
-                else:
-                    st.markdown('<div style="color:var(--t3);font-size:.80rem;">Nenhuma pesquisa similar encontrada na Nebula para esta categoria.</div>', unsafe_allow_html=True)
-
-                # ── CONNECTIONS: Internet search ──
-                st.markdown('<h3>🌐 Artigos Científicos Relacionados</h3>', unsafe_allow_html=True)
-                cache_k = f"img_{rep['search_kw']}"
-                if cache_k not in st.session_state.scholar_cache:
-                    with st.spinner("Buscando artigos relacionados…"):
-                        web = search_semantic_scholar(rep['search_kw'], 4)
-                        st.session_state.scholar_cache[cache_k] = web
-                web_res = st.session_state.scholar_cache.get(cache_k, [])
-                if web_res:
-                    for idx,a in enumerate(web_res[:3]): render_web_article(a, idx+1000)
-                else:
-                    st.markdown('<div style="color:var(--t3);font-size:.80rem;">Sem resultados online no momento.</div>', unsafe_allow_html=True)
-            else:
-                st.error("Não foi possível analisar. Verifique o formato.")
-        elif not img_file:
-            st.markdown("""<div class="card" style="text-align:center;padding:4rem 2rem;">
-              <div style="font-size:3.5rem;margin-bottom:1rem;">🔬</div>
-              <div style="font-family:'Syne',sans-serif;font-size:1rem;color:var(--t2);margin-bottom:.5rem;">Carregue uma imagem científica</div>
-              <div style="color:var(--t3);font-size:.77rem;line-height:1.7;">PNG · JPG · WEBP · TIFF<br>Detecta linhas · formas circulares · grades · cores<br>Classifica e conecta com pesquisas similares</div>
-            </div>""", unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ─── CHAT ─────────────────────────────────────────────────────────────────────
-def page_chat():
-    st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:1.2rem;">Chat Seguro</h1>', unsafe_allow_html=True)
-    col_c, col_m = st.columns([.85,2.5])
-    with col_c:
-        st.markdown('<div style="font-size:.69rem;font-weight:600;color:var(--t3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:.7rem;">Conversas</div>', unsafe_allow_html=True)
-        if not isinstance(st.session_state.users,dict): st.session_state.users={}
-        shown = set()
-        for ue in st.session_state.chat_contacts:
-            if ue==st.session_state.current_user or ue in shown: continue
-            shown.add(ue)
-            ud = st.session_state.users.get(ue,{"name":ue,"area":"","photo_b64":None})
-            uname=ud.get("name","?"); uin=ini(uname); uphoto=ud.get("photo_b64")
-            active=st.session_state.active_chat==ue
-            msgs=st.session_state.chat_messages.get(ue,[])
-            last=msgs[-1]["text"][:24]+"…" if msgs and len(msgs[-1]["text"])>24 else (msgs[-1]["text"] if msgs else "Iniciar conversa")
-            online=random.random()>.4; dot='<span class="don"></span>' if online else '<span class="doff"></span>'
-            border="rgba(96,165,245,.35)" if active else "var(--gbd)"; bg="rgba(34,114,195,.15)" if active else "var(--gb)"
-            st.markdown(f'<div style="background:{bg};border:1px solid {border};border-radius:var(--rmd);padding:9px 11px;margin-bottom:5px;"><div style="display:flex;align-items:center;gap:8px;">{avh(uin,30,uphoto)}<div style="overflow:hidden;min-width:0;"><div style="font-size:.80rem;font-weight:600;display:flex;align-items:center;">{dot}{uname}</div><div style="font-size:.68rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{last}</div></div></div></div>', unsafe_allow_html=True)
-            if st.button("Abrir", key=f"oc_{ue}", use_container_width=True):
-                st.session_state.active_chat=ue; st.rerun()
-        st.markdown("<hr>", unsafe_allow_html=True)
-        nc2=st.text_input("",placeholder="Adicionar por e-mail…",key="new_ct",label_visibility="collapsed")
-        if st.button("➕ Adicionar",key="btn_add_ct"):
-            if isinstance(st.session_state.users,dict) and nc2 in st.session_state.users and nc2!=st.session_state.current_user:
-                if nc2 not in st.session_state.chat_contacts: st.session_state.chat_contacts.append(nc2)
-                st.rerun()
-            elif nc2: st.toast("Usuário não encontrado.")
-    with col_m:
-        if st.session_state.active_chat:
-            contact=st.session_state.active_chat
-            if not isinstance(st.session_state.users,dict): st.session_state.users={}
-            cd=st.session_state.users.get(contact,{"name":contact,"photo_b64":None})
-            cname=cd.get("name","?"); cin=ini(cname); cphoto=cd.get("photo_b64")
-            msgs=st.session_state.chat_messages.get(contact,[])
-            st.markdown(f'<div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rmd);padding:12px 16px;margin-bottom:1rem;display:flex;align-items:center;gap:12px;">{avh(cin,38,cphoto)}<div style="flex:1;"><div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.92rem;">{cname}</div><div style="font-size:.70rem;color:var(--ok);">🔒 AES-256</div></div></div>', unsafe_allow_html=True)
-            for msg in msgs:
-                is_me=msg["from"]=="me"; cls="bme" if is_me else "bthem"; align="right" if is_me else "left"
-                st.markdown(f'<div class="{cls}">{msg["text"]}<div style="font-size:.63rem;color:var(--t3);margin-top:3px;text-align:{align};">{msg["time"]}</div></div>', unsafe_allow_html=True)
-            nm=st.text_input("",placeholder="Mensagem segura…",key=f"mi_{contact}",label_visibility="collapsed")
-            if st.button("Enviar →",key=f"ms_{contact}",use_container_width=True):
-                if nm:
-                    now=datetime.now().strftime("%H:%M")
-                    st.session_state.chat_messages.setdefault(contact,[]).append({"from":"me","text":nm,"time":now}); st.rerun()
-        else:
-            st.markdown('<div class="card" style="text-align:center;padding:4rem;"><div style="font-size:3rem;margin-bottom:1rem;">💬</div><div style="color:var(--t3);">Selecione uma conversa</div><div style="font-size:.76rem;color:var(--t3);margin-top:.5rem;">🔒 Criptografia end-to-end</div></div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ─── SETTINGS ─────────────────────────────────────────────────────────────────
-def page_settings():
-    st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:1.2rem;">Perfil e Configurações</h1>', unsafe_allow_html=True)
-    u=guser(); email=st.session_state.current_user
-    tab_p,tab_s,tab_pr=st.tabs(["  Meu Perfil  ","  Segurança  ","  Privacidade  "])
-    with tab_p:
-        nm=u.get("name",""); in_=ini(nm); photo=u.get("photo_b64")
-        st.markdown(f"""<div class="prof-hero">
-          <div class="prof-photo">{(("<img src='"+photo+"'/>") if photo else f'<span style="font-size:2rem;">{in_}</span>')}</div>
-          <div style="flex:1;"><h1 style="margin-bottom:.25rem;">{nm}</h1>
-          <div style="color:var(--b300);font-size:.84rem;margin-bottom:.4rem;">{u.get('area','')}</div>
-          <div style="color:var(--t2);font-size:.82rem;line-height:1.65;margin-bottom:.8rem;">{u.get('bio','Sem biografia.')}</div>
-          <div style="display:flex;gap:1.8rem;">
-            <span><strong style="font-family:'Syne',sans-serif;font-size:1.1rem;">{u.get('followers',0)}</strong><span style="color:var(--t3);font-size:.74rem;"> seguidores</span></span>
-            <span><strong style="font-family:'Syne',sans-serif;font-size:1.1rem;">{u.get('following',0)}</strong><span style="color:var(--t3);font-size:.74rem;"> seguindo</span></span>
-          </div></div></div>""", unsafe_allow_html=True)
-        ph=st.file_uploader("Foto de perfil",type=["png","jpg","jpeg","webp"],label_visibility="collapsed",key="ph_up")
-        if ph:
-            b64=img_to_b64(ph)
-            if b64:
-                if not isinstance(st.session_state.users,dict): st.session_state.users={}
-                st.session_state.users[email]["photo_b64"]=b64; save_db(); st.success("✓ Foto atualizada!"); st.rerun()
-        st.markdown("<hr>", unsafe_allow_html=True)
-        new_n=st.text_input("Nome completo",value=u.get("name",""),key="cfg_n")
-        new_e=st.text_input("E-mail",value=email,key="cfg_e")
-        new_a=st.text_input("Área de pesquisa",value=u.get("area",""),key="cfg_a")
-        new_b=st.text_area("Biografia",value=u.get("bio",""),key="cfg_b",height=90)
-        if st.button("💾 Salvar perfil",key="btn_sp"):
-            if not isinstance(st.session_state.users,dict): st.session_state.users={}
-            st.session_state.users[email]["name"]=new_n; st.session_state.users[email]["area"]=new_a; st.session_state.users[email]["bio"]=new_b
-            if new_e!=email and new_e not in st.session_state.users:
-                st.session_state.users[new_e]=st.session_state.users.pop(email); st.session_state.current_user=new_e
-            save_db(); record(area_to_tags(new_a),1.5); st.success("✓ Perfil salvo!"); st.rerun()
-    with tab_s:
-        op=st.text_input("Senha atual",type="password",key="op")
-        np_=st.text_input("Nova senha",type="password",key="np_")
-        np2=st.text_input("Confirmar",type="password",key="np2")
-        if st.button("🔑 Alterar senha",key="btn_cpw"):
-            if hp(op)!=u["password"]: st.error("Senha atual incorreta.")
-            elif np_!=np2: st.error("Senhas não coincidem.")
-            elif len(np_)<6: st.error("Senha muito curta.")
-            else:
-                if not isinstance(st.session_state.users,dict): st.session_state.users={}
-                st.session_state.users[email]["password"]=hp(np_); save_db(); st.success("✓ Senha alterada!")
-        st.markdown("<hr>", unsafe_allow_html=True)
-        en=u.get("2fa_enabled",False)
-        st.markdown(f'<div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.3rem;"><div><div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.87rem;">2FA por e-mail</div><div style="font-size:.72rem;color:var(--t3);">{email}</div></div><span style="color:{"#10b981" if en else "#ef4444"};font-size:.81rem;font-weight:700;">{"✓ Ativo" if en else "✗ Inativo"}</span></div>', unsafe_allow_html=True)
-        if st.button("Desativar 2FA" if en else "Ativar 2FA",key="btn_2fa"):
-            if not isinstance(st.session_state.users,dict): st.session_state.users={}
-            st.session_state.users[email]["2fa_enabled"]=not en; save_db(); st.rerun()
-    with tab_pr:
-        prots=[("AES-256","Criptografia end-to-end"),("SHA-256","Hash de senhas"),("TLS 1.3","Transmissão segura"),("Zero Knowledge","Pesquisas privadas protegidas")]
-        items="".join(f'<div style="display:flex;align-items:center;gap:12px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.14);border-radius:var(--rmd);padding:11px;"><div><div style="width:26px;height:26px;border-radius:8px;background:rgba(16,185,129,.12);display:flex;align-items:center;justify-content:center;color:#10b981;font-weight:700;font-size:.74rem;flex-shrink:0;">✓</div><div style="font-family:\'Syne\',sans-serif;font-weight:700;color:#10b981;font-size:.83rem;">{n2}</div><div style="font-size:.71rem;color:var(--t3);">{d2}</div></div></div>' for n2,d2 in prots)
-        st.markdown(f'<div class="card"><div><div style="font-family:\'Syne\',sans-serif;font-weight:700;margin-bottom:1rem;">Proteções ativas</div><div style="display:grid;gap:8px;">{items}</div></div></div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ─── ROUTER ───────────────────────────────────────────────────────────────────
-def main():
-    if not st.session_state.logged_in:
-        p = st.session_state.page
-        if p == "verify_email": page_verify_email()
-        elif p == "2fa": page_2fa()
-        else: page_login()
-        return
-    render_topnav()
-    if st.session_state.profile_view:
-        page_profile(st.session_state.profile_view); return
-    {"feed":page_feed,"search":page_search,"knowledge":page_knowledge,"folders":page_folders,
-     "analytics":page_analytics,"img_search":page_img_search,"chat":page_chat,"settings":page_settings
-    }.get(st.session_state.page, page_feed)()
-
-main()
