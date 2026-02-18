@@ -180,17 +180,8 @@ div[data-testid="stHorizontalBlock"]{gap:2px!important}
 .scard{background:var(--glass);border:1px solid var(--bdr);border-radius:var(--r-md);padding:1rem 1.2rem;margin-bottom:.7rem;transition:border-color .2s}
 .scard:hover{border-color:var(--bdr-l)}
 /* clickable elements */
-.clickable-area {
-    cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
-    border-radius: var(--r-sm);
-    padding: 0.5rem;
-    margin: -0.5rem; /* Para expandir a área clicável sem mudar o layout */
-}
-.clickable-area:hover {
-    background-color: rgba(37, 99, 235, 0.08);
-    border-color: rgba(96, 165, 250, 0.2);
-}
+/* Removido o estilo .clickable-area para evitar conflito com st.button */
+/* O estilo para o botão invisível será aplicado diretamente */
 </style>
 """, unsafe_allow_html=True)
 
@@ -626,7 +617,7 @@ def page_verify_email():
     pv=st.session_state.pending_verify
     _,col,_=st.columns([1,1.1,1])
     with col:
-        st.markdown("<br><br>",unsafe_allow_html=True)
+        st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown(f"""
         <div class="card" style="text-align:center;">
           <div style="font-size:2.5rem;margin-bottom:1rem;">📧</div>
@@ -637,7 +628,7 @@ def page_verify_email():
             <div style="font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:700;letter-spacing:.25em;color:var(--blue-g);">{pv['code']}</div>
           </div>
         </div>
-        """,unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         typed=st.text_input("Código de 6 dígitos",max_chars=6,placeholder="000000",key="ev_c")
         if st.button("Verificar e criar conta →",use_container_width=True,key="btn_ev"):
             if typed.strip()==pv["code"]:
@@ -671,7 +662,7 @@ def page_2fa():
     p2=st.session_state.pending_2fa
     _,col,_=st.columns([1,1.1,1])
     with col:
-        st.markdown("<br><br>",unsafe_allow_html=True)
+        st.markdown("<br><br>", unsafe_allow_html=True)
         st.markdown(f"""
         <div class="card" style="text-align:center;">
           <div style="font-size:2.5rem;margin-bottom:1rem;">🔑</div>
@@ -681,7 +672,7 @@ def page_2fa():
             <div style="font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:700;letter-spacing:.2em;color:var(--blue-g);">{p2['code']}</div>
           </div>
         </div>
-        """,unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
         typed=st.text_input("Código",max_chars=6,placeholder="000000",key="fa_c",label_visibility="collapsed")
         if st.button("Verificar →",use_container_width=True,key="btn_fa"):
             if typed.strip()==p2["code"]:
@@ -808,14 +799,14 @@ def page_profile(target_email):
                 st.session_state.profile_view=None
                 st.rerun()
 
-    st.markdown("<hr>",unsafe_allow_html=True)
-    st.markdown('<h2>Pesquisas publicadas</h2>',unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown('<h2>Pesquisas publicadas</h2>', unsafe_allow_html=True)
     user_posts=[p for p in st.session_state.feed_posts if p.get("author_email")==target_email]
     if user_posts:
         for p in user_posts:
             render_post(p,show_profile_link=False)
     else:
-        st.markdown('<div class="card" style="text-align:center;padding:2.5rem;color:var(--t3);">Nenhuma pesquisa publicada ainda.</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card" style="text-align:center;padding:2.5rem;color:var(--t3);">Nenhuma pesquisa publicada ainda.</div>', unsafe_allow_html=True)
 
 # ─── SHARE MODAL ────────────────────────────
 def share_modal(post_id, title):
@@ -841,23 +832,23 @@ def share_modal(post_id, title):
       </div>
       <div style="margin-top:.8rem;font-size:.72rem;color:var(--t3);">Link direto:</div>
     </div>
-    """,unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     st.code(url, language=None)
 
 # ─── FEED ───────────────────────────────────
 def page_feed():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1 style="margin-bottom:.3rem;">Feed de Pesquisas</h1>',unsafe_allow_html=True)
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1 style="margin-bottom:.3rem;">Feed de Pesquisas</h1>', unsafe_allow_html=True)
     email=st.session_state.current_user
     u=guser()
     col_main,col_side=st.columns([2.1,0.9])
     with col_main:
         recs=get_recs(email)
         if recs:
-            st.markdown('<span class="b-rec">✦ RECOMENDADO PARA VOCÊ</span><br>',unsafe_allow_html=True)
+            st.markdown('<span class="b-rec">✦ RECOMENDADO PARA VOCÊ</span><br>', unsafe_allow_html=True)
             for p in recs:
                 render_post(p,rec=True)
-            st.markdown("<hr>",unsafe_allow_html=True)
+            st.markdown("<hr>", unsafe_allow_html=True)
         with st.expander("➕ Publicar nova pesquisa", expanded=False): # Ajuste para expandir/colapsar
             np_t=st.text_input("Título",key="np_t")
             np_ab=st.text_area("Resumo / Abstract",key="np_ab",height=90)
@@ -888,7 +879,7 @@ def page_feed():
                     save_db()
                     st.success("Publicado!")
                     st.rerun()
-        st.markdown("<br>",unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
         ff=st.selectbox("Mostrar",["Todos","Seguidos","Salvos"],key="ff",label_visibility="collapsed")
         posts=st.session_state.feed_posts
         if ff=="Seguidos":
@@ -899,8 +890,8 @@ def page_feed():
             render_post(p)
     with col_side:
         sq=st.text_input("",placeholder="🔍 Pesquisadores…",key="ppl_s",label_visibility="collapsed")
-        st.markdown('<div class="card">',unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600;font-size:.88rem;margin-bottom:.9rem;">Pesquisadores</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div style="font-weight:600;font-size:.88rem;margin-bottom:.9rem;">Pesquisadores</div>', unsafe_allow_html=True)
         users = st.session_state.users if isinstance(st.session_state.users, dict) else {}
         shown=0
         for ue,ud in list(users.items()):
@@ -915,22 +906,53 @@ def page_feed():
             uin=ini(uname)
             uphoto=ud.get("photo_b64")
             is_fol=ue in st.session_state.followed
-            ca,cb=st.columns([3,1])
-            with ca:
-                # Adiciona um botão invisível para tornar a área clicável
-                if st.button(
-                    f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:2px;" class="clickable-area">'
-                    f'{avh(uin,26,uphoto)}'
-                    f'<div><div style="font-size:.8rem;font-weight:500;">{uname}</div>'
-                    f'<div style="font-size:.68rem;color:var(--t3);">{ud.get("area","")[:20]}</div>'
-                    f'</div></div>',
-                    key=f"view_profile_side_{ue}",
-                    unsafe_allow_html=True,
-                    use_container_width=True
-                ):
-                    st.session_state.profile_view = ue
-                    st.rerun()
-            with cb:
+
+            # Novo layout para o item do pesquisador na barra lateral
+            # Usamos um container para o HTML e um botão invisível por cima
+            st.markdown(
+                f"""
+                <div style="position:relative; margin-bottom:5px; border-radius:8px; overflow:hidden;">
+                    <div style="display:flex;align-items:center;gap:7px;padding:7px 10px;">
+                        {avh(uin,26,uphoto)}
+                        <div style="flex:1;">
+                            <div style="font-size:.8rem;font-weight:500;">{uname}</div>
+                            <div style="font-size:.68rem;color:var(--t3);">{ud.get("area","")[:20]}</div>
+                        </div>
+                    </div>
+                    <style>
+                        /* Estilo para o botão invisível que cobre a área */
+                        div[data-testid="stVerticalBlock"] > div:nth-child(1) > div > div > div > button[key*="view_profile_side_{ue}"] {{
+                            position: absolute;
+                            top: 0;
+                            left: 0;
+                            width: 100%;
+                            height: 100%;
+                            opacity: 0;
+                            z-index: 1;
+                            background: transparent !important;
+                            border: none !important;
+                            box-shadow: none !important;
+                        }}
+                        /* Estilo de hover para a área do pesquisador */
+                        div[data-testid="stVerticalBlock"] > div:nth-child(1) > div > div > div > button[key*="view_profile_side_{ue}"]:hover + div {{
+                            background-color: rgba(37, 99, 235, 0.08);
+                            border-color: rgba(96, 165, 250, 0.2);
+                        }}
+                        div[data-testid="stVerticalBlock"] > div:nth-child(1) > div > div > div > button[key*="view_profile_side_{ue}"]:hover {{
+                            cursor: pointer;
+                        }}
+                    </style>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            # O botão real, invisível, que dispara a ação
+            if st.button(" ", key=f"view_profile_side_{ue}", use_container_width=True):
+                st.session_state.profile_view = ue
+                st.rerun()
+
+            # Botão de seguir/deixar de seguir (fora da área clicável do perfil)
+            with st.container(): # Usar um container para agrupar o botão de seguir
                 if st.button("✓" if is_fol else "➕",key=f"fol_{ue}"):
                     if is_fol:
                         st.session_state.followed.remove(ue)
@@ -940,10 +962,10 @@ def page_feed():
                         ud["followers"] = ud.get("followers", 0) + 1
                     save_db()
                     st.rerun()
-            st.markdown('<div style="height:4px;"></div>',unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-        st.markdown('<div class="card">',unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600;font-size:.88rem;margin-bottom:.8rem;">Áreas em Alta</div>',unsafe_allow_html=True)
+            st.markdown('<div style="height:4px;"></div>', unsafe_allow_html=True) # Espaçamento
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div style="font-weight:600;font-size:.88rem;margin-bottom:.8rem;">Áreas em Alta</div>', unsafe_allow_html=True)
         for area,cnt in [("Quantum ML",42),("CRISPR 2026",38),("Neuroplasticidade",31),("LLMs Científicos",27)]:
             st.markdown(
                 f'<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--bdr);font-size:.8rem;">'
@@ -952,8 +974,8 @@ def page_feed():
                 f'</div>',
                 unsafe_allow_html=True
             )
-        st.markdown('</div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def render_post(post, rec=False, show_profile_link=True):
     email=st.session_state.current_user
@@ -964,8 +986,10 @@ def render_post(post, rec=False, show_profile_link=True):
     rec_b='<span class="b-rec" style="margin-left:6px;">Rec.</span>' if rec else ""
 
     # Usar um container para o cabeçalho do post para torná-lo clicável
-    header_html = f"""
-        <div style="display:flex;align-items:center;gap:12px;margin-bottom:.9rem;" class="clickable-area">
+    # O HTML é renderizado, e um botão invisível é sobreposto para capturar o clique
+    st.markdown(f"""
+    <div class="card" style="position:relative;">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:.9rem; padding: 0.5rem; margin: -0.5rem; border-radius: var(--r-sm);">
             {avh(post['avatar'],40,aphoto)}
             <div style="flex:1;">
                 <div style="font-weight:600;font-size:.91rem;">{post['author']}</div>
@@ -973,18 +997,13 @@ def render_post(post, rec=False, show_profile_link=True):
             </div>
             {badge(post['status'])}{rec_b}
         </div>
-    """
-
-    st.markdown(f"""
-    <div class="card">
-        {header_html}
         <h3 style="margin-bottom:.45rem;font-size:1.03rem;line-height:1.4;">{post['title']}</h3>
         <p style="color:var(--t2);font-size:.85rem;line-height:1.65;margin-bottom:.75rem;">{post['abstract']}</p>
         <div>{tags_html(post['tags'])}</div>
     </div>
-    """,unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-    # Botão invisível para capturar o clique no cabeçalho
+    # Botão invisível para capturar o clique no cabeçalho do post
     if show_profile_link and aemail:
         if st.button(" ", key=f"view_profile_post_header_{post['id']}", use_container_width=True):
             st.session_state.profile_view = aemail
@@ -992,6 +1011,7 @@ def render_post(post, rec=False, show_profile_link=True):
         st.markdown(
             """
             <style>
+            /* Estilo para o botão invisível que cobre o cabeçalho do post */
             div[data-testid*="stVerticalBlock"] > div:nth-child(1) > div > div > div > button[key*="view_profile_post_header_"] {
                 position: absolute;
                 top: 0;
@@ -1000,6 +1020,17 @@ def render_post(post, rec=False, show_profile_link=True):
                 height: 100%;
                 opacity: 0;
                 z-index: 1;
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+            /* Estilo de hover para a área do cabeçalho do post */
+            div[data-testid*="stVerticalBlock"] > div:nth-child(1) > div > div > div > button[key*="view_profile_post_header_"]:hover + div > div:first-child {
+                background-color: rgba(37, 99, 235, 0.08);
+                border-color: rgba(96, 165, 250, 0.2);
+            }
+            div[data-testid*="stVerticalBlock"] > div:nth-child(1) > div > div > div > button[key*="view_profile_post_header_"]:hover {
+                cursor: pointer;
             }
             </style>
             """, unsafe_allow_html=True
@@ -1063,9 +1094,9 @@ def _set_search_query(value: str):
 
 # ─── BUSCA DE ARTIGOS (real internet) ───────
 def page_search():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1>Busca de Artigos</h1>',unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--t3);font-size:.85rem;margin-bottom:1rem;">Busca em tempo real via Semantic Scholar + CrossRef + pesquisas da Nebula</p>',unsafe_allow_html=True)
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1>Busca de Artigos</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--t3);font-size:.85rem;margin-bottom:1rem;">Busca em tempo real via Semantic Scholar + CrossRef + pesquisas da Nebula</p>', unsafe_allow_html=True)
     c1,c2,c3=st.columns([3,.9,.9])
     with c1:
         q=st.text_input("",placeholder="Título, autor, DOI, tema…",key="sq",label_visibility="collapsed")
@@ -1103,7 +1134,7 @@ def page_search():
                 for p in neb_res:
                     render_search_post(p)
             else:
-                st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Nenhum resultado na Nebula.</div>',unsafe_allow_html=True)
+                st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Nenhum resultado na Nebula.</div>', unsafe_allow_html=True)
         with tab_web:
             if src=="Só Nebula":
                 st.info("Busca na internet desativada.")
@@ -1111,25 +1142,25 @@ def page_search():
                 for a in web_res:
                     render_web_article(a)
             else:
-                st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Sem resultados online. Verifique conexão ou tente outros termos.<br>Se a busca na internet falhar, pode ser um problema de conexão ou limite de API.</div>',unsafe_allow_html=True)
+                st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Sem resultados online. Verifique conexão ou tente outros termos.<br>Se a busca na internet falhar, pode ser um problema de conexão ou limite de API.</div>', unsafe_allow_html=True)
         with tab_all:
             if neb_res:
-                st.markdown('<div style="font-size:.74rem;color:var(--blue-g);font-weight:600;margin-bottom:.4rem;letter-spacing:.04em;">NEBULA</div>',unsafe_allow_html=True)
+                st.markdown('<div style="font-size:.74rem;color:var(--blue-g);font-weight:600;margin-bottom:.4rem;letter-spacing:.04em;">NEBULA</div>', unsafe_allow_html=True)
                 for p in neb_res:
                     render_search_post(p)
             if web_res:
                 if neb_res:
-                    st.markdown("<hr>",unsafe_allow_html=True)
-                st.markdown('<div style="font-size:.74rem;color:var(--cyan-s);font-weight:600;margin-bottom:.4rem;letter-spacing:.04em;">BASE ACADÊMICA GLOBAL</div>',unsafe_allow_html=True)
+                    st.markdown("<hr>", unsafe_allow_html=True)
+                st.markdown('<div style="font-size:.74rem;color:var(--cyan-s);font-weight:600;margin-bottom:.4rem;letter-spacing:.04em;">BASE ACADÊMICA GLOBAL</div>', unsafe_allow_html=True)
                 for a in web_res:
                     render_web_article(a)
             if not neb_res and not web_res:
-                st.markdown('<div class="card" style="text-align:center;padding:3rem;"><div style="font-size:2rem;margin-bottom:1rem;">🔭</div><div style="color:var(--t3);">Nenhum resultado encontrado</div></div>',unsafe_allow_html=True)
+                st.markdown('<div class="card" style="text-align:center;padding:3rem;"><div style="font-size:2rem;margin-bottom:1rem;">🔭</div><div style="color:var(--t3);">Nenhum resultado encontrado</div></div>', unsafe_allow_html=True)
     else:
         u=guser()
         tags=area_to_tags(u.get("area",""))
         if tags:
-            st.markdown(f'<div style="color:var(--t2);font-size:.83rem;margin-bottom:.8rem;">💡 Sugestões para <strong>{u.get("area","")}</strong>:</div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="color:var(--t2);font-size:.83rem;margin-bottom:.8rem;">💡 Sugestões para <strong>{u.get("area","")}</strong>:</div>', unsafe_allow_html=True)
             cols=st.columns(5)
             for i, t in enumerate(tags[:5]):
                 with cols[i % 5]:
@@ -1140,8 +1171,8 @@ def page_search():
                         on_click=_set_search_query,
                         kwargs={"value": t},
                     )
-        st.markdown('<p style="color:var(--t3);font-size:.82rem;margin-top:1rem;">Digite um termo para buscar artigos na Nebula e em bases acadêmicas globais (Semantic Scholar + CrossRef) em tempo real.</p>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('<p style="color:var(--t3);font-size:.82rem;margin-top:1rem;">Digite um termo para buscar artigos na Nebula e em bases acadêmicas globais (Semantic Scholar + CrossRef) em tempo real.</p>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 def render_search_post(post):
     aemail=post.get("author_email","")
@@ -1160,7 +1191,7 @@ def render_search_post(post):
       <div style="font-size:.82rem;color:var(--t2);margin-bottom:.4rem;">{post['abstract'][:220]}…</div>
       <div>{tags_html(post['tags'])}</div>
     </div>
-    """,unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     if aemail and st.button("👤 Ver perfil do autor",key=f"vpa_s_{post['id']}"):
         st.session_state.profile_view=aemail
         st.rerun()
@@ -1179,7 +1210,7 @@ def render_web_article(a):
       <div style="color:var(--t2);font-size:.83rem;line-height:1.6;margin-bottom:.4rem;">{a['abstract'][:220]}…</div>
       <div style="font-size:.69rem;color:var(--t3);">DOI/ID: {a['doi']}</div>
     </div>
-    """,unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     ca,cb,cc=st.columns([1,1,1])
     with ca:
         if st.button("📌 Salvar",key=f"sv_w_{a['doi'][:18]}_{a['year']}"):
@@ -1206,9 +1237,9 @@ def render_web_article(a):
 
 # ─── REDE DE CONEXÕES (Antiga Rede de Conhecimento 3D) ─────────────────
 def page_knowledge():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1>Rede de Conexões</h1>',unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--t3);font-size:.86rem;margin-bottom:.8rem;">Explore as conexões entre pesquisadores, interesses e pesquisas em comum.</p>',unsafe_allow_html=True)
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1>Rede de Conexões</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--t3);font-size:.86rem;margin-bottom:.8rem;">Explore as conexões entre pesquisadores, interesses e pesquisas em comum.</p>', unsafe_allow_html=True)
 
     # Gerar nós dinamicamente
     current_nodes = {n["id"]: n for n in st.session_state.knowledge_nodes}
@@ -1337,8 +1368,8 @@ def page_knowledge():
     total_conn=sum(len(n.get("connections",[])) for n in nodes)
     c1,c2,c3,c4=st.columns(4)
     for col,(v,l) in zip([c1,c2,c3,c4],[(len(nodes),"Nós"),(total_conn,"Conexões"),(len(st.session_state.followed),"Seguindo"),(len(st.session_state.feed_posts),"Pesquisas na rede")]):
-        with col: st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>',unsafe_allow_html=True)
-    st.markdown("<hr>",unsafe_allow_html=True)
+        with col: st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
     tab_add,tab_map,tab_edit=st.tabs(["  ➕ Adicionar Conexão  ","  Mapa de Conexões  ","  Editar Nós  "])
     with tab_add:
         ca,cb,cc,cd=st.columns([2,2,1,1])
@@ -1346,7 +1377,7 @@ def page_knowledge():
         with cb: t2=st.text_input("Conectar com Tópico/Pesquisador B",key="kn_t2")
         with cc: color=st.color_picker("Cor (novo tópico)", "#06b6d4",key="kn_col")
         with cd:
-            st.markdown("<br>",unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
             if st.button("➕ Adicionar Conexão",key="btn_kn"):
                 if t1 and t2:
                     ids=[n["id"] for n in nodes]
@@ -1407,13 +1438,13 @@ def page_knowledge():
                             n["connections"] = [c for c in n.get("connections", []) if c != sel]
                         save_db()
                         st.rerun()
-    st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── PASTAS ─────────────────────────────────
 def page_folders():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1>Pastas de Pesquisa</h1>',unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--t3);font-size:.86rem;margin-bottom:1rem;">Crie e organize suas pastas do jeito que preferir</p>',unsafe_allow_html=True)
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1>Pastas de Pesquisa</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--t3);font-size:.86rem;margin-bottom:1rem;">Crie e organize suas pastas do jeito que preferir</p>', unsafe_allow_html=True)
     c1,c2,_=st.columns([2,1.2,1.5])
     with c1: nf_name=st.text_input("Nome da pasta",placeholder="Ex: Genômica Comparativa",key="nf_n")
     with c2: nf_desc=st.text_input("Descrição",placeholder="Breve descrição",key="nf_d")
@@ -1424,9 +1455,9 @@ def page_folders():
                 save_db(); st.success(f"Pasta '{nf_name}' criada!"); st.rerun()
             else: st.warning("Pasta já existe.")
         else: st.warning("Digite um nome para a pasta.")
-    st.markdown("<hr>",unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
     if not st.session_state.folders:
-        st.markdown('<div class="card" style="text-align:center;padding:3rem;"><div style="font-size:3rem;margin-bottom:1rem;">📂</div><div style="color:var(--t2);font-family:\'Playfair Display\',serif;font-size:1rem;">Nenhuma pasta criada ainda</div><div style="color:var(--t3);font-size:.84rem;margin-top:.4rem;">Use o formulário acima para criar sua primeira pasta</div></div>',unsafe_allow_html=True)
+        st.markdown('<div class="card" style="text-align:center;padding:3rem;"><div style="font-size:3rem;margin-bottom:1rem;">📂</div><div style="color:var(--t2);font-family:\'Playfair Display\',serif;font-size:1rem;">Nenhuma pasta criada ainda</div><div style="color:var(--t3);font-size:.84rem;margin-top:.4rem;">Use o formulário acima para criar sua primeira pasta</div></div>', unsafe_allow_html=True)
     else:
         cols=st.columns(3)
         for idx,(fname,fdata) in enumerate(list(st.session_state.folders.items())):
@@ -1446,12 +1477,12 @@ def page_folders():
                 )
                 with st.expander(f"Abrir '{fname}'"):
                     if isinstance(fdata,dict) and fdata.get("notes"):
-                        st.markdown(f'<div style="color:var(--t2);font-size:.81rem;margin-bottom:.5rem;">📝 {fdata["notes"]}</div>',unsafe_allow_html=True)
+                        st.markdown(f'<div style="color:var(--t2);font-size:.81rem;margin-bottom:.5rem;">📝 {fdata["notes"]}</div>', unsafe_allow_html=True)
 
                     st.markdown("<h4>Arquivos:</h4>", unsafe_allow_html=True)
                     if files:
                         for f in files:
-                            st.markdown(f'<div style="font-size:.81rem;padding:3px 0;color:var(--t2);border-bottom:1px solid var(--bdr);">📄 {f}</div>',unsafe_allow_html=True)
+                            st.markdown(f'<div style="font-size:.81rem;padding:3px 0;color:var(--t2);border-bottom:1px solid var(--bdr);">📄 {f}</div>', unsafe_allow_html=True)
                     else:
                         st.markdown('<p style="color:var(--t3);font-size:.8rem;">Nenhum arquivo nesta pasta.</p>', unsafe_allow_html=True)
 
@@ -1489,12 +1520,12 @@ def page_folders():
                         save_db(); st.success("Nota salva!")
                 if st.button(f"🗑️ Excluir '{fname}'",key=f"df_{fname}"):
                     del st.session_state.folders[fname]; save_db(); st.rerun()
-    st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── ANALYTICS ──────────────────────────────
 def page_analytics():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1>Análises de Impacto</h1>',unsafe_allow_html=True)
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1>Análises de Impacto</h1>', unsafe_allow_html=True)
     d=st.session_state.stats_data
     email=st.session_state.current_user
     tab_perf,tab_pref,tab_edit=st.tabs(["  Desempenho  ","  Perfil de Interesses  ","  Editar Dados  "])
@@ -1516,8 +1547,8 @@ def page_analytics():
         ]
         for col,(v,l) in zip(cols,metrics):
             with col:
-                st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>',unsafe_allow_html=True)
-        st.markdown("<br>",unsafe_allow_html=True)
+                st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>', unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
         c1,c2=st.columns(2)
         with c1:
             fig=go.Figure()
@@ -1571,7 +1602,7 @@ def page_analytics():
                 )
                 st.plotly_chart(fig3,use_container_width=True)
             else:
-                st.markdown('<div class="card" style="text-align:center;padding:2.5rem;"><div style="color:var(--t3);">Publique pesquisas para ver engajamento</div></div>',unsafe_allow_html=True)
+                st.markdown('<div class="card" style="text-align:center;padding:2.5rem;"><div style="color:var(--t3);">Publique pesquisas para ver engajamento</div></div>', unsafe_allow_html=True)
         with c4:
             fig4=go.Figure(go.Pie(
                 labels=["Brasil","EUA","Portugal","Alemanha","Argentina","Outros"],
@@ -1620,7 +1651,7 @@ def page_analytics():
     with tab_pref:
         prefs=st.session_state.user_prefs.get(email,{})
         if prefs:
-            st.markdown('<p style="color:var(--t3);font-size:.84rem;margin-bottom:1rem;">Baseado nas suas interações: curtidas, buscas, comentários e publicações.</p>',unsafe_allow_html=True)
+            st.markdown('<p style="color:var(--t3);font-size:.84rem;margin-bottom:1rem;">Baseado nas suas interações: curtidas, buscas, comentários e publicações.</p>', unsafe_allow_html=True)
             top=sorted(prefs.items(),key=lambda x:-x[1])[:12]
             mx=max(s for _,s in top) if top else 1
             c1,c2=st.columns(2)
@@ -1640,13 +1671,13 @@ def page_analytics():
         u=guser()
         area_tags=area_to_tags(u.get("area",""))
         if area_tags:
-            st.markdown("<hr>",unsafe_allow_html=True)
-            st.markdown(f'<h3>Pesquisas da sua área: {u.get("area","")}</h3>',unsafe_allow_html=True)
+            st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown(f'<h3>Pesquisas da sua área: {u.get("area","")}</h3>', unsafe_allow_html=True)
             area_posts=[p for p in st.session_state.feed_posts if any(at.lower() in [t.lower() for t in p["tags"]] for at in area_tags)]
             for p in area_posts[:3]:
                 render_search_post(p)
     with tab_edit:
-        st.markdown('<h3>Editar métricas manualmente</h3>',unsafe_allow_html=True)
+        st.markdown('<h3>Editar métricas manualmente</h3>', unsafe_allow_html=True)
         ce1,ce2,ce3=st.columns(3)
         with ce1:
             new_h=st.number_input("Índice H",0,100,d.get("h_index",4),key="e_h")
@@ -1669,23 +1700,23 @@ def page_analytics():
             d.update({"h_index":new_h,"fator_impacto":new_fi,"aceitacao":new_ac,"views":new_views,"notes":new_notes})
             st.success("Métricas atualizadas!")
             st.rerun()
-    st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── ANÁLISE DE IMAGEM ───────────────────────
 def page_img_search():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1>Análise de Imagem Científica</h1>',unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--t3);font-size:.86rem;margin-bottom:1.2rem;">Análise real de padrões, cores, texturas, formas e classificação automática de imagens científicas</p>',unsafe_allow_html=True)
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1>Análise de Imagem Científica</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--t3);font-size:.86rem;margin-bottom:1.2rem;">Análise real de padrões, cores, texturas, formas e classificação automática de imagens científicas</p>', unsafe_allow_html=True)
     col_up,col_res=st.columns([1,1.7])
     with col_up:
-        st.markdown('<div class="card">',unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600;margin-bottom:.8rem;">Upload de imagem</div>',unsafe_allow_html=True)
+        st.markdown('<div class="card">', unsafe_allow_html=True)
+        st.markdown('<div style="font-weight:600;margin-bottom:.8rem;">Upload de imagem</div>', unsafe_allow_html=True)
         img_file=st.file_uploader("",type=["png","jpg","jpeg","webp","tiff"],label_visibility="collapsed")
         if img_file:
             st.image(img_file,use_container_width=True,caption="Imagem carregada")
         run=st.button("🔬 Analisar imagem",use_container_width=True,key="btn_run")
-        st.markdown('<div style="color:var(--t3);font-size:.72rem;margin-top:.8rem;line-height:1.5;">Detectamos: padrões · cores · texturas · simetria · entropia · classificação científica</div>',unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
+        st.markdown('<div style="color:var(--t3);font-size:.72rem;margin-top:.8rem;line-height:1.5;">Detectamos: padrões · cores · texturas · simetria · entropia · classificação científica</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
     with col_res:
         if run and img_file:
             img_file.seek(0)
@@ -1703,7 +1734,7 @@ def page_img_search():
                     {"<span style='font-size:.73rem;color:var(--warn);'>Tecido orgânico detectado: "+str(rep['skin_pct'])+"% da imagem</span>" if rep['skin_pct']>10 else ""}
                   </div>
                 </div>
-                """,unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
                 c1,c2,c3=st.columns(3)
                 for col,(v,l) in zip(
                     [c1,c2,c3],
@@ -1742,7 +1773,7 @@ def page_img_search():
                   <div style="font-size:.75rem;color:var(--t3);margin-bottom:5px;">Paleta de cores predominantes:</div>
                   <div style="display:flex;gap:7px;flex-wrap:wrap;">{pal_html}</div>
                 </div>
-                """,unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
                 st.markdown(f"""
                 <div class="abox">
                   <div style="font-weight:600;font-size:.87rem;margin-bottom:.7rem;">Textura, Forma e Entropia</div>
@@ -1753,8 +1784,8 @@ def page_img_search():
                     <div><span style="color:var(--t3);">Score de simetria:</span><br><strong style="color:var(--t1);">{rep['shape']['symmetry_score']:.3f}</strong></div>
                   </div>
                 </div>
-                """,unsafe_allow_html=True)
-                st.markdown('<div style="font-weight:600;font-size:.87rem;margin-bottom:.5rem;">Pesquisas relacionadas</div>',unsafe_allow_html=True)
+                """, unsafe_allow_html=True)
+                st.markdown('<div style="font-weight:600;font-size:.87rem;margin-bottom:.5rem;">Pesquisas relacionadas</div>', unsafe_allow_html=True)
                 cat_l=rep['category'].lower()
                 related=[p for p in st.session_state.feed_posts if any(t.lower() in cat_l for t in p.get("tags",[]))][:2]
                 if related:
@@ -1773,16 +1804,16 @@ def page_img_search():
                 cristalografia · diagramas · imagens multiespectrais
               </div>
             </div>
-            """,unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── CHAT (só mensagens) ─────────────────────
 def page_chat():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1>Chat Seguro</h1>',unsafe_allow_html=True)
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1>Chat Seguro</h1>', unsafe_allow_html=True)
     col_c,col_m=st.columns([0.85,2.5])
     with col_c:
-        st.markdown('<div style="font-size:.75rem;font-weight:600;color:var(--t3);letter-spacing:.06em;margin-bottom:.7rem;">CONVERSAS</div>',unsafe_allow_html=True)
+        st.markdown('<div style="font-size:.75rem;font-weight:600;color:var(--t3);letter-spacing:.06em;margin-bottom:.7rem;">CONVERSAS</div>', unsafe_allow_html=True)
 
         # Garantir que users é dict
         if not isinstance(st.session_state.users, dict):
@@ -1823,7 +1854,7 @@ def page_chat():
                 st.session_state.active_chat=ue
                 st.rerun()
         # Add contact by email
-        st.markdown("<hr>",unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
         new_contact=st.text_input("",placeholder="Adicionar por e-mail…",key="new_ct",label_visibility="collapsed")
         if st.button("➕ Adicionar",key="btn_add_ct"):
             if isinstance(st.session_state.users, dict) and new_contact in st.session_state.users and new_contact!=st.session_state.current_user:
@@ -1872,13 +1903,13 @@ def page_chat():
                     st.session_state.chat_messages.setdefault(contact,[]).append({"from":"me","text":nm,"time":now})
                     st.rerun()
         else:
-            st.markdown('<div class="card" style="text-align:center;padding:4rem;"><div style="font-size:3rem;margin-bottom:1rem;">💬</div><div style="color:var(--t3);">Selecione uma conversa para começar</div><div style="font-size:.78rem;color:var(--t3);margin-top:.5rem;">🔒 Todas as mensagens são criptografadas end-to-end</div></div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
+            st.markdown('<div class="card" style="text-align:center;padding:4rem;"><div style="font-size:3rem;margin-bottom:1rem;">💬</div><div style="color:var(--t3);">Selecione uma conversa para começar</div><div style="font-size:.78rem;color:var(--t3);margin-top:.5rem;">🔒 Todas as mensagens são criptografadas end-to-end</div></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── CONFIGURAÇÕES / PERFIL ──────────────────
 def page_settings():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1>Perfil e Configurações</h1>',unsafe_allow_html=True)
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1>Perfil e Configurações</h1>', unsafe_allow_html=True)
     u=guser()
     email=st.session_state.current_user
     tab_p,tab_s,tab_pr=st.tabs(["  Meu Perfil  ","  Segurança  ","  Privacidade  "])
@@ -1887,20 +1918,20 @@ def page_settings():
         in_=ini(nm)
         photo=u.get("photo_b64")
         st.markdown(f"""
-        <div style="display:flex;align-items:center;gap:1.5rem;padding:1.2rem;background:var(--glass);border:1px solid var(--bdr);border-radius:var(--r-lg);margin-bottom:1.5rem;">
+        <div class="prof-hero">
           <div class="prof-photo">{("<img src='"+photo+"'/>") if photo else f'<span style="font-size:2rem;">{in_}</span>'}</div>
-          <div>
-            <div style="font-family:'Playfair Display',serif;font-size:1.4rem;font-weight:700;">{nm}</div>
-            <div style="color:var(--blue-g);font-size:.85rem;">{u.get('area','')}</div>
-            <div style="color:var(--t3);font-size:.78rem;margin-top:2px;">{email}</div>
-            <div style="display:flex;gap:1rem;margin-top:.6rem;">
-              <span style="font-size:.8rem;color:var(--t2);"><strong style="color:var(--t1);">{u.get('followers',0)}</strong> seguidores</span>
-              <span style="font-size:.8rem;color:var(--t2);"><strong style="color:var(--t1);">{u.get('following',0)}</strong> seguindo</span>
+          <div style="flex:1;">
+            <h1 style="margin-bottom:.2rem;">{nm}</h1>
+            <div style="color:var(--blue-g);font-size:.85rem;margin-bottom:.4rem;">{u.get('area','')}</div>
+            <div style="color:var(--t2);font-size:.85rem;line-height:1.6;margin-bottom:.8rem;">{u.get('bio','Sem biografia.')}</div>
+            <div style="display:flex;gap:1.6rem;">
+              <span><strong style="color:var(--t1);">{u.get('followers',0)}</strong><span style="color:var(--t3);font-size:.79rem;"> seguidores</span></span>
+              <span><strong style="color:var(--t1);">{u.get('following',0)}</strong><span style="color:var(--t3);font-size:.79rem;"> seguindo</span></span>
             </div>
           </div>
         </div>
-        """,unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600;font-size:.88rem;margin-bottom:.5rem;">📷 Foto de perfil</div>',unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
+        st.markdown('<div style="font-weight:600;font-size:.88rem;margin-bottom:.5rem;">📷 Foto de perfil</div>', unsafe_allow_html=True)
         ph=st.file_uploader("",type=["png","jpg","jpeg","webp"],label_visibility="collapsed",key="ph_up")
         if ph:
             b64=img_to_b64(ph)
@@ -1912,8 +1943,8 @@ def page_settings():
                 st.success("✓ Foto atualizada com sucesso!")
                 st.image(ph,width=100,caption="Nova foto")
                 st.rerun()
-        st.markdown("<hr>",unsafe_allow_html=True)
-        st.markdown('<div style="font-weight:600;font-size:.88rem;margin-bottom:.5rem;">Editar informações</div>',unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown('<div style="font-weight:600;font-size:.88rem;margin-bottom:.5rem;">Editar informações</div>', unsafe_allow_html=True)
         new_n=st.text_input("Nome completo",value=u.get("name",""),key="cfg_n")
         new_e=st.text_input("E-mail",value=email,key="cfg_e")
         new_a=st.text_input("Área de pesquisa",value=u.get("area",""),key="cfg_a")
@@ -1933,7 +1964,7 @@ def page_settings():
             st.success("✓ Perfil salvo!")
             st.rerun()
     with tab_s:
-        st.markdown('<h3>Alterar senha</h3>',unsafe_allow_html=True)
+        st.markdown('<h3>Alterar senha</h3>', unsafe_allow_html=True)
         op=st.text_input("Senha atual",type="password",key="op")
         np_=st.text_input("Nova senha",type="password",key="np_")
         np2=st.text_input("Confirmar",type="password",key="np2")
@@ -1950,8 +1981,8 @@ def page_settings():
                 st.session_state.users[email]["password"]=hp(np_)
                 save_db()
                 st.success("✓ Senha alterada!")
-        st.markdown("<hr>",unsafe_allow_html=True)
-        st.markdown('<h3>Autenticação em 2 fatores</h3>',unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown('<h3>Autenticação em 2 fatores</h3>', unsafe_allow_html=True)
         en=u.get("2fa_enabled",False)
         st.markdown(
             f'<div style="background:var(--glass);border:1px solid var(--bdr);border-radius:14px;padding:14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;">'
@@ -1981,8 +2012,8 @@ def page_settings():
             f'<div style="font-size:.73rem;color:var(--t3);">{d2}</div></div></div>'
             for n2,d2 in prots
         )
-        st.markdown(f'<div class="card"><div style="font-weight:700;margin-bottom:1rem;">Proteções ativas</div><div style="display:grid;gap:9px;">{items}</div></div>',unsafe_allow_html=True)
-        st.markdown('<h3>Visibilidade</h3>',unsafe_allow_html=True)
+        st.markdown(f'<div class="card"><div style="font-weight:700;margin-bottom:1rem;">Proteções ativas</div><div style="display:grid;gap:9px;">{items}</div></div>', unsafe_allow_html=True)
+        st.markdown('<h3>Visibilidade</h3>', unsafe_allow_html=True)
         c1,c2=st.columns(2)
         with c1:
             st.selectbox("Perfil",["Público","Só seguidores","Privado"],key="vp")
@@ -1992,7 +2023,7 @@ def page_settings():
             st.selectbox("Rede de conhecimento",["Público","Só seguidores","Privado"],key="vn")
         if st.button("💾 Salvar privacidade",key="btn_priv"):
             st.success("✓ Configurações de privacidade salvas!")
-    st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── ROUTER ─────────────────────────────────
 def main():
