@@ -3,8 +3,12 @@ from datetime import datetime
 from collections import defaultdict, Counter
 
 def _pip(pkg):
-    subprocess.check_call([sys.executable,"-m","pip","install",pkg,"-q"],
-                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.check_call([sys.executable,"-m","pip","install",pkg,"-q"],
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        st.warning(f"Não foi possível instalar a biblioteca {pkg}. Por favor, instale manualmente: pip install {pkg}. Erro: {e}")
+
 try: import plotly.graph_objects as go
 except: _pip("plotly"); import plotly.graph_objects as go
 try: import numpy as np; from PIL import Image as PILImage
@@ -221,9 +225,14 @@ input[type="number"]{background:rgba(4,10,22,.75)!important;border:1px solid var
 .pbox{background:rgba(6,182,212,.06);border:1px solid rgba(6,182,212,.24);
   border-radius:var(--rmd);padding:1rem;margin-bottom:.8rem}
 /* ── FEED AUTHOR LINK ── */
-.author-link{cursor:pointer;color:var(--t1);font-weight:600;font-family:'Syne',sans-serif;
-  font-size:.9rem;text-decoration:none;transition:color .18s}
-.author-link:hover{color:var(--b300);}
+.clickable-author{cursor:pointer;display:inline-flex;align-items:center;gap:8px;
+  padding:4px 10px 4px 4px;border-radius:30px;
+  transition:background .18s,border-color .18s;
+  border:1px solid transparent;}
+.clickable-author:hover{background:rgba(30,100,180,.18);border-color:rgba(90,158,240,.28);}
+.clickable-author-name{font-weight:700;font-size:.90rem;font-family:'Syne',sans-serif;
+  color:var(--t1);transition:color .18s;}
+.clickable-author:hover .clickable-author-name{color:var(--b300);}
 /* ── DOT ── */
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.85)}}
 .don{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);animation:pulse 2s infinite;margin-right:5px}
@@ -242,6 +251,10 @@ input[type="number"]{background:rgba(4,10,22,.75)!important;border:1px solid var
 /* ── PROGRESS BAR CUSTOM ── */
 .prog-bar-wrap{height:6px;background:var(--gbd);border-radius:4px;overflow:hidden;margin:.25rem 0 .6rem}
 .prog-bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
+/* ── IMAGE SEARCH RESULTS ── */
+.img-result-card{background:rgba(6,182,212,.06);border:1px solid rgba(6,182,212,.22);
+  border-radius:var(--rmd);padding:1rem;margin-bottom:.7rem;}
+.img-source-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:.67rem;font-weight:600;margin:2px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -389,7 +402,9 @@ def analyze_image_advanced(uploaded_file):
                 "texture":{"entropy":round(entropy,3),"contrast":round(contrast,2),
                            "complexity":"Alta" if entropy>5.5 else ("Média" if entropy>4 else "Baixa")},
                 "palette":palette,"size":orig,"skin_pct":round(skin_pct*100,1)}
-    except: return None
+    except Exception as e:
+        st.error(f"Erro ao analisar imagem: {e}")
+        return None
 
 # ════════════════════════════════════════════════════
 # FOLDER DOCUMENT ANALYSIS
@@ -461,7 +476,10 @@ def search_semantic_scholar(query, limit=8):
                     "year":p.get("year","?"),"source":p.get("venue","") or "Semantic Scholar",
                     "doi":doi or arxiv or "—","abstract":abstract,"url":link,
                     "citations":p.get("citationCount",0),"origin":"semantic"})
-    except: pass
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Erro ao buscar no Semantic Scholar: {e}")
+    except Exception as e:
+        st.warning(f"Erro inesperado no Semantic Scholar: {e}")
     return results
 
 def search_crossref(query, limit=5):
@@ -484,8 +502,73 @@ def search_crossref(query, limit=5):
                     "source":journal or "CrossRef","doi":doi,"abstract":abstract,
                     "url":f"https://doi.org/{doi}" if doi else "",
                     "citations":p.get("is-referenced-by-count",0),"origin":"crossref"})
-    except: pass
+    except requests.exceptions.RequestException as e:
+        st.warning(f"Erro ao buscar no CrossRef: {e}")
+    except Exception as e:
+        st.warning(f"Erro inesperado no CrossRef: {e}")
     return results
+
+# ════════════════════════════════════════════════════
+# IMAGE REVERSE SEARCH — busca artigos pela imagem
+# ════════════════════════════════════════════════════
+def search_image_in_nebula(rep):
+    """Busca posts da Nebula relacionados à imagem analisada."""
+    kw = rep.get("kw","").lower().split()
+    category_words = rep.get("category","").lower().split()
+    all_kw = list(set(kw + category_words))
+    results = []
+    for p in st.session_state.feed_posts:
+        score = 0
+        post_text = (p.get("title","") + " " + p.get("abstract","") + " " + " ".join(p.get("tags",[]))).lower()
+        for k in all_kw:
+            if len(k) > 3 and k in post_text:
+                score += 1
+        if score > 0:
+            results.append((score, p))
+    results.sort(key=lambda x: -x[0])
+    return [p for _, p in results[:4]]
+
+def search_image_in_folders(rep):
+    """Busca nos arquivos das pastas do usuário relacionados à imagem."""
+    kw = rep.get("kw","").lower().split()
+    category_words = rep.get("category","").lower().split()
+    all_kw = list(set(kw + category_words))
+    matches = []
+    current_user_email = st.session_state.current_user
+
+    for fname, fdata in st.session_state.folders.items():
+        if not isinstance(fdata, dict): continue
+        # Consider only folders of the current user for this search
+        # (Assuming folders are implicitly owned by the current user for simplicity,
+        # or you'd need a 'owner_email' field in folder data)
+
+        files = fdata.get("files", [])
+        folder_tags = [t.lower() for t in fdata.get("analysis_tags", [])]
+
+        folder_score = 0
+        for k in all_kw:
+            if len(k) > 3 and any(k in t for t in folder_tags):
+                folder_score += 1
+
+        for f in files:
+            file_lower = f.lower()
+            for k in all_kw:
+                if len(k) > 3 and k in file_lower:
+                    folder_score += 1 # Increment score for file match
+
+        if folder_score > 0:
+            matches.append({"folder": fname, "tags": fdata.get("analysis_tags",[]), "files": files, "score": folder_score})
+
+    matches.sort(key=lambda x: -x["score"])
+    return matches[:4]
+
+def search_image_internet(rep):
+    """Busca artigos na internet relacionados à categoria da imagem."""
+    query = rep.get("kw","scientific image analysis")
+    ss = search_semantic_scholar(query, limit=3)
+    cr = search_crossref(query, limit=2)
+    merged = ss + [x for x in cr if not any(x["title"].lower()==s["title"].lower() for s in ss)]
+    return merged[:5]
 
 # ════════════════════════════════════════════════════
 # RECOMMENDATION ENGINE
@@ -599,6 +682,8 @@ def init():
     st.session_state.setdefault("notifications",["Carlos curtiu sua pesquisa","Nova conexão detectada"])
     st.session_state.setdefault("scholar_cache",{})
     st.session_state.setdefault("saved_articles",[])
+    st.session_state.setdefault("img_analysis_result", None)
+    st.session_state.setdefault("img_search_done", False)
 
 init()
 
@@ -780,7 +865,24 @@ def page_profile(target_email):
     st.markdown("<hr>",unsafe_allow_html=True)
     st.markdown(f'<h2>Pesquisas de {tname.split()[0]}</h2>',unsafe_allow_html=True)
     if user_posts:
-        for p in user_posts: render_post(p,show_profile_link=False)
+        for p in user_posts:
+            # Simplified render_post for profile page, without full interaction buttons
+            st.markdown(f"""
+            <div class="card" style="cursor:default;">
+              <div style="display:flex;align-items:center;gap:12px;margin-bottom:.95rem;">
+                <div style="flex-shrink:0;">{avh(ini(p.get('author','?')),44,get_photo(p.get('author_email','')))}</div>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:700;font-size:.90rem;font-family:'Syne',sans-serif;color:var(--t1);">
+                    {p['author']}
+                  </div>
+                  <div style="color:var(--t3);font-size:.70rem;margin-top:1px;">{p['area']} · {p['date']}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;">{badge(p['status'])}</div>
+              </div>
+              <h3 style="margin-bottom:.48rem;font-size:1rem;line-height:1.45;">{p['title']}</h3>
+              <p style="color:var(--t2);font-size:.83rem;line-height:1.68;margin-bottom:.82rem;">{p['abstract']}</p>
+              <div style="margin-bottom:.4rem;">{tags_html(p['tags'])}</div>
+            </div>""",unsafe_allow_html=True)
     else:
         st.markdown('<div class="card" style="text-align:center;padding:2.5rem;color:var(--t3);">Nenhuma pesquisa publicada ainda.</div>',unsafe_allow_html=True)
 
@@ -795,7 +897,7 @@ def page_feed():
     recs=get_recs(email)
     if recs:
         st.markdown('<span class="badge-rec">✦ RECOMENDADO PARA VOCÊ</span><br>',unsafe_allow_html=True)
-        for p in recs: render_post(p,rec=True)
+        for p in recs: render_post(p, rec=True, ctx="rec") # Pass ctx="rec"
         st.markdown("<hr>",unsafe_allow_html=True)
 
     with st.expander("＋  Publicar nova pesquisa"):
@@ -820,23 +922,26 @@ def page_feed():
     posts=st.session_state.feed_posts
     if ff=="Seguidos": posts=[p for p in posts if p.get("author_email") in st.session_state.followed]
     elif ff=="Salvos": posts=[p for p in posts if email in p.get("saved_by",[])]
-    for p in posts: render_post(p)
+    for p in posts: render_post(p, ctx="feed") # Pass ctx="feed"
     st.markdown('</div>',unsafe_allow_html=True)
 
-def render_post(post, rec=False, show_profile_link=True):
+def render_post(post, rec=False, show_profile_link=True, ctx="general"): # Added ctx parameter
     email=st.session_state.current_user
     liked=email in post["liked_by"]; saved=email in post.get("saved_by",[])
     aemail=post.get("author_email",""); aphoto=get_photo(aemail); ain=post.get("avatar","??")
     rec_badge='<span class="badge-rec" style="margin-left:6px;font-size:.65rem;">Rec.</span>' if rec else ""
 
     # Card with clickable author area
+    # Use a unique key for the author link to prevent conflicts if multiple posts from same author are on screen
+    author_link_key = f"author_link_{ctx}_{post['id']}"
+
     st.markdown(f"""
     <div class="card" style="cursor:default;">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:.95rem;">
         <div style="flex-shrink:0;">{avh(ain,44,aphoto)}</div>
         <div style="flex:1;min-width:0;">
-          <div style="font-weight:700;font-size:.90rem;font-family:'Syne',sans-serif;color:var(--t1);">
-            {post['author']}
+          <div class="clickable-author" onclick="document.getElementById('{author_link_key}').click()">
+            <span class="clickable-author-name">{post['author']}</span>
           </div>
           <div style="color:var(--t3);font-size:.70rem;margin-top:1px;">{post['area']} · {post['date']}</div>
         </div>
@@ -847,32 +952,57 @@ def render_post(post, rec=False, show_profile_link=True):
       <div style="margin-bottom:.4rem;">{tags_html(post['tags'])}</div>
     </div>""",unsafe_allow_html=True)
 
+    # Invisible button for author profile click
+    if show_profile_link and aemail:
+        if st.button("", key=author_link_key, help="Ver perfil completo", use_container_width=True):
+            st.session_state.profile_view = aemail
+            st.rerun()
+        # Overlay the invisible button over the author name area
+        st.markdown(f"""
+        <style>
+            .stButton[data-testid="stButton"] > button[key="{author_link_key}"] {{
+                position: absolute;
+                top: 1.35rem; /* Adjust to align with author name */
+                left: 1.5rem; /* Adjust to align with author name */
+                width: 200px; /* Make it wide enough to cover the name and area */
+                height: 50px; /* Make it tall enough */
+                z-index: 1; /* Ensure it's above the card content but below other buttons */
+                opacity: 0; /* Make it invisible */
+            }}
+            .stButton[data-testid="stButton"] > button[key="{author_link_key}"]:hover {{
+                opacity: 0.1; /* Slightly visible on hover for debugging, remove in production */
+                background: rgba(90,158,240,.1); /* Visual feedback on hover */
+            }}
+        </style>
+        """, unsafe_allow_html=True)
+
+
     # Action row
     c1,c2,c3,c4,c5,_ = st.columns([.9,.9,.7,.7,1,2.5])
     with c1:
-        if st.button(f"{'❤' if liked else '♡'} {post['likes']}",key=f"lk_{post['id']}"):
+        if st.button(f"{'❤' if liked else '♡'} {post['likes']}",key=f"lk_{ctx}_{post['id']}"): # Use ctx in key
             if liked: post["liked_by"].remove(email); post["likes"]-=1
             else: post["liked_by"].append(email); post["likes"]+=1; record(post["tags"],1.5)
             save_db(); st.rerun()
     with c2:
-        if st.button(f"💬 {len(post['comments'])}",key=f"cm_t_{post['id']}"):
-            k=f"sc_{post['id']}"; st.session_state[k]=not st.session_state.get(k,False); st.rerun()
+        if st.button(f"💬 {len(post['comments'])}",key=f"cm_t_{ctx}_{post['id']}"): # Use ctx in key
+            k=f"sc_{ctx}_{post['id']}"; st.session_state[k]=not st.session_state.get(k,False); st.rerun()
     with c3:
-        if st.button("🔖" if saved else "📌",key=f"sv_{post['id']}"):
+        if st.button("🔖" if saved else "📌",key=f"sv_{ctx}_{post['id']}"): # Use ctx in key
             if saved: post["saved_by"].remove(email)
             else: post["saved_by"].append(email)
             save_db(); st.rerun()
     with c4:
-        if st.button("↗",key=f"sh_{post['id']}"):
-            k=f"sopen_{post['id']}"; st.session_state[k]=not st.session_state.get(k,False); st.rerun()
+        if st.button("↗",key=f"sh_{ctx}_{post['id']}"): # Use ctx in key
+            k=f"sopen_{ctx}_{post['id']}"; st.session_state[k]=not st.session_state.get(k,False); st.rerun()
     with c5:
         # Clickable "Ver perfil" button — this IS the profile navigation
         if show_profile_link and aemail:
-            if st.button(f"👤 {post['author'].split()[0]}",key=f"vp_{post['id']}",help="Ver perfil completo"):
+            if st.button(f"👤 {post['author'].split()[0]}",key=f"vp_{ctx}_{post['id']}",help="Ver perfil completo"): # Use ctx in key
                 st.session_state.profile_view=aemail; st.rerun()
 
     # Share modal
-    if st.session_state.get(f"sopen_{post['id']}",False):
+    if st.session_state.get(f"sopen_{ctx}_{post['id']}",False): # Use ctx in key
         url=f"https://nebula.ai/post/{post['id']}"
         t_enc=post['title'][:70].replace(" ","+")
         st.markdown(f"""<div class="card" style="padding:1rem;margin-top:-6px;">
@@ -886,11 +1016,11 @@ def render_post(post, rec=False, show_profile_link=True):
         st.code(url,language=None)
 
     # Comments
-    if st.session_state.get(f"sc_{post['id']}",False):
+    if st.session_state.get(f"sc_{ctx}_{post['id']}",False): # Use ctx in key
         for c in post["comments"]:
-            st.markdown(f'<div style="background:rgba(8,20,48,.82);border-radius:10px;padding:8px 14px;margin:3px 0;font-size:.81rem;border:1px solid var(--gbd);"><strong style="color:var(--b300);">{c["user"]}</strong>: {c["text"]}</div>',unsafe_allow_html=True)
-        nc=st.text_input("",key=f"ci_{post['id']}",label_visibility="collapsed",placeholder="Adicionar comentário…")
-        if st.button("Enviar",key=f"cs_{post['id']}"):
+            st.markdown(f'<div style="background:rgba(8,20,48,.82);border-radius:10px;padding:8px 14px;margin:3px 0;font-size:.81rem;border:1px solid var(--gbd);"><strong>{c["user"]}</strong>: {c["text"]}</div>',unsafe_allow_html=True)
+        nc=st.text_input("",key=f"ci_{ctx}_{post['id']}",label_visibility="collapsed",placeholder="Adicionar comentário…") # Use ctx in key
+        if st.button("Enviar",key=f"cs_{ctx}_{post['id']}"): # Use ctx in key
             if nc:
                 post["comments"].append({"user":guser().get("name","Você"),"text":nc})
                 record(post["tags"],.8); save_db(); st.rerun()
@@ -960,7 +1090,10 @@ def render_search_post(post):
         st.markdown(f"""<div class="scard">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:.55rem;">
             {avh(ain,30,aphoto)}
-            <div style="flex:1;"><div style="font-size:.80rem;font-weight:600;font-family:'Syne',sans-serif;">{post['author']}</div>
+            <div style="flex:1;">
+              <div class="clickable-author" onclick="document.getElementById('search_author_link_{post['id']}').click()">
+                <span class="clickable-author-name" style="font-size:.80rem;">{post['author']}</span>
+              </div>
             <div style="font-size:.68rem;color:var(--t3);">{post['area']} · {post['date']} · {badge(post['status'])}</div></div>
             <span style="font-size:.64rem;color:var(--b300);background:rgba(30,100,180,.10);border-radius:8px;padding:2px 8px;">Nebula</span>
           </div>
@@ -971,6 +1104,29 @@ def render_search_post(post):
         st.markdown("<div style='height:18px'></div>",unsafe_allow_html=True)
         if aemail and st.button("👤",key=f"vpa_s_{post['id']}",use_container_width=True,help="Ver perfil"):
             st.session_state.profile_view=aemail; st.rerun()
+    # Invisible button for author profile click in search results
+    if aemail:
+        if st.button("", key=f"search_author_link_{post['id']}", help="Ver perfil completo", use_container_width=True):
+            st.session_state.profile_view = aemail
+            st.rerun()
+        st.markdown(f"""
+        <style>
+            .stButton[data-testid="stButton"] > button[key="search_author_link_{post['id']}"] {{
+                position: absolute;
+                top: 1.1rem; /* Adjust to align with author name */
+                left: 1.3rem; /* Adjust to align with author name */
+                width: 150px; /* Make it wide enough to cover the name and area */
+                height: 40px; /* Make it tall enough */
+                z-index: 1; /* Ensure it's above the card content but below other buttons */
+                opacity: 0; /* Make it invisible */
+            }}
+            .stButton[data-testid="stButton"] > button[key="search_author_link_{post['id']}"]:hover {{
+                opacity: 0.1; /* Slightly visible on hover for debugging, remove in production */
+                background: rgba(90,158,240,.1); /* Visual feedback on hover */
+            }}
+        </style>
+        """, unsafe_allow_html=True)
+
 
 def render_web_article(a, idx=0):
     src_color="#22d3ee" if a.get("origin")=="semantic" else "#a78bfa"
@@ -984,7 +1140,7 @@ def render_web_article(a, idx=0):
         <span style="font-size:.63rem;color:{src_color};background:rgba(6,182,212,.07);border-radius:8px;padding:2px 8px;white-space:nowrap;flex-shrink:0;">{src_name}</span>
       </div>
       <div style="color:var(--t3);font-size:.70rem;margin-bottom:.4rem;">{a['authors']} · <em>{a['source']}</em> · {a['year']}{cite}</div>
-      <div style="color:var(--t2);font-size:.80rem;line-height:1.6;">{a['abstract'][:250]}{"…" if len(a['abstract'])>250 else ""}</div>
+      <div style="color:var(--t2);font-size:.80rem;line-height:1.6;">{a['abstract'][:250]}{"…" if len(a['abstract'])>250 else ""}.</div>
     </div>""",unsafe_allow_html=True)
     ca,cb,cc=st.columns([1,1,1])
     with ca:
@@ -1355,7 +1511,7 @@ def page_img_search():
     col_up,col_res=st.columns([1,1.75])
     with col_up:
         st.markdown('<div class="card">',unsafe_allow_html=True)
-        st.markdown('<div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.88rem;margin-bottom:.8rem;">Upload de imagem</div>',unsafe_allow_html=True)
+        st.markdown('<div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.88rem;margin-bottom:.8rem;">📷 Upload de imagem</div>',unsafe_allow_html=True)
         img_file=st.file_uploader("",type=["png","jpg","jpeg","webp","tiff"],label_visibility="collapsed")
         if img_file: st.image(img_file,use_container_width=True,caption="Imagem carregada")
         run=st.button("🔬 Analisar",use_container_width=True,key="btn_run")
@@ -1366,6 +1522,8 @@ def page_img_search():
             img_file.seek(0)
             with st.spinner("Analisando padrões, bordas, formas e cores…"):
                 rep=analyze_image_advanced(img_file)
+                st.session_state.img_analysis_result = rep # Store result
+                st.session_state.img_search_done = True
             if rep:
                 st.markdown(f"""<div class="abox">
                   <div style="font-size:.65rem;color:var(--t3);letter-spacing:.10em;text-transform:uppercase;margin-bottom:4px;">Categoria Detectada</div>
@@ -1386,8 +1544,8 @@ def page_img_search():
                 st.markdown(f"""<div class="pbox">
                   <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.7rem;color:var(--cyanl);">📐 Análise de Linhas e Bordas</div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:.79rem;color:var(--t2);margin-bottom:.7rem;">
-                    <div><span style="color:var(--t3);">Intensidade total:</span><br><strong style="color:var(--t1);">{l["intensity"]:.2f}</strong></div>
-                    <div><span style="color:var(--t3);">Direção:</span><br><strong style="color:var(--t1);">{l["direction"]}</strong></div>
+                    <div><span style="color:var(--t3);">Intensidade total:</span><br><strong>{l["intensity"]:.2f}</strong></div>
+                    <div><span style="color:var(--t3);">Direção:</span><br><strong>{l["direction"]}</strong></div>
                     <div><span style="color:var(--t3);">Força H ({l["h"]:.2f}):</span>{prog_bar(h_pct,"#2272c3")}</div>
                     <div><span style="color:var(--t3);">Força V ({l["v"]:.2f}):</span>{prog_bar(v_pct,"#06b6d4")}</div>
                   </div>
@@ -1402,29 +1560,76 @@ def page_img_search():
                   <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.7rem;">🎨 Análise de Cor</div>
                   <div style="display:flex;gap:14px;align-items:center;margin-bottom:.8rem;">
                     <div style="width:44px;height:44px;border-radius:10px;background:{hex_col};border:2px solid var(--gbdl);flex-shrink:0;"></div>
-                    <div style="font-size:.80rem;color:var(--t2);">RGB: <strong style="color:var(--t1);">({int(r_v)}, {int(g_v)}, {int(b_v)})</strong> · Hex: <strong>{hex_col.upper()}</strong><br>
-                    Brilho: <strong style="color:var(--t1);">{(r_v+g_v+b_v)/3:.0f}/255</strong> · Temperatura: <strong style="color:var(--t1);">{"Quente 🔴" if rep["color"]["warm"] else ("Fria 🔵" if rep["color"]["cool"] else "Neutra ⚪")}</strong></div>
+                    <div style="font-size:.80rem;color:var(--t2);">RGB: <strong>({int(r_v)}, {int(g_v)}, {int(b_v)})</strong> · Hex: <strong>{hex_col.upper()}</strong><br>
+                    Brilho: <strong>{(r_v+g_v+b_v)/3:.0f}/255</strong> · Temperatura: <strong>{"Quente 🔴" if rep["color"]["warm"] else ("Fria 🔵" if rep["color"]["cool"] else "Neutra ⚪")}</strong></div>
                   </div>
                   <div style="font-size:.70rem;color:var(--t3);margin-bottom:6px;">Paleta predominante:</div>
                   <div style="display:flex;gap:7px;flex-wrap:wrap;">{pal_html}</div>
                   <div style="margin-top:.7rem;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.79rem;">
-                    <div style="color:var(--t3);">Entropia: <strong style="color:var(--t1);">{rep["texture"]["entropy"]:.3f} bits</strong></div>
-                    <div style="color:var(--t3);">Contraste: <strong style="color:var(--t1);">{rep["texture"]["contrast"]:.2f}</strong></div>
+                    <div style="color:var(--t3);">Entropia: <strong>{rep["texture"]["entropy"]:.3f} bits</strong></div>
+                    <div style="color:var(--t3);">Contraste: <strong>{rep["texture"]["contrast"]:.2f}</strong></div>
                   </div>
                 </div>""",unsafe_allow_html=True)
-                # Related posts
-                kw=rep.get("kw","").lower().split()
-                related=[p for p in st.session_state.feed_posts if any(k in " ".join(p.get("tags",[])).lower() for k in kw)][:2]
-                if related:
-                    st.markdown('<div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.86rem;margin-bottom:.5rem;">Pesquisas relacionadas</div>',unsafe_allow_html=True)
-                    for p in related: render_search_post(p)
             else: st.error("Não foi possível analisar. Verifique o formato do arquivo.")
-        elif not img_file:
+        elif not img_file and not st.session_state.img_search_done:
             st.markdown("""<div class="card" style="text-align:center;padding:4rem 2rem;">
               <div style="font-size:3.5rem;margin-bottom:1rem;">🔬</div>
               <div style="font-family:'Syne',sans-serif;font-size:1rem;color:var(--t2);margin-bottom:.5rem;">Carregue uma imagem para análise real</div>
               <div style="color:var(--t3);font-size:.77rem;line-height:1.8;">PNG · JPG · WEBP · TIFF<br>Detecta: histologia · fluorescência · cristalografia<br>diagramas · imagens multiespectrais · estruturas moleculares</div>
             </div>""",unsafe_allow_html=True)
+
+        # Display search results if analysis was done
+        if st.session_state.img_search_done and st.session_state.img_analysis_result:
+            rep = st.session_state.img_analysis_result
+            st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown('<h2>🔎 Pesquisas Relacionadas</h2>', unsafe_allow_html=True)
+
+            # Search in Nebula posts
+            nebula_results = search_image_in_nebula(rep)
+            if nebula_results:
+                st.markdown('<div style="font-size:.68rem;color:var(--b300);font-weight:600;margin-bottom:.5rem;letter-spacing:.06em;text-transform:uppercase;">NA NEBULA</div>',unsafe_allow_html=True)
+                for p in nebula_results:
+                    st.markdown(f"""<div class="img-result-card">
+                        <div style="font-family:'Syne',sans-serif;font-size:.92rem;font-weight:700;margin-bottom:.3rem;">{p['title']}</div>
+                        <div style="color:var(--t3);font-size:.70rem;margin-bottom:.4rem;">{p['author']} · {p['area']} · {p['date']}</div>
+                        <div style="font-size:.80rem;color:var(--t2);margin-bottom:.4rem;">{p['abstract'][:150]}…</div>
+                        <div>{tags_html(p['tags'])}</div>
+                    </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown('<div style="color:var(--t3);font-size:.80rem;margin-bottom:1rem;">Nenhuma pesquisa relacionada encontrada na Nebula.</div>', unsafe_allow_html=True)
+
+            # Search in user's folders
+            folder_results = search_image_in_folders(rep)
+            if folder_results:
+                st.markdown('<div style="font-size:.68rem;color:var(--ok);font-weight:600;margin-top:1.5rem;margin-bottom:.5rem;letter-spacing:.06em;text-transform:uppercase;">NAS SUAS PASTAS</div>',unsafe_allow_html=True)
+                for f_match in folder_results:
+                    st.markdown(f"""<div class="img-result-card">
+                        <div style="font-family:'Syne',sans-serif;font-size:.92rem;font-weight:700;margin-bottom:.3rem;">📁 Pasta: {f_match['folder']}</div>
+                        <div style="color:var(--t3);font-size:.70rem;margin-bottom:.4rem;">Arquivos: {len(f_match['files'])}</div>
+                        <div style="font-size:.80rem;color:var(--t2);margin-bottom:.4rem;">Tópicos: {tags_html(f_match['tags'])}</div>
+                    </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown('<div style="color:var(--t3);font-size:.80rem;margin-bottom:1rem;">Nenhum documento relacionado encontrado nas suas pastas.</div>', unsafe_allow_html=True)
+
+            # Search on the Internet
+            internet_results = search_image_internet(rep)
+            if internet_results:
+                st.markdown('<div style="font-size:.68rem;color:var(--cyanl);font-weight:600;margin-top:1.5rem;margin-bottom:.5rem;letter-spacing:.06em;text-transform:uppercase;">NA INTERNET (ACADÊMICO)</div>',unsafe_allow_html=True)
+                for idx, a in enumerate(internet_results):
+                    src_color="#22d3ee" if a.get("origin")=="semantic" else "#a78bfa"
+                    src_name="Semantic Scholar" if a.get("origin")=="semantic" else "CrossRef"
+                    st.markdown(f"""<div class="img-result-card">
+                        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:.38rem;">
+                            <div style="flex:1;font-family:'Syne',sans-serif;font-size:.92rem;font-weight:700;">{a['title']}</div>
+                            <span class="img-source-badge" style="color:{src_color};background:rgba(6,182,212,.07);">{src_name}</span>
+                        </div>
+                        <div style="color:var(--t3);font-size:.70rem;margin-bottom:.4rem;">{a['authors']} · <em>{a['source']}</em> · {a['year']}</div>
+                        <div style="font-size:.80rem;color:var(--t2);line-height:1.6;">{a['abstract'][:150]}…</div>
+                        <a href="{a['url']}" target="_blank" style="color:var(--b300);font-size:.80rem;text-decoration:none;margin-top:.5rem;display:inline-block;">Abrir Artigo ↗</a>
+                    </div>""", unsafe_allow_html=True)
+            else:
+                st.markdown('<div style="color:var(--t3);font-size:.80rem;margin-bottom:1rem;">Nenhum artigo relacionado encontrado na internet.</div>', unsafe_allow_html=True)
+
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════
