@@ -753,7 +753,7 @@ def render_topnav():
         else:
             nav_html += f'<span style="font-size:.77rem;color:var(--t3);padding:.35rem .68rem;border-radius:var(--rxs);white-space:nowrap;display:inline-flex;align-items:center;gap:5px;">{sym} {lbl}</span>'
     img_html = f"<img src='{photo}' style='width:100%;height:100%;object-fit:cover;border-radius:50%'/>" if photo else in_
-    av_html = f'<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--b800),var(--b500));display:flex;align-items:center;justify-content:center;font-size:.74rem;font-weight:700;color:white;border:1.5px solid rgba(96,165,245,.25);overflow:hidden;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4);">{img_html}</div>'
+    av_html = f'<div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,var(--b800),var(--b500));display:flex;align-items:center;justify-content:center;font-size:.74rem;font-weight:700;color:white;border:1.5px solid rgba(96,165,245,.25);overflow:hidden;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.4);">{(img_html)}</div>'
     nb = f'<span style="background:var(--b500);color:white;border-radius:10px;padding:1px 7px;font-size:.63rem;font-weight:600;">{notif}</span>' if notif else ""
     st.markdown(f"""<div style="position:sticky;top:0;z-index:999;background:rgba(1,4,9,.90);backdrop-filter:blur(28px) saturate(200%);-webkit-backdrop-filter:blur(28px) saturate(200%);border-bottom:1px solid var(--gbd);padding:0 1.4rem;display:flex;align-items:center;justify-content:space-between;height:56px;">
       <div style="font-family:'Syne',sans-serif;font-size:1.28rem;font-weight:800;background:linear-gradient(135deg,#93c5fd,#22d3ee);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;white-space:nowrap;letter-spacing:-.02em;">🔬 Nebula</div>
@@ -782,7 +782,7 @@ def page_profile(target_email):
     if st.button("← Voltar", key="back_prof"):
         st.session_state.profile_view = None; st.rerun()
     st.markdown(f"""<div class="prof-hero">
-      <div class="prof-photo">{("<img src='"+tphoto+"'/>") if tphoto else f'<span style="font-size:2rem;">{tin}</span>'}</div>
+      <div class="prof-photo">{(("<img src='"+tphoto+"'/>") if tphoto else f'<span style="font-size:2rem;">{tin}</span>')}</div>
       <div style="flex:1;">
         <h1 style="margin-bottom:.25rem;">{tname}</h1>
         <div style="color:var(--b300);font-size:.84rem;margin-bottom:.5rem;">{tu.get('area','')}</div>
@@ -930,11 +930,11 @@ def render_post(post, rec=False, show_profile_link=True):
                 st.session_state.profile_view = aemail; st.rerun()
     if st.session_state.get(f"sopen_{post['id']}", False):
         url = f"https://nebula.ai/post/{post['id']}"
-        st.markdown(f'<div class="card" style="padding:1rem;"><div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.86rem;margin-bottom:.5rem;">Compartilhar</div><div style="display:flex;gap:.5rem;flex-wrap:wrap;"><a href="https://twitter.com/intent/tweet?text={post[\'title\'][:60]}&url={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.5rem .8rem;font-size:.73rem;color:var(--t2);">𝕏 Twitter</div></a><a href="https://www.linkedin.com/sharing/share-offsite/?url={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.5rem .8rem;font-size:.73rem;color:var(--t2);">in LinkedIn</div></a><a href="https://wa.me/?text={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.5rem .8rem;font-size:.73rem;color:var(--t2);">📱 WhatsApp</div></a></div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="card" style="padding:1rem;"><div style="font-family:\'Syne\',sans-serif;font-weight:700;font-size:.86rem;margin-bottom:.5rem;">Compartilhar</div><div style="display:flex;gap:.5rem;flex-wrap:wrap;"><a href="https://twitter.com/intent/tweet?text={post["title"][:60]}&url={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.5rem .8rem;font-size:.73rem;color:var(--t2);">𝕏 Twitter</div></a><a href="https://www.linkedin.com/sharing/share-offsite/?url={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.5rem .8rem;font-size:.73rem;color:var(--t2);">in LinkedIn</div></a><a href="https://wa.me/?text={url}" target="_blank" style="text-decoration:none;"><div style="background:var(--gb);border:1px solid var(--gbd);border-radius:var(--rsm);padding:.5rem .8rem;font-size:.73rem;color:var(--t2);">📱 WhatsApp</div></a></div></div>', unsafe_allow_html=True)
         st.code(url, language=None)
     if st.session_state.get(f"sc_{post['id']}", False):
         for c in post["comments"]:
-            st.markdown(f'<div style="background:rgba(10,26,53,.8);border-radius:10px;padding:8px 14px;margin:3px 0;font-size:.82rem;border:1px solid var(--gbd);"><strong style="color:var(--b300);">{c["user"]}</strong>: {c["text"]}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="background:rgba(10,26,53,.8);border-radius:10px;padding:8px 14px;margin:3px 0;font-size:.82rem;border:1px solid var(--gbd);"><strong>{c["user"]}</strong>: {c["text"]}</div>', unsafe_allow_html=True)
         nc = st.text_input("", key=f"ci_{post['id']}", label_visibility="collapsed", placeholder="Adicionar comentário…")
         if st.button("Enviar", key=f"cs_{post['id']}"):
             if nc:
@@ -1249,7 +1249,7 @@ def page_analytics():
                 st.plotly_chart(fig_tags, use_container_width=True)
 
             # Per-folder deep dive
-            st.markdown('<h3 style="margin-bottom:.8rem;">Detalhamento por Pasta</h3>', unsafe_allow_html=True)
+            st.markdown('<h3>Detalhamento por Pasta</h3>', unsafe_allow_html=True)
             for fname, fdata in folders.items():
                 if not isinstance(fdata, dict): continue
                 files = fdata.get("files", [])
@@ -1366,7 +1366,7 @@ def page_analytics():
             for i,(tag,score) in enumerate(top):
                 pct = int(score/mx*100)
                 with (c1 if i%2==0 else c2):
-                    st.markdown(f'<div style="display:flex;justify-content:space-between;font-size:.79rem;margin-bottom:3px;"><span style="color:var(--t2);">{tag}</span><span style="color:var(--b300);">{pct}%</span></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="display:flex;justify-content:space-between;font-size:.79rem;margin-bottom:3px;"><span style="color:var(--t2);">{tag}</span><span style="color:var(--b300);">%{pct}</span></div>', unsafe_allow_html=True)
                     st.progress(pct/100)
         else: st.info("Interaja com pesquisas para construir seu perfil.")
 
@@ -1409,10 +1409,10 @@ def page_img_search():
                 st.markdown(f"""<div class="pattern-box">
                   <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.6rem;color:var(--cyanl);">📐 Análise de Linhas e Bordas</div>
                   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:.80rem;color:var(--t2);">
-                    <div><span style="color:var(--t3);">Direção dominante:</span><br><strong style="color:var(--t1);font-size:.85rem;">{l['direction']}</strong></div>
-                    <div><span style="color:var(--t3);">Intensidade de borda:</span><br><strong style="color:var(--t1);font-size:.85rem;">{l['intensity']:.1f}</strong></div>
-                    <div><span style="color:var(--t3);">Força horizontal:</span><br><strong style="color:var(--b300);">{l['h_strength']:.2f}</strong></div>
-                    <div><span style="color:var(--t3);">Força vertical:</span><br><strong style="color:var(--b300);">{l['v_strength']:.2f}</strong></div>
+                    <div><span style="color:var(--t3);">Direção dominante:</span><br><strong>{l['direction']}</strong></div>
+                    <div><span style="color:var(--t3);">Intensidade de borda:</span><br><strong>{l['intensity']:.1f}</strong></div>
+                    <div><span style="color:var(--t3);">Força horizontal:</span><br><strong>{l['h_strength']:.2f}</strong></div>
+                    <div><span style="color:var(--t3);">Força vertical:</span><br><strong>{l['v_strength']:.2f}</strong></div>
                   </div></div>""", unsafe_allow_html=True)
 
                 # Edge intensity mini bar chart
@@ -1438,23 +1438,23 @@ def page_img_search():
                   <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.6rem;color:var(--cyanl);">⬡ Formas e Estruturas</div>
                   <div style="margin-bottom:.6rem;">{shapes_html}</div>
                   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:.78rem;color:var(--t2);">
-                    <div><span style="color:var(--t3);">Simetria:</span><br><strong style="color:var(--t1);">{sh['symmetry']:.3f}</strong></div>
-                    <div><span style="color:var(--t3);">Circular:</span><br><strong style="color:{'var(--ok)' if sh['circular'] else 'var(--t3)'};">{'Sim' if sh['circular'] else 'Não'}</strong></div>
-                    <div><span style="color:var(--t3);">Grade/Repetição:</span><br><strong style="color:{'var(--ok)' if sh['grid'] else 'var(--t3)'};">{'Sim' if sh['grid'] else 'Não'}</strong></div>
+                    <div><span style="color:var(--t3);">Simetria:</span><br><strong>{sh['symmetry']:.3f}</strong></div>
+                    <div><span style="color:var(--t3);">Circular:</span><br><strong>{'Sim' if sh['circular'] else 'Não'}</strong></div>
+                    <div><span style="color:var(--t3);">Grade/Repetição:</span><br><strong>{'Sim' if sh['grid'] else 'Não'}</strong></div>
                   </div></div>""", unsafe_allow_html=True)
 
                 # ── COLOR ANALYSIS ──
                 r_v, g_v, b_v = rep['color']['mean_rgb']
                 hex_col = "#{:02x}{:02x}{:02x}".format(int(r_v),int(g_v),int(b_v))
-                pal_html = "".join(f'<div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><div style="width:30px;height:30px;border-radius:7px;background:rgb{str(p)};border:1px solid rgba(255,255,255,.09);"></div><div style="font-size:.58rem;color:var(--t3);">#{"{:02x}{:02x}{:02x}".format(*p).upper()}</div></div>' for p in rep["palette"][:6])
+                pal_html = "".join(f'<div style="display:flex;flex-direction:column;align-items:center;gap:3px;"><div style="width:30px;height:30px;border-radius:7px;background:rgb{str(p)};border:1px solid rgba(255,255,255,.09);"></div><div style="font-size:.58rem;color:var(--t3);">#{("{:02x}{:02x}{:02x}".format(*p)).upper()}</div></div>' for p in rep["palette"][:6])
                 st.markdown(f"""<div class="abox">
                   <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:.84rem;margin-bottom:.6rem;">🎨 Análise de Cor</div>
                   <div style="display:flex;gap:12px;align-items:center;margin-bottom:.7rem;">
                     <div style="width:42px;height:42px;border-radius:9px;background:{hex_col};border:1.5px solid var(--gbdl);flex-shrink:0;"></div>
                     <div style="font-size:.79rem;color:var(--t2);">
-                      RGB: <strong style="color:var(--t1);">({int(r_v)},{int(g_v)},{int(b_v)})</strong> · Hex: <strong style="color:var(--t1);">{hex_col.upper()}</strong><br>
-                      Canal dom.: <strong style="color:var(--t1);">{rep['color']['dominant']}</strong> · Temperatura: <strong style="color:var(--t1);">{"Quente 🔴" if rep['color']['warm'] else ("Fria 🔵" if rep['color']['cool'] else "Neutra ⚪")}</strong><br>
-                      Complexidade: <strong style="color:var(--t1);">{rep['texture']['complexity']}</strong> · Contraste: <strong style="color:var(--t1);">{rep['texture']['contrast']:.1f}</strong>
+                      RGB: <strong>({int(r_v)},{int(g_v)},{int(b_v)})</strong> · Hex: <strong>{hex_col.upper()}</strong><br>
+                      Canal dom.: <strong>{rep['color']['dominant']}</strong> · Temperatura: <strong>{"Quente 🔴" if rep['color']['warm'] else ("Fria 🔵" if rep['color']['cool'] else "Neutra ⚪")}</strong><br>
+                      Complexidade: <strong>{rep['texture']['complexity']}</strong> · Contraste: <strong>{rep['texture']['contrast']:.1f}</strong>
                     </div>
                   </div>
                   <div style="font-size:.70rem;color:var(--t3);margin-bottom:.4rem;text-transform:uppercase;letter-spacing:.05em;">Paleta dominante</div>
@@ -1483,7 +1483,7 @@ def page_img_search():
                 st.plotly_chart(fig_tex, use_container_width=True)
 
                 # ── CONNECTIONS: Similar posts in Nebula ──
-                st.markdown('<h3 style="margin-bottom:.6rem;">🔗 Pesquisas Similares na Nebula</h3>', unsafe_allow_html=True)
+                st.markdown('<h3>🔗 Pesquisas Similares na Nebula</h3>', unsafe_allow_html=True)
                 cat_l = rep['category'].lower()
                 kw = rep.get('search_kw','')
                 related = []
@@ -1497,7 +1497,7 @@ def page_img_search():
                         st.markdown(f"""<div class="scard">
                           <div style="display:flex;align-items:center;gap:8px;margin-bottom:.5rem;">
                             {avh(ain,28,aphoto)}
-                            <div><div style="font-size:.78rem;font-weight:600;">{p['author']}</div>
+                            <div><div><strong style="font-size:.78rem;font-weight:600;">{p['author']}</strong></div>
                             <div style="font-size:.67rem;color:var(--t3);">{p['area']}</div></div>
                           </div>
                           <div style="font-family:'Syne',sans-serif;font-size:.88rem;font-weight:700;margin-bottom:.25rem;">{p['title'][:70]}</div>
@@ -1508,7 +1508,7 @@ def page_img_search():
                     st.markdown('<div style="color:var(--t3);font-size:.80rem;">Nenhuma pesquisa similar encontrada na Nebula para esta categoria.</div>', unsafe_allow_html=True)
 
                 # ── CONNECTIONS: Internet search ──
-                st.markdown('<h3 style="margin-bottom:.6rem;margin-top:.8rem;">🌐 Artigos Científicos Relacionados</h3>', unsafe_allow_html=True)
+                st.markdown('<h3>🌐 Artigos Científicos Relacionados</h3>', unsafe_allow_html=True)
                 cache_k = f"img_{rep['search_kw']}"
                 if cache_k not in st.session_state.scholar_cache:
                     with st.spinner("Buscando artigos relacionados…"):
@@ -1587,7 +1587,7 @@ def page_settings():
     with tab_p:
         nm=u.get("name",""); in_=ini(nm); photo=u.get("photo_b64")
         st.markdown(f"""<div class="prof-hero">
-          <div class="prof-photo">{("<img src='"+photo+"'/>") if photo else f'<span style="font-size:2rem;">{in_}</span>'}</div>
+          <div class="prof-photo">{(("<img src='"+photo+"'/>") if photo else f'<span style="font-size:2rem;">{in_}</span>')}</div>
           <div style="flex:1;"><h1 style="margin-bottom:.25rem;">{nm}</h1>
           <div style="color:var(--b300);font-size:.84rem;margin-bottom:.4rem;">{u.get('area','')}</div>
           <div style="color:var(--t2);font-size:.82rem;line-height:1.65;margin-bottom:.8rem;">{u.get('bio','Sem biografia.')}</div>
@@ -1631,8 +1631,8 @@ def page_settings():
             st.session_state.users[email]["2fa_enabled"]=not en; save_db(); st.rerun()
     with tab_pr:
         prots=[("AES-256","Criptografia end-to-end"),("SHA-256","Hash de senhas"),("TLS 1.3","Transmissão segura"),("Zero Knowledge","Pesquisas privadas protegidas")]
-        items="".join(f'<div style="display:flex;align-items:center;gap:12px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.14);border-radius:var(--rmd);padding:11px;"><div style="width:26px;height:26px;border-radius:8px;background:rgba(16,185,129,.12);display:flex;align-items:center;justify-content:center;color:#10b981;font-weight:700;font-size:.74rem;flex-shrink:0;">✓</div><div><div style="font-family:\'Syne\',sans-serif;font-weight:700;color:#10b981;font-size:.83rem;">{n2}</div><div style="font-size:.71rem;color:var(--t3);">{d2}</div></div></div>' for n2,d2 in prots)
-        st.markdown(f'<div class="card"><div style="font-family:\'Syne\',sans-serif;font-weight:700;margin-bottom:1rem;">Proteções ativas</div><div style="display:grid;gap:8px;">{items}</div></div>', unsafe_allow_html=True)
+        items="".join(f'<div style="display:flex;align-items:center;gap:12px;background:rgba(16,185,129,.06);border:1px solid rgba(16,185,129,.14);border-radius:var(--rmd);padding:11px;"><div><div style="width:26px;height:26px;border-radius:8px;background:rgba(16,185,129,.12);display:flex;align-items:center;justify-content:center;color:#10b981;font-weight:700;font-size:.74rem;flex-shrink:0;">✓</div><div style="font-family:\'Syne\',sans-serif;font-weight:700;color:#10b981;font-size:.83rem;">{n2}</div><div style="font-size:.71rem;color:var(--t3);">{d2}</div></div></div>' for n2,d2 in prots)
+        st.markdown(f'<div class="card"><div><div style="font-family:\'Syne\',sans-serif;font-weight:700;margin-bottom:1rem;">Proteções ativas</div><div style="display:grid;gap:8px;">{items}</div></div></div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ─── ROUTER ───────────────────────────────────────────────────────────────────
