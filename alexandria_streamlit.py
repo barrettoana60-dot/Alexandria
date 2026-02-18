@@ -1,21 +1,12 @@
-import subprocess, sys, os, json, hashlib, random, string, base64, re
+import sys, os, json, hashlib, random, string, base64, re
 from datetime import datetime
 from collections import defaultdict
 
-# --- Instalação de pacotes (silenciosa) ---
-def _pip(pkg):
-    try:
-        __import__(pkg.split(" ")[0]) # Tenta importar primeiro
-    except ImportError:
-        subprocess.check_call([sys.executable,"-m","pip","install",pkg,"-q"],
-                              stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-
-_pip("plotly")
+# --- Importação de pacotes (assumindo que estão no requirements.txt) ---
+# Certifique-se de que estes pacotes estão listados no seu requirements.txt
 import plotly.graph_objects as go
-_pip("pillow numpy")
 import numpy as np
 from PIL import Image as PILImage
-_pip("requests")
 import requests
 
 import streamlit as st
@@ -687,7 +678,7 @@ def page_2fa():
           <h2>Verificação 2FA</h2>
           <div style="background:rgba(37,99,235,.12);border:1px solid rgba(37,99,235,.25);border-radius:12px;padding:14px;margin:1rem 0;">
             <div style="font-size:.7rem;color:var(--t3);margin-bottom:6px;">CÓDIGO (demo)</div>
-            <div style="font-family:'Playfair Display',serif;font-size:2rem;font-weight:700;letter-spacing:.2em;color:var(--blue-g);">{p2['code']}</div>
+            <div style="font-family:'Playfair Display',serif;font-size:2.2rem;font-weight:700;letter-spacing:.2em;color:var(--blue-g);">{p2['code']}</div>
           </div>
         </div>
         """,unsafe_allow_html=True)
@@ -1120,7 +1111,7 @@ def page_search():
                 for a in web_res:
                     render_web_article(a)
             else:
-                st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Sem resultados online. Verifique conexão ou tente outros termos.</div>',unsafe_allow_html=True)
+                st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Sem resultados online. Verifique conexão ou tente outros termos.<br>Se a busca na internet falhar, pode ser um problema de conexão ou limite de API.</div>',unsafe_allow_html=True)
         with tab_all:
             if neb_res:
                 st.markdown('<div style="font-size:.74rem;color:var(--blue-g);font-weight:600;margin-bottom:.4rem;letter-spacing:.04em;">NEBULA</div>',unsafe_allow_html=True)
