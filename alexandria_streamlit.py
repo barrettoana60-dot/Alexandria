@@ -542,7 +542,6 @@ def search_image_in_folders(rep):
         # (Assuming folders are implicitly owned by the current user for simplicity,
         # or you'd need a 'owner_email' field in folder data)
 
-        files = fdata.get("files", [])
         folder_tags = [t.lower() for t in fdata.get("analysis_tags", [])]
 
         folder_score = 0
@@ -550,14 +549,14 @@ def search_image_in_folders(rep):
             if len(k) > 3 and any(k in t for t in folder_tags):
                 folder_score += 1
 
-        for f in files:
+        for f in fdata.get("files", []): # Corrected to use fdata.get("files", [])
             file_lower = f.lower()
             for k in all_kw:
                 if len(k) > 3 and k in file_lower:
                     folder_score += 1 # Increment score for file match
 
         if folder_score > 0:
-            matches.append({"folder": fname, "tags": fdata.get("analysis_tags",[]), "files": files, "score": folder_score})
+            matches.append({"folder": fname, "tags": fdata.get("analysis_tags",[]), "files": fdata.get("files",[]), "score": folder_score}) # Corrected to use fdata.get("files",[])
 
     matches.sort(key=lambda x: -x["score"])
     return matches[:4]
@@ -1062,7 +1061,7 @@ def page_search():
         with tab_web:
             if src=="Só Nebula": st.info("Busca na internet desativada.")
             elif web_res:
-                for idx,a in enumerate(web_res): render_web_article(a,idx)
+                for idx,a in enumerate(web_res): render_web_article(a,idx, ctx="web_tab") # Pass ctx="web_tab"
             else: st.markdown('<div style="color:var(--t3);text-align:center;padding:2rem;">Sem resultados. Verifique conexão ou tente outros termos.</div>',unsafe_allow_html=True)
         with tab_all:
             if neb_res:
@@ -1071,7 +1070,7 @@ def page_search():
             if web_res:
                 if neb_res: st.markdown("<hr>",unsafe_allow_html=True)
                 st.markdown('<div style="font-size:.68rem;color:var(--cyanl);font-weight:600;margin-bottom:.5rem;letter-spacing:.06em;text-transform:uppercase;">BASE ACADÊMICA GLOBAL</div>',unsafe_allow_html=True)
-                for idx,a in enumerate(web_res): render_web_article(a,idx)
+                for idx,a in enumerate(web_res): render_web_article(a,idx, ctx="all_tab") # Pass ctx="all_tab"
             if not neb_res and not web_res:
                 st.markdown('<div class="card" style="text-align:center;padding:3rem;"><div style="font-size:2.5rem;margin-bottom:1rem;">🔭</div><div style="color:var(--t3);">Nenhum resultado encontrado</div></div>',unsafe_allow_html=True)
     else:
@@ -1128,11 +1127,12 @@ def render_search_post(post):
         """, unsafe_allow_html=True)
 
 
-def render_web_article(a, idx=0):
+def render_web_article(a, idx=0, ctx="general_web"): # Added ctx parameter
     src_color="#22d3ee" if a.get("origin")=="semantic" else "#a78bfa"
     src_name="Semantic Scholar" if a.get("origin")=="semantic" else "CrossRef"
     cite=f" · {a['citations']} cit." if a.get("citations") else ""
-    uid=re.sub(r'[^a-zA-Z0-9]','',f"{a.get('doi','nodoi')}_{idx}")[:22]
+    # Ensure uid is unique across all contexts where render_web_article is called
+    uid=re.sub(r'[^a-zA-Z0-9]','',f"{ctx}_{a.get('doi','nodoi')}_{idx}")[:30] # Added ctx to uid
     is_saved=any(s.get('doi')==a.get('doi') for s in st.session_state.saved_articles)
     st.markdown(f"""<div class="scard">
       <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:.38rem;">
@@ -1144,12 +1144,12 @@ def render_web_article(a, idx=0):
     </div>""",unsafe_allow_html=True)
     ca,cb,cc=st.columns([1,1,1])
     with ca:
-        if st.button("🔖 Salvo" if is_saved else "📌 Salvar",key=f"sv_w_{uid}"):
+        if st.button("🔖 Salvo" if is_saved else "📌 Salvar",key=f"sv_w_{uid}"): # Use uid in key
             if is_saved: st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]; st.toast("Removido dos salvos")
             else: st.session_state.saved_articles.append(a); st.toast("Salvo!")
             st.rerun()
     with cb:
-        if st.button("📋 Citar APA",key=f"ct_w_{uid}"):
+        if st.button("📋 Citar APA",key=f"ct_w_{uid}"): # Use uid in key
             st.toast(f'{a["authors"]} ({a["year"]}). {a["title"]}. {a["source"]}.')
     with cc:
         if a.get("url"):
@@ -1747,7 +1747,7 @@ def page_settings():
 
     with tab_pr:
         prots=[("AES-256","Criptografia end-to-end das mensagens"),("SHA-256","Hash seguro de senhas"),("TLS 1.3","Transmissão segura de todos os dados"),("Zero Knowledge","Pesquisas privadas inacessíveis à plataforma")]
-        items="".join(f'<div style="display:flex;align-items:center;gap:12px;background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.18);border-radius:var(--rmd);padding:11px;"><div style="width:28px;height:28px;border-radius:8px;background:rgba(16,185,129,.14);display:flex;align-items:center;justify-content:center;color:var(--ok);font-weight:700;font-size:.76rem;flex-shrink:0;">✓</div><div><div style="font-weight:600;color:var(--ok);font-size:.84rem;">{n2}</div><div style="font-size:.71rem;color:var(--t3);">{d2}</div></div></div>' for n2,d2 in prots)
+        items="".join(f'<div style="display:flex;align-items:center;gap:12px;background:rgba(16,185,129,.07);border:1px solid rgba(16,185,129,.18);border-radius:var(--rmd);padding:11px;"><div style="width:28px;height:28px;border-radius:8px;background:rgba(16,185,129,.14);display:flex;align-items:center;justify-content:center;color:var(--ok);font-weight:700;font-size:.76rem;flex-shrink:0;">✓&nbsp;</div><div><div style="font-weight:600;color:var(--ok);font-size:.84rem;">{n2}</div><div style="font-size:.71rem;color:var(--t3);">{d2}</div></div></div>' for n2,d2 in prots)
         st.markdown(f'<div class="card"><div style="font-weight:700;font-family:\'Syne\',sans-serif;margin-bottom:1rem;">Proteções ativas</div><div style="display:grid;gap:9px;">{items}</div></div>',unsafe_allow_html=True)
         c1,c2=st.columns(2)
         with c1:
