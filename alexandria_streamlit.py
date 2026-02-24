@@ -517,56 +517,23 @@ def inject_css():
 @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
-  /* Dark blue palette */
-  --bg: #070b16;
-  --s1: #0b1120;
-  --s2: #0f172a;
-  --bg3: #0f2040;
-  --b9: #1a3560;
-  --b8: #1e4d8c;
-  --b7: #2272c3;
-  --b6: #3b8de0;
-  --b5: #60a5f5;
-  --b4: #93c5fd;
-  --cy: #06b6d4;
-  --cy2: #22d3ee;
-  /* Text */
-  --t1: #e8f0fe;
-  --t2: #8ba8cc;
-  --t3: #3d5a80;
-  --t4: #1e3a5f;
-  /* Semantic */
-  --ok: #10b981;
-  --warn: #f59e0b;
-  --err: #ef4444;
-  --pur: #8b5cf6;
-  /* Glass surfaces */
-  --glass: rgba(6,15,40,.65);
-  --glass2: rgba(10,22,50,.72);
-  --gborder: rgba(55,130,215,.14);
-  --gborder2: rgba(90,160,240,.28);
-  /* Radii */
+  --bg: #070b16; --s1: #0b1120; --s2: #0f172a; --bg3: #0f2040;
+  --b9: #1a3560; --b8: #1e4d8c; --b7: #2272c3; --b6: #3b8de0;
+  --b5: #60a5f5; --b4: #93c5fd; --cy: #06b6d4; --cy2: #22d3ee;
+  --t1: #e8f0fe; --t2: #8ba8cc; --t3: #3d5a80; --t4: #1e3a5f;
+  --ok: #10b981; --warn: #f59e0b; --err: #ef4444; --pur: #8b5cf6;
+  --glass: rgba(6,15,40,.65); --glass2: rgba(10,22,50,.72);
+  --gborder: rgba(55,130,215,.14); --gborder2: rgba(90,160,240,.28);
   --r8:8px; --r12:12px; --r16:16px; --r20:20px; --r28:28px; --r50:50px;
-  /* Aliases for original variable names */
-  --text: #e2e8f0;
-  --text2: #94a3b8;
-  --muted: #475569;
-  --border: rgba(255,255,255,.07);
-  --border2: rgba(255,255,255,.13);
-  --blue: #2563eb;
-  --blue2: #3b82f6;
-  --blue3: #60a5fa;
-  --cyan: #06b6d4;
-  --cyan2: #22d3ee;
-  --ok: #22c55e;
-  --glass: rgba(255,255,255,.04);
-  --glass2: rgba(255,255,255,.07);
+  --text: #e2e8f0; --text2: #94a3b8; --muted: #475569;
+  --border: rgba(255,255,255,.07); --border2: rgba(255,255,255,.13);
+  --blue: #2563eb; --blue2: #3b82f6; --blue3: #60a5fa;
+  --cyan: #06b6d4; --cyan2: #22d3ee;
 }
 
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
 html, body, .stApp { background:var(--bg) !important; color:var(--text) !important; font-family:'Inter',-apple-system,sans-serif !important; }
 
-/* ── AMBIENT GLOW ── */
 .stApp::before {
   content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
   background:
@@ -574,7 +541,6 @@ html, body, .stApp { background:var(--bg) !important; color:var(--text) !importa
     radial-gradient(ellipse 60% 65% at 92% 100%, rgba(6,182,212,.10) 0%, transparent 50%),
     radial-gradient(ellipse 40% 40% at 50% 50%, rgba(14,36,90,.08) 0%, transparent 60%);
 }
-/* ── STARS ── */
 .stApp::after {
   content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
   background-image:
@@ -602,57 +568,88 @@ footer { display:none !important; }
   padding-left:1rem !important; padding-right:1rem !important;
 }
 
-/* ── TYPOGRAPHY ── */
 h1 { font-family:'Geist',sans-serif !important; font-size:1.7rem !important; font-weight:800 !important; letter-spacing:-.04em; color:var(--text) !important; }
 h2 { font-family:'Geist',sans-serif !important; font-size:1.1rem !important; font-weight:700 !important; letter-spacing:-.02em; color:var(--text) !important; }
 h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; font-weight:600 !important; color:var(--text) !important; }
 
 /* ═══════════════════════════════════════
-   TOP NAV — sticky liquid glass bar
+   TOP NAV BAR — glass container
 ═══════════════════════════════════════ */
-.neb-nav {
+.neb-navwrap {
   position:sticky; top:0; z-index:1000;
-  background:rgba(1,4,9,.90);
+  background:rgba(1,4,9,.92);
   backdrop-filter:blur(48px) saturate(220%);
   -webkit-backdrop-filter:blur(48px) saturate(220%);
   border-bottom:1px solid rgba(55,130,215,.12);
-  padding:0 1.4rem; display:flex; align-items:center; gap:1rem; height:58px;
+  margin-bottom:1.2rem;
   box-shadow:0 1px 0 rgba(30,77,140,.08), 0 6px 28px rgba(0,0,0,.5);
-  margin-bottom:1.4rem;
+  padding:.5rem 1rem;
 }
-.neb-logo {
-  font-family:'Geist',sans-serif; font-size:1.35rem; font-weight:900;
-  background:linear-gradient(135deg,#60a5fa 10%,#22d3ee 90%);
-  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-  white-space:nowrap; flex-shrink:0; letter-spacing:-.06em;
+/* Make the columns inside the nav wrap flush / no gap artifacts */
+.neb-navwrap [data-testid="stHorizontalBlock"] {
+  align-items:center !important;
+  gap:2px !important;
 }
-.neb-pills {
-  flex:1; display:flex; align-items:center; gap:3px;
-  overflow-x:auto; padding:0 .5rem; scrollbar-width:none;
+.neb-navwrap [data-testid="stHorizontalBlock"] > div {
+  padding:0 2px !important;
 }
-.neb-pills::-webkit-scrollbar { display:none; }
-.np {
-  display:inline-flex; align-items:center; gap:6px;
-  padding:.36rem .82rem; border-radius:50px;
-  font-size:.76rem; font-weight:500; white-space:nowrap;
-  color:var(--t3); background:transparent; border:1px solid transparent;
-  pointer-events:none; transition:all .18s; letter-spacing:.01em;
+
+/* ── NAV PILL BUTTONS ── */
+.nav-pill .stButton>button {
+  background:transparent !important;
+  border:1px solid transparent !important;
+  border-radius:50px !important;
+  color:var(--t3) !important;
+  font-family:'Inter',sans-serif !important;
+  font-size:.76rem !important;
+  font-weight:500 !important;
+  padding:.32rem .72rem !important;
+  box-shadow:none !important;
+  white-space:nowrap !important;
+  height:34px !important;
+  min-height:34px !important;
+  letter-spacing:.01em !important;
+  transition:all .16s !important;
 }
-.np.act {
-  color:var(--t1); background:linear-gradient(135deg,rgba(30,77,140,.55),rgba(6,182,212,.20));
-  border:1px solid rgba(96,165,250,.30);
-  box-shadow:0 2px 16px rgba(30,77,140,.28), inset 0 1px 0 rgba(147,197,253,.10);
+.nav-pill .stButton>button:hover {
+  background:rgba(30,77,140,.14) !important;
+  border-color:rgba(55,130,215,.22) !important;
+  color:var(--t1) !important;
+  transform:none !important;
+  box-shadow:none !important;
 }
-.np .ico { font-size:.78rem; opacity:.8; }
-/* invisible click layer */
-.tnav-row { position:relative; margin-top:-58px; height:58px; z-index:999; }
-.tnav-row .stButton>button {
-  background:transparent !important; border:none !important; color:transparent !important;
-  font-size:0 !important; box-shadow:none !important; border-radius:50px !important;
-  width:100% !important; height:58px !important; padding:0 !important;
+.nav-pill-active .stButton>button {
+  background:linear-gradient(135deg,rgba(30,77,140,.58),rgba(6,182,212,.22)) !important;
+  border:1px solid rgba(96,165,250,.32) !important;
+  color:var(--t1) !important;
+  font-weight:600 !important;
+  box-shadow:0 2px 16px rgba(30,77,140,.28), inset 0 1px 0 rgba(147,197,253,.10) !important;
+  height:34px !important;
+  min-height:34px !important;
 }
-.tnav-row .stButton>button:hover {
-  background:rgba(30,77,140,.08) !important; transform:none !important; box-shadow:none !important;
+.nav-pill-active .stButton>button:hover {
+  transform:none !important;
+  box-shadow:0 4px 20px rgba(30,77,140,.35) !important;
+}
+
+/* ── PHOTO BUTTON — invisible, just the clickable layer ── */
+.nav-photo-btn {
+  position:relative;
+}
+.nav-photo-btn .stButton>button {
+  position:absolute !important;
+  top:0 !important; left:0 !important;
+  width:100% !important; height:100% !important;
+  min-height:36px !important;
+  background:transparent !important;
+  border:none !important;
+  box-shadow:none !important;
+  color:transparent !important;
+  font-size:0 !important;
+  border-radius:50% !important;
+  padding:0 !important;
+  z-index:5 !important;
+  opacity:0 !important;
 }
 
 /* ═══════════════════════════════════════
@@ -679,7 +676,6 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
 }
 .stButton>button:active { transform:scale(.97) !important; }
 
-/* PRIMARY */
 .btn-primary .stButton>button {
   background:linear-gradient(135deg,#2563eb,#1d4ed8) !important;
   border-color:rgba(59,130,246,.5) !important; color:white !important; font-weight:600 !important;
@@ -689,15 +685,12 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
   background:linear-gradient(135deg,#3b82f6,#2563eb) !important;
   box-shadow:0 8px 30px rgba(37,99,235,.48) !important;
 }
-/* DANGER */
 .btn-danger .stButton>button {
   background:rgba(239,68,68,.10) !important; border-color:rgba(239,68,68,.24) !important; color:#fca5a5 !important;
 }
 .btn-danger .stButton>button:hover { background:rgba(239,68,68,.18) !important; border-color:rgba(239,68,68,.38) !important; }
 
-/* ═══════════════════════════════════════
-   STORY CIRCLES
-═══════════════════════════════════════ */
+/* STORY CIRCLES */
 .sc-base .stButton>button {
   width:62px !important; height:62px !important; border-radius:50% !important;
   padding:0 !important; font-family:'Geist',sans-serif !important;
@@ -746,9 +739,7 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
   color:var(--t2) !important; transform:none !important; box-shadow:none !important;
 }
 
-/* ═══════════════════════════════════════
-   INPUTS
-═══════════════════════════════════════ */
+/* INPUTS */
 .stTextInput input, .stTextArea textarea {
   background:rgba(4,10,26,.78) !important; border:1px solid var(--gborder) !important;
   border-radius:var(--r12) !important; color:var(--text) !important;
@@ -764,9 +755,7 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
   letter-spacing:.10em !important; text-transform:uppercase !important; font-weight:600 !important;
 }
 
-/* ═══════════════════════════════════════
-   AVATAR
-═══════════════════════════════════════ */
+/* AVATAR */
 .av {
   border-radius:50%; background:linear-gradient(135deg,#1e3a8a,#2563eb);
   display:flex; align-items:center; justify-content:center;
@@ -776,9 +765,7 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
 }
 .av img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
 
-/* ═══════════════════════════════════════
-   GLASS CARDS
-═══════════════════════════════════════ */
+/* GLASS CARDS */
 .card {
   background:var(--glass); backdrop-filter:blur(28px) saturate(180%);
   -webkit-backdrop-filter:blur(28px) saturate(180%);
@@ -790,7 +777,6 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
   content:''; position:absolute; top:0; left:0; right:0; height:1px;
   background:linear-gradient(90deg,transparent,rgba(96,165,245,.12),transparent); pointer-events:none;
 }
-/* POST CARD */
 .post {
   background:var(--glass); border:1px solid var(--gborder); border-radius:var(--r20);
   margin-bottom:.85rem; overflow:hidden;
@@ -805,7 +791,6 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
 }
 @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
 
-/* COMPOSE CARD */
 .compose-card {
   background:rgba(6,18,48,.72); border:1px solid rgba(55,130,215,.28);
   border-radius:var(--r20); padding:1.25rem 1.45rem; margin-bottom:.9rem;
@@ -813,9 +798,7 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
   animation:fadeUp .20s ease both;
 }
 
-/* ═══════════════════════════════════════
-   TABS
-═══════════════════════════════════════ */
+/* TABS */
 .stTabs [data-baseweb="tab-list"] {
   background:rgba(4,10,26,.80) !important; border:1px solid var(--gborder) !important;
   border-radius:var(--r12) !important; padding:4px !important; gap:2px !important;
@@ -830,50 +813,36 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
 }
 .stTabs [data-baseweb="tab-panel"] { background:transparent !important; padding-top:.9rem !important; }
 
-/* ═══════════════════════════════════════
-   MISC COMPONENTS
-═══════════════════════════════════════ */
 .stSelectbox [data-baseweb="select"] { background:rgba(4,10,26,.80) !important; border:1px solid var(--gborder) !important; border-radius:var(--r12) !important; }
 .stFileUploader section { background:rgba(4,10,26,.55) !important; border:1.5px dashed rgba(55,130,215,.22) !important; border-radius:var(--r16) !important; }
 .stExpander { background:var(--glass) !important; border:1px solid var(--gborder) !important; border-radius:var(--r16) !important; }
 
-/* TAGS */
 .tag { display:inline-block; background:rgba(30,77,140,.12); border:1px solid rgba(55,130,215,.20); border-radius:20px; padding:2px 9px; font-size:.64rem; color:#93c5fd; margin:2px; font-weight:500; }
-
-/* BADGES */
 .badge-on   { display:inline-block; background:rgba(245,158,11,.10); border:1px solid rgba(245,158,11,.24); border-radius:20px; padding:2px 9px; font-size:.64rem; font-weight:600; color:#fbbf24; }
 .badge-pub  { display:inline-block; background:rgba(16,185,129,.10); border:1px solid rgba(16,185,129,.24); border-radius:20px; padding:2px 9px; font-size:.64rem; font-weight:600; color:#34d399; }
 .badge-done { display:inline-block; background:rgba(139,92,246,.10); border:1px solid rgba(139,92,246,.24); border-radius:20px; padding:2px 9px; font-size:.64rem; font-weight:600; color:#a78bfa; }
 .badge-rec  { display:inline-block; background:rgba(6,182,212,.10);  border:1px solid rgba(6,182,212,.24);  border-radius:20px; padding:2px 9px; font-size:.64rem; font-weight:600; color:#22d3ee; }
 
-/* METRICS */
 .mbox { background:var(--glass); border:1px solid var(--gborder); border-radius:var(--r16); padding:.95rem; text-align:center; }
 .mval { font-family:'Geist',sans-serif; font-size:1.8rem; font-weight:800; background:linear-gradient(135deg,#60a5fa,#22d3ee); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
 .mlbl { font-size:.62rem; color:var(--t3); margin-top:3px; letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
 
-/* PROGRESS */
 .prog-wrap { height:4px; background:rgba(55,130,215,.10); border-radius:4px; overflow:hidden; margin:.18rem 0 .4rem; }
 .prog-fill  { height:100%; border-radius:4px; transition:width .6s ease; }
 
-/* ONLINE DOT */
 @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.78)} }
 .dot-on  { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--ok); animation:pulse 2s infinite; margin-right:4px; vertical-align:middle; }
 .dot-off { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--t4); margin-right:4px; vertical-align:middle; }
 
-/* SIDEBAR CARD */
 .sc { background:var(--glass); border:1px solid var(--gborder); border-radius:var(--r20); padding:1.05rem; margin-bottom:.75rem; }
-
-/* SEARCH CARD */
 .scard { background:var(--glass); border:1px solid var(--gborder); border-radius:var(--r16); padding:.9rem 1.1rem; margin-bottom:.55rem; transition:border-color .15s,transform .15s; }
 .scard:hover { border-color:var(--gborder2); transform:translateY(-1px); }
 
-/* ANALYSIS BOX */
 .abox { background:rgba(6,18,50,.72); border:1px solid rgba(55,130,215,.18); border-radius:var(--r16); padding:1rem; margin-bottom:.75rem; }
 .pbox { background:rgba(6,182,212,.04); border:1px solid rgba(6,182,212,.16); border-radius:var(--r16); padding:.95rem; margin-bottom:.7rem; }
 .img-rc { background:rgba(6,182,212,.04); border:1px solid rgba(6,182,212,.14); border-radius:var(--r16); padding:.9rem; margin-bottom:.55rem; }
 .chart-glass { background:var(--glass); border:1px solid var(--gborder); border-radius:var(--r16); padding:.75rem; margin-bottom:.75rem; }
 
-/* PROFILE HERO */
 .prof-hero {
   background:var(--glass); border:1px solid var(--gborder); border-radius:var(--r28);
   padding:1.8rem; display:flex; gap:1.4rem; align-items:flex-start;
@@ -883,31 +852,25 @@ h3 { font-family:'Geist',sans-serif !important; font-size:.92rem !important; fon
 .prof-photo { width:84px; height:84px; border-radius:50%; background:linear-gradient(135deg,#1e3a8a,#2563eb); border:2.5px solid rgba(55,130,215,.30); flex-shrink:0; overflow:hidden; display:flex; align-items:center; justify-content:center; font-size:1.8rem; font-weight:700; color:white; }
 .prof-photo img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
 
-/* CHAT */
 .bme   { background:linear-gradient(135deg,rgba(30,77,140,.55),rgba(6,182,212,.22)); border:1px solid rgba(55,130,215,.22); border-radius:18px 18px 4px 18px; padding:.6rem .92rem; max-width:68%; margin-left:auto; margin-bottom:6px; font-size:.83rem; line-height:1.6; }
 .bthem { background:rgba(6,15,40,.85); border:1px solid var(--gborder); border-radius:18px 18px 18px 4px; padding:.6rem .92rem; max-width:68%; margin-bottom:6px; font-size:.83rem; line-height:1.6; }
 .cmt   { background:rgba(4,10,26,.80); border:1px solid var(--gborder); border-radius:var(--r12); padding:.55rem .9rem; margin-bottom:.32rem; }
 
-/* PERSON ROW */
 .person-row { display:flex; align-items:center; gap:9px; padding:.45rem .5rem; border-radius:var(--r12); border:1px solid transparent; transition:all .15s; margin-bottom:2px; }
 .person-row:hover { background:rgba(30,77,140,.08); border-color:var(--gborder); }
 
-/* DIVIDER */
 .dtxt { display:flex; align-items:center; gap:.75rem; margin:.85rem 0; font-size:.62rem; color:var(--t3); letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
 .dtxt::before, .dtxt::after { content:''; flex:1; height:1px; background:var(--gborder); }
 
-/* STORY labels */
 .sl  { text-align:center; font-size:.64rem; font-weight:500; color:var(--t2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:74px; margin:3px auto 0; }
 .sl2 { text-align:center; font-size:.58rem; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:74px; margin:0 auto; }
 .dot-sm-on  { width:7px; height:7px; border-radius:50%; background:var(--ok); margin:3px auto 2px; box-shadow:0 0 5px var(--ok); animation:pulse 2s infinite; }
 .dot-sm-off { width:7px; height:7px; border-radius:50%; background:var(--t4); margin:3px auto 2px; }
 
-/* REF / STRENGTH */
 .ref-item { background:rgba(6,182,212,.04); border:1px solid rgba(6,182,212,.14); border-radius:var(--r12); padding:.65rem .9rem; margin-bottom:.4rem; font-size:.77rem; color:var(--t2); line-height:1.6; }
 .str-ok  { background:rgba(16,185,129,.07); border:1px solid rgba(16,185,129,.20); border-radius:10px; padding:.38rem .75rem; font-size:.75rem; color:#34d399; margin-bottom:.3rem; }
 .str-imp { background:rgba(245,158,11,.07); border:1px solid rgba(245,158,11,.20); border-radius:10px; padding:.38rem .75rem; font-size:.75rem; color:#fbbf24; margin-bottom:.3rem; }
 
-/* MISC */
 ::-webkit-scrollbar { width:4px; height:4px; }
 ::-webkit-scrollbar-thumb { background:var(--bg3); border-radius:4px; }
 ::-webkit-scrollbar-track { background:transparent; }
@@ -947,6 +910,12 @@ def pc():
                 margin=dict(l=10,r=10,t=40,b=10),
                 xaxis=dict(showgrid=False,color="#3d5a80",tickfont=dict(size=10)),
                 yaxis=dict(showgrid=True,gridcolor="rgba(55,130,215,.07)",color="#3d5a80",tickfont=dict(size=10)))
+
+def pc_noy():
+    """pc() without yaxis — use when passing custom yaxis separately"""
+    d = pc(); d.pop("yaxis", None); return d
+
+def var_t1(): return "#e8f0fe"
 
 # ══════════════════════════════════════════════════
 # AUTH PAGES
@@ -1052,7 +1021,7 @@ def page_2fa():
         if st.button("← Voltar",key="btn_fa_bk"): st.session_state.page="login"; st.rerun()
 
 # ══════════════════════════════════════════════════
-# TOP NAV
+# TOP NAV — real buttons, no overlay tricks
 # ══════════════════════════════════════════════════
 NAV = [
     ("feed",      "◈","Feed"),
@@ -1066,34 +1035,71 @@ NAV = [
 ]
 
 def render_topnav():
-    u=guser(); name=u.get("name","?"); photo=u.get("photo_b64"); in_=ini(name)
-    cur=st.session_state.page; notif=len(st.session_state.notifications)
-    pills = "".join(
-        f'<span class="np {"act" if cur==k else ""}"><span class="ico">{icon}</span>{lbl}</span>'
-        for k,icon,lbl in NAV
-    )
-    av_inner=(f"<img src='{photo}' style='width:100%;height:100%;object-fit:cover;border-radius:50%'/>" if photo else in_)
-    nb=(f'<span style="background:#ef4444;color:white;border-radius:10px;padding:1px 7px;font-size:.60rem;font-weight:700;margin-right:4px">{notif}</span>' if notif else '')
-    g=ugrad(st.session_state.current_user or "")
-    st.markdown(
-        f'<div class="neb-nav">'
-        f'<div class="neb-logo">🔬 Nebula</div>'
-        f'<div class="neb-pills">{pills}</div>'
-        f'<div style="display:flex;align-items:center;gap:7px;flex-shrink:0">{nb}'
-        f'<div style="width:34px;height:34px;border-radius:50%;background:{g};'
-        f'display:flex;align-items:center;justify-content:center;font-family:Geist,sans-serif;'
-        f'font-size:.72rem;font-weight:700;color:white;border:2px solid rgba(55,130,215,.20);'
-        f'overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,.45)">{av_inner}</div></div></div>',
-        unsafe_allow_html=True
-    )
-    # Invisible click overlay
-    st.markdown('<div class="tnav-row">', unsafe_allow_html=True)
-    cols=st.columns([1.3]+[1]*len(NAV)+[.5])
-    for i,(key,icon,lbl) in enumerate(NAV):
+    u = guser()
+    name = u.get("name", "?")
+    photo = u.get("photo_b64")
+    in_ = ini(name)
+    cur = st.session_state.page
+    email = st.session_state.current_user
+    g = ugrad(email or "")
+    notif = len(st.session_state.notifications)
+
+    # Glass nav wrapper
+    st.markdown('<div class="neb-navwrap">', unsafe_allow_html=True)
+
+    # Build columns: logo | 8 nav buttons | avatar
+    cols = st.columns([1.1] + [0.85]*len(NAV) + [0.55])
+
+    # Logo
+    with cols[0]:
+        st.markdown(
+            '<div style="padding:.2rem 0 0;font-family:Geist,sans-serif;font-size:1.15rem;font-weight:900;'
+            'background:linear-gradient(135deg,#60a5fa 10%,#22d3ee 90%);'
+            '-webkit-background-clip:text;-webkit-text-fill-color:transparent;'
+            'background-clip:text;letter-spacing:-.05em;white-space:nowrap">🔬 Nebula</div>',
+            unsafe_allow_html=True)
+
+    # Nav buttons
+    for i, (key, icon, lbl) in enumerate(NAV):
         with cols[i+1]:
-            if st.button(lbl, key=f"tnav_{key}", use_container_width=True):
-                st.session_state.profile_view=None; st.session_state.page=key; st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+            is_active = (cur == key)
+            pill_cls = "nav-pill-active" if is_active else "nav-pill"
+            st.markdown(f'<div class="{pill_cls}">', unsafe_allow_html=True)
+            if st.button(f"{icon} {lbl}", key=f"tnav_{key}", use_container_width=True):
+                st.session_state.profile_view = None
+                st.session_state.page = key
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+    # Avatar — shows photo/initials + badge, button click goes to own profile
+    with cols[-1]:
+        av_inner = (
+            f'<img src="{photo}" style="width:100%;height:100%;object-fit:cover;border-radius:50%"/>'
+            if photo else in_
+        )
+        nb_badge = (
+            f'<div style="position:absolute;top:-3px;right:-3px;background:#ef4444;color:white;'
+            f'width:16px;height:16px;border-radius:50%;font-size:.52rem;display:flex;'
+            f'align-items:center;justify-content:center;font-weight:700;z-index:10">{notif}</div>'
+            if notif else ''
+        )
+        st.markdown(
+            f'<div style="position:relative;display:inline-block;width:36px;height:36px;margin:.15rem 0 0">'
+            f'<div style="width:36px;height:36px;border-radius:50%;background:{g};'
+            f'display:flex;align-items:center;justify-content:center;'
+            f'font-family:Geist,sans-serif;font-size:.72rem;font-weight:700;color:white;'
+            f'border:2px solid rgba(55,130,215,.28);overflow:hidden;'
+            f'box-shadow:0 2px 12px rgba(0,0,0,.5)">{av_inner}</div>{nb_badge}</div>',
+            unsafe_allow_html=True
+        )
+        # Invisible button over the avatar — click → my profile
+        st.markdown('<div class="nav-photo-btn">', unsafe_allow_html=True)
+        if st.button("●", key="nav_me_photo"):
+            st.session_state.profile_view = email
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)  # close neb-navwrap
 
 # ══════════════════════════════════════════════════
 # PROFILE PAGE
@@ -1227,7 +1233,7 @@ def render_post(post, ctx="feed", show_author=True, compact=False):
                 record(post.get("tags",[]),.8); save_db(); st.rerun()
 
 # ══════════════════════════════════════════════════
-# FEED PAGE — stories via st.columns (no HTML-as-text bug)
+# FEED PAGE
 # ══════════════════════════════════════════════════
 def page_feed():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
@@ -1238,12 +1244,10 @@ def page_feed():
     col_main,col_side=st.columns([2,.9],gap="medium")
 
     with col_main:
-        # ── STORIES — each column has its own st.button ──
         story_list=[(ue,ud) for ue,ud in users.items() if ue!=email][:7]
         n_cols=1+len(story_list)
         scols=st.columns(n_cols)
 
-        # PUBLISH circle
         with scols[0]:
             pub_cls="sc-publish-open" if compose_open else "sc-publish"
             st.markdown(f'<div class="{pub_cls}" style="display:flex;justify-content:center">', unsafe_allow_html=True)
@@ -1253,7 +1257,6 @@ def page_feed():
             lbl_col="#22d3ee" if compose_open else "var(--b5)"
             st.markdown(f'<div class="sl" style="color:{lbl_col}">{"Fechar" if compose_open else "Publicar"}</div>', unsafe_allow_html=True)
 
-        # RESEARCHER circles
         for ci,(ue,ud) in enumerate(story_list):
             sname=ud.get("name","?"); sin=ini(sname); sphoto=ud.get("photo_b64"); sg=ugrad(ue)
             is_fol=ue in st.session_state.followed; online=random.Random(ue).random()>0.45
@@ -1282,7 +1285,6 @@ def page_feed():
 
         st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
 
-        # ── COMPOSE ──
         if compose_open:
             g=ugrad(email)
             av_c=(f'<div class="av" style="width:44px;height:44px;background:{g}"><img src="{uphoto}"/></div>'
@@ -1330,18 +1332,15 @@ def page_feed():
                     st.session_state.compose_open=True; st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # FILTER
         ff=st.radio("",["🌐 Todos","👥 Seguidos","🔖 Salvos","🔥 Populares"],
                     horizontal=True,key="ff",label_visibility="collapsed")
 
-        # RECOMMENDATIONS
         recs=get_recs(email,2)
         if recs and "Seguidos" not in ff and "Salvos" not in ff:
             st.markdown('<div class="dtxt"><span class="badge-rec">✨ Recomendado para você</span></div>', unsafe_allow_html=True)
             for p in recs: render_post(p,ctx="rec",compact=True)
             st.markdown('<div class="dtxt">Mais pesquisas</div>', unsafe_allow_html=True)
 
-        # POSTS
         posts=list(st.session_state.feed_posts)
         if "Seguidos" in ff: posts=[p for p in posts if p.get("author_email") in st.session_state.followed]
         elif "Salvos" in ff: posts=[p for p in posts if email in p.get("saved_by",[])]
@@ -1352,7 +1351,6 @@ def page_feed():
         else:
             for p in posts: render_post(p,ctx="feed")
 
-    # ── SIDEBAR ──
     with col_side:
         sq=st.text_input("",placeholder="🔍 Buscar pesquisadores…",key="ppl_s",label_visibility="collapsed")
         st.markdown('<div class="sc">', unsafe_allow_html=True)
@@ -1559,7 +1557,7 @@ def page_knowledge():
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════
-# FOLDERS — with intelligent document analysis
+# FOLDERS
 # ══════════════════════════════════════════════════
 def render_document_analysis(fname, analysis, research_area=""):
     if not analysis: return
@@ -1572,14 +1570,16 @@ def render_document_analysis(fname, analysis, research_area=""):
     rel_label="Alta" if rel>=70 else ("Média" if rel>=45 else "Baixa")
     st.markdown(f'<div class="abox"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.6rem"><div style="font-family:Geist,sans-serif;font-weight:700;font-size:.9rem">{fname}</div><div style="text-align:right"><div style="font-family:Geist,sans-serif;font-size:1.3rem;font-weight:800;color:{prog_color}">{rel}%</div><div style="font-size:.59rem;color:var(--t3);text-transform:uppercase;letter-spacing:.07em">Relevância {rel_label}</div></div></div>{prog_bar(rel,prog_color)}<div style="font-size:.79rem;color:var(--t2);line-height:1.65;margin-top:.4rem">{analysis.get("summary","")}</div></div>', unsafe_allow_html=True)
     tab_kw,tab_topics,tab_authors,tab_refs,tab_improve=st.tabs(["  🔑 Keywords  ","  🎯 Temas  ","  👤 Autores  ","  📚 Refs  ","  ✨ Melhorias  "])
-    pcc=pc()
     with tab_kw:
         if kws:
             weights=[max(1,15-i) for i in range(len(kws))]
             fig=go.Figure(go.Bar(x=weights[:20],y=kws[:20],orientation='h',
                 marker=dict(color=weights[:20],colorscale=[[0,"#0f2040"],[.5,"#2272c3"],[1,"#22d3ee"]]),
                 text=kws[:20],textposition='inside',textfont=dict(color='white',size=9)))
-            fig.update_layout(height=380,title=dict(text="Palavras-chave por Relevância",font=dict(color=var_t1(),family="Syne",size=13)),yaxis=dict(showticklabels=False),**pcc)
+            # FIX: use pc_noy() to avoid duplicate yaxis key
+            layout = {**pc_noy(), 'height': 380, 'yaxis': dict(showticklabels=False),
+                      'title': dict(text="Palavras-chave por Relevância", font=dict(color=var_t1(),family="Inter",size=13))}
+            fig.update_layout(**layout)
             st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
             st.plotly_chart(fig,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1590,7 +1590,7 @@ def render_document_analysis(fname, analysis, research_area=""):
             fig_pie=go.Figure(go.Pie(labels=list(topics.keys()),values=list(topics.values()),hole=0.52,
                 marker=dict(colors=["#2272c3","#06b6d4","#7c3aed","#059669","#ea580c","#db2777","#0ea5e9","#65a30d","#f59e0b","#ef4444"],line=dict(color=["#010409"]*15,width=2)),
                 textfont=dict(color="white",size=9),hoverinfo="label+percent"))
-            fig_pie.update_layout(height=300,title=dict(text="Distribuição Temática",font=dict(color=var_t1(),family="Syne",size=13)),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",legend=dict(font=dict(color="#3d5a80",size=9)),margin=dict(l=0,r=0,t=40,b=0))
+            fig_pie.update_layout(height=300,title=dict(text="Distribuição Temática",font=dict(color=var_t1(),family="Inter",size=13)),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",legend=dict(font=dict(color="#3d5a80",size=9)),margin=dict(l=0,r=0,t=40,b=0))
             st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
             st.plotly_chart(fig_pie,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1607,7 +1607,7 @@ def render_document_analysis(fname, analysis, research_area=""):
         if years:
             year_labels=[y for y,_ in years[:8]]; year_vals=[c for _,c in years[:8]]
             fig_y=go.Figure(go.Bar(x=year_labels,y=year_vals,marker=dict(color=year_vals,colorscale=[[0,"#0f2040"],[1,"#22d3ee"]]),text=year_vals,textposition="outside",textfont=dict(color="#3d5a80",size=9)))
-            fig_y.update_layout(height=200,title=dict(text="Anos Mencionados",font=dict(color=var_t1(),family="Syne",size=12)),**pcc)
+            fig_y.update_layout(height=200,title=dict(text="Anos Mencionados",font=dict(color=var_t1(),family="Inter",size=12)),**pc())
             st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
             st.plotly_chart(fig_y,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1628,8 +1628,6 @@ def render_document_analysis(fname, analysis, research_area=""):
             st.markdown('<div style="font-size:.62rem;color:var(--t3);text-transform:uppercase;letter-spacing:.09em;margin:.8rem 0 .6rem;font-weight:600">Pontos a Melhorar</div>', unsafe_allow_html=True)
             for imp in improvements: st.markdown(f'<div class="str-imp">→ {imp}</div>', unsafe_allow_html=True)
         if not strengths_a and not improvements: st.info("Execute a análise completa para ver recomendações.")
-
-def var_t1(): return "#e8f0fe"
 
 def page_folders():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
@@ -1709,10 +1707,14 @@ def page_folders():
                 st.markdown('<div class="dtxt">📊 Análises Inteligentes</div>', unsafe_allow_html=True)
                 rel_scores={f:an.get("relevance_score",0) for f,an in analyses.items()}
                 if len(rel_scores)>1:
+                    # FIX: use pc_noy() to avoid duplicate yaxis
+                    layout_ov = {**pc_noy(), 'height': max(120,len(analyses)*42),
+                                 'title': dict(text="Relevância por Documento",font=dict(color=var_t1(),family="Inter",size=12)),
+                                 'yaxis': dict(showgrid=False,color="#3d5a80",tickfont=dict(size=9))}
                     fig_ov=go.Figure(go.Bar(x=list(rel_scores.values()),y=[f[:25] for f in rel_scores.keys()],orientation='h',
                         marker=dict(color=list(rel_scores.values()),colorscale=[[0,"#0f2040"],[.5,"#2272c3"],[1,"#10b981"]],line=dict(color="#010409",width=1)),
                         text=[f"{v}%" for v in rel_scores.values()],textposition="outside",textfont=dict(color="#3d5a80",size=9)))
-                    fig_ov.update_layout(height=max(120,len(analyses)*42),title=dict(text="Relevância por Documento",font=dict(color=var_t1(),family="Syne",size=12)),**pc(),yaxis=dict(showgrid=False,color="#3d5a80",tickfont=dict(size=9)))
+                    fig_ov.update_layout(**layout_ov)
                     st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
                     st.plotly_chart(fig_ov,use_container_width=True)
                     st.markdown('</div>', unsafe_allow_html=True)
@@ -1731,7 +1733,7 @@ def page_folders():
 def page_analytics():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:1rem;margin-bottom:1rem">📊 Painel de Pesquisa</h1>', unsafe_allow_html=True)
-    email=st.session_state.current_user; d=st.session_state.stats_data; pcc=pc()
+    email=st.session_state.current_user; d=st.session_state.stats_data
     tab_f,tab_p,tab_i,tab_pr=st.tabs(["  📁 Pastas  ","  📝 Publicações  ","  📈 Impacto  ","  🎯 Interesses  "])
     with tab_f:
         folders=st.session_state.folders
@@ -1748,19 +1750,27 @@ def page_analytics():
             for col,(v,l) in zip([c1,c2,c3,c4],[(len(folders),"Pastas"),(total_files,"Arquivos"),(len(all_analyses),"Analisados"),(len(set(all_kws[:100])),"Palavras-chave")]):
                 with col: st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>', unsafe_allow_html=True)
             if all_topics:
+                # FIX: use pc_noy() + explicit yaxis to avoid TypeError duplicate key
+                layout_t = {**pc_noy(), 'height': 280,
+                            'title': dict(text="Temas por Frequência",font=dict(color=var_t1(),family="Inter",size=13)),
+                            'yaxis': dict(showgrid=False,color="#3d5a80",tickfont=dict(size=9))}
                 fig_t=go.Figure(go.Bar(x=list(all_topics.values())[:8],y=list(all_topics.keys())[:8],orientation='h',
                     marker=dict(color=list(range(min(8,len(all_topics)))),colorscale=[[0,"#0f2040"],[.5,"#2272c3"],[1,"#22d3ee"]]),
                     text=[str(v) for v in list(all_topics.values())[:8]],textposition="outside",textfont=dict(color="#3d5a80",size=9)))
-                fig_t.update_layout(height=280,title=dict(text="Temas por Frequência",font=dict(color=var_t1(),family="Syne",size=13)),**pcc,yaxis=dict(showgrid=False,color="#3d5a80",tickfont=dict(size=9)))
+                fig_t.update_layout(**layout_t)
                 st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
                 st.plotly_chart(fig_t,use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
             if all_kws:
                 kw_freq=Counter(all_kws).most_common(15)
+                # FIX: use pc_noy() + explicit yaxis
+                layout_kw = {**pc_noy(), 'height': 320,
+                             'title': dict(text="Top 15 Palavras-chave",font=dict(color=var_t1(),family="Inter",size=13)),
+                             'yaxis': dict(showticklabels=False)}
                 fig_kw=go.Figure(go.Bar(x=[c for _,c in kw_freq],y=[w for w,_ in kw_freq],orientation='h',
                     marker=dict(color=[c for _,c in kw_freq],colorscale=[[0,"#0c1424"],[.5,"#2272c3"],[1,"#22d3ee"]]),
                     text=[w for w,_ in kw_freq],textposition='inside',textfont=dict(color='white',size=8)))
-                fig_kw.update_layout(height=320,title=dict(text="Top 15 Palavras-chave",font=dict(color=var_t1(),family="Syne",size=13)),yaxis=dict(showticklabels=False),**pcc)
+                fig_kw.update_layout(**layout_kw)
                 st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
                 st.plotly_chart(fig_kw,use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -1776,7 +1786,7 @@ def page_analytics():
             fig_eng=go.Figure()
             fig_eng.add_trace(go.Bar(name="Curtidas",x=titles_s,y=[p["likes"] for p in my_posts],marker_color="#2272c3",marker_line=dict(color="#010409",width=1)))
             fig_eng.add_trace(go.Bar(name="Comentários",x=titles_s,y=[len(p.get("comments",[])) for p in my_posts],marker_color="#06b6d4",marker_line=dict(color="#010409",width=1)))
-            fig_eng.update_layout(barmode="group",title=dict(text="Engajamento",font=dict(color=var_t1(),family="Syne",size=13)),height=260,**pcc,legend=dict(font=dict(color="#3d5a80")))
+            fig_eng.update_layout(barmode="group",title=dict(text="Engajamento",font=dict(color=var_t1(),family="Inter",size=13)),height=260,**pc(),legend=dict(font=dict(color="#3d5a80")))
             st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
             st.plotly_chart(fig_eng,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
