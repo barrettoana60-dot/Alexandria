@@ -367,7 +367,7 @@ def analyze_image_advanced(uploaded_file_bytes):
                 "texture":{"entropy":round(entropy,3),"contrast":round(contrast,2),
                            "complexity":"Alta" if entropy>5.5 else ("Média" if entropy>4 else "Baixa")},
                 "palette":palette,"size":orig,
-                "histograms":{"r":r_hist,"g":g_hist,"b":b_hist},
+                "histograms":{"r":r_hist,"g":h_hist,"b":b_hist},
                 "brightness":round(float(gray.mean()),1),"sharpness":round(edge_intensity,2)}
     except Exception as e: st.error(f"Erro na análise: {e}"); return None
 
@@ -429,7 +429,7 @@ def record(tags, w=1.0):
     for t in tags: prefs[t.lower()]+=w
 
 @st.cache_data(show_spinner=False)
-def get_recs(email, n=2, feed_posts_data): # Pass feed_posts_data explicitly for caching
+def get_recs(email, feed_posts_data, n=2): # Corrected parameter order
     prefs=st.session_state.user_prefs.get(email,{})
     if not prefs: return []
     def score(p): return sum(prefs.get(t.lower(),0) for t in p.get("tags",[])+p.get("connections",[]))
@@ -1396,7 +1396,7 @@ def render_post(post, ctx="feed", show_author=True, compact=False):
     if compact and len(abstract)>200: abstract=abstract[:200]+"…"
     g=ugrad(aemail)
     if show_author:
-        av_html=(f'<div class="av" style="width:40px;height:40px;background:{g};font-size:12px"><img src="{aphoto}"/></div>'
+        av_html=(f'<div class="av" style="width:40px;height:40px;background:{g}"><img src="{aphoto}"/></div>'
                  if aphoto else f'<div class="av" style="width:40px;height:40px;background:{g};font-size:12px">{ain}</div>')
         v_mark=' <span style="font-size:.58rem;color:var(--gr1)">✓</span>' if st.session_state.users.get(aemail,{}).get("verified") else ""
         header=(f'<div style="padding:.85rem 1.15rem .6rem;display:flex;align-items:center;gap:9px;border-bottom:1px solid rgba(255,255,255,.06)">'
@@ -1518,7 +1518,7 @@ def page_feed():
         ff=st.radio("",["🌐 Todos","👥 Seguidos","🔖 Salvos","🔥 Populares"],
                     horizontal=True,key="ff",label_visibility="collapsed")
         # Recommendations
-        recs=get_recs(email,2, st.session_state.feed_posts) # Pass feed_posts_data
+        recs=get_recs(email, st.session_state.feed_posts, 2) # Corrected call
         if recs and "Seguidos" not in ff and "Salvos" not in ff:
             st.markdown('<div class="dtxt"><span class="badge-rec">✨ Recomendado</span></div>', unsafe_allow_html=True)
             for p in recs: render_post(p,ctx="rec",compact=True)
