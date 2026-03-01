@@ -53,7 +53,63 @@ def load_db():
             return {}
     return {}
 
-# --- SEED DATA (Moved up to be defined before DBManager) ---
+# --- HELPER FUNCTIONS (Moved up to be defined before SEED_USERS) ---
+def hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
+def code6(): return ''.join(random.choices(string.digits,k=6))
+def ini(n):
+    if not isinstance(n,str): n=str(n)
+    p=n.strip().split()
+    return ''.join(w[0].upper() for w in p[:2]) if p else "?"
+def img_to_b64(f):
+    try:
+        f.seek(0); data=f.read()
+        ext=getattr(f,"name","img.png").split(".")[-1].lower()
+        mime={"jpg":"jpeg","jpeg":"jpeg","png":"png","gif":"gif","webp":"webp"}.get(ext,"png")
+        return f"data:image/{mime};base64,{base64.b64encode(data).decode()}"
+    except: return None
+def time_ago(date_str):
+    try:
+        dt=datetime.strptime(date_str,"%Y-%m-%d"); delta=datetime.now()-dt
+        if delta.days==0: return "hoje"
+        if delta.days==1: return "ontem"
+        if delta.days<7: return f"{delta.days}d"
+        if delta.days<30: return f"{delta.days//7}sem"
+        return f"{delta.days//30}m"
+    except: return date_str
+def fmt_num(n):
+    try:
+        n=int(n)
+        return f"{n/1000:.1f}k" if n>=1000 else str(n)
+    except: return str(n)
+def guser():
+    if not isinstance(st.session_state.get("users"),dict): return {}
+    return st.session_state.users.get(st.session_state.current_user,{})
+def get_photo(email):
+    u=st.session_state.get("users",{})
+    if not isinstance(u,dict): return None
+    return u.get(email,{}).get("photo_b64")
+
+USER_GRADIENTS = [
+    "135deg,#60A5FA,#3B82F6","135deg,#34D399,#10B981","135deg,#FBBF24,#F59E0B",
+    "135deg,#A78BFA,#8B5CF6","135deg,#F87171,#EF4444","135deg,#22D3EE,#06B6D4",
+    "135deg,#F472B6,#EC4899","135deg,#C084FC,#A855F7",
+]
+def ugrad(email): return f"linear-gradient({USER_GRADIENTS[hash(email or '') % len(USER_GRADIENTS)]})"
+
+def is_online(email): return (hash(email+"online") % 3) != 0
+
+STOPWORDS = {
+    "de","a","o","que","e","do","da","em","um","para","é","com","uma","os","no","se",
+    "na","por","mais","as","dos","como","mas","foi","ao","ele","das","tem","à","seu",
+    "sua","ou","ser","quando","muito","há","nos","já","está","eu","também","só","pelo",
+    "pela","até","isso","ela","entre","era","depois","sem","mesmo","aos","ter","seus",
+    "the","of","and","to","in","is","it","that","was","he","for","on","are","as","with",
+    "they","at","be","this","from","or","one","had","by","but","not","what","all","were",
+    "we","when","your","can","said","there","use","an","each","which","she","do","how",
+    "their","if","will","up","other","about","out","many","then","them","these","so",
+}
+
+# --- SEED DATA (Moved up to be defined before DBManager, and after hp) ---
 SEED_POSTS = [
     {"id":1,"author":"Carlos Mendez","author_email":"carlos@nebula.ai","avatar":"CM","area":"Neurociência",
      "title":"Efeitos da Privação de Sono na Plasticidade Sináptica",
@@ -160,60 +216,6 @@ def get_db_manager():
 
 db_manager = get_db_manager()
 
-def hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
-def code6(): return ''.join(random.choices(string.digits,k=6))
-def ini(n):
-    if not isinstance(n,str): n=str(n)
-    p=n.strip().split()
-    return ''.join(w[0].upper() for w in p[:2]) if p else "?"
-def img_to_b64(f):
-    try:
-        f.seek(0); data=f.read()
-        ext=getattr(f,"name","img.png").split(".")[-1].lower()
-        mime={"jpg":"jpeg","jpeg":"jpeg","png":"png","gif":"gif","webp":"webp"}.get(ext,"png")
-        return f"data:image/{mime};base64,{base64.b64encode(data).decode()}"
-    except: return None
-def time_ago(date_str):
-    try:
-        dt=datetime.strptime(date_str,"%Y-%m-%d"); delta=datetime.now()-dt
-        if delta.days==0: return "hoje"
-        if delta.days==1: return "ontem"
-        if delta.days<7: return f"{delta.days}d"
-        if delta.days<30: return f"{delta.days//7}sem"
-        return f"{delta.days//30}m"
-    except: return date_str
-def fmt_num(n):
-    try:
-        n=int(n)
-        return f"{n/1000:.1f}k" if n>=1000 else str(n)
-    except: return str(n)
-def guser():
-    if not isinstance(st.session_state.get("users"),dict): return {}
-    return st.session_state.users.get(st.session_state.current_user,{})
-def get_photo(email):
-    u=st.session_state.get("users",{})
-    if not isinstance(u,dict): return None
-    return u.get(email,{}).get("photo_b64")
-
-USER_GRADIENTS = [
-    "135deg,#60A5FA,#3B82F6","135deg,#34D399,#10B981","135deg,#FBBF24,#F59E0B",
-    "135deg,#A78BFA,#8B5CF6","135deg,#F87171,#EF4444","135deg,#22D3EE,#06B6D4",
-    "135deg,#F472B6,#EC4899","135deg,#C084FC,#A855F7",
-]
-def ugrad(email): return f"linear-gradient({USER_GRADIENTS[hash(email or '') % len(USER_GRADIENTS)]})"
-
-def is_online(email): return (hash(email+"online") % 3) != 0
-
-STOPWORDS = {
-    "de","a","o","que","e","do","da","em","um","para","é","com","uma","os","no","se",
-    "na","por","mais","as","dos","como","mas","foi","ao","ele","das","tem","à","seu",
-    "sua","ou","ser","quando","muito","há","nos","já","está","eu","também","só","pelo",
-    "pela","até","isso","ela","entre","era","depois","sem","mesmo","aos","ter","seus",
-    "the","of","and","to","in","is","it","that","was","he","for","on","are","as","with",
-    "they","at","be","this","from","or","one","had","by","but","not","what","all","were",
-    "we","when","your","can","said","there","use","an","each","which","she","do","how",
-    "their","if","will","up","other","about","out","many","then","them","these","so",
-}
 
 @st.cache_data(show_spinner=False)
 def extract_text_from_pdf_bytes(pdf_bytes):
