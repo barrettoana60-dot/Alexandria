@@ -35,12 +35,11 @@ except: _pip("pandas"); import pandas as pd
 import streamlit as st
 
 st.set_page_config(page_title="Nebula", page_icon="🔬", layout="wide",
-                   initial_sidebar_state="expanded") # Changed to expanded for sidebar
+                   initial_sidebar_state="expanded")
 
 DB_FILE = "nebula_db.json"
 
-# --- CACHED FUNCTIONS FOR PERFORMANCE ---
-@st.cache_data(ttl=3600, show_spinner=False) # Cache the database loading for 1 hour
+@st.cache_data(ttl=3600, show_spinner=False)
 def load_db():
     if os.path.exists(DB_FILE):
         try:
@@ -53,7 +52,6 @@ def load_db():
             return {}
     return {}
 
-# --- HELPER FUNCTIONS (Moved up to be defined before SEED_USERS) ---
 def hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
 def code6(): return ''.join(random.choices(string.digits,k=6))
 def ini(n):
@@ -79,14 +77,14 @@ def guser():
     return st.session_state.users.get(st.session_state.current_user,{})
 
 USER_GRADIENTS = [
-    "135deg,#FF8C00,#FF4500", # Dark Orange to Orange Red (Laranja principal)
-    "135deg,#FFD700,#FFA500", # Gold to Orange
-    "135deg,#32CD32,#008000", # Lime Green to Green
-    "135deg,#1E90FF,#0000FF", # Dodger Blue to Blue
-    "135deg,#FF1493,#C71585", # Deep Pink to Medium Violet Red
-    "135deg,#8A2BE2,#4B0082", # Blue Violet to Indigo
-    "135deg,#00CED1,#20B2AA", # Dark Turquoise to Light Sea Green
-    "135deg,#FFD700,#FF4500", # Gold to Orange Red
+    "135deg,#FF8C00,#FF4500",
+    "135deg,#FFD700,#FFA500",
+    "135deg,#32CD32,#008000",
+    "135deg,#1E90FF,#0000FF",
+    "135deg,#FF1493,#C71585",
+    "135deg,#8A2BE2,#4B0082",
+    "135deg,#00CED1,#20B2AA",
+    "135deg,#FFD700,#FF4500",
 ]
 def ugrad(email): return f"linear-gradient({USER_GRADIENTS[hash(email or '') % len(USER_GRADIENTS)]})"
 
@@ -103,7 +101,6 @@ STOPWORDS = {
     "their","if","will","up","other","about","out","many","then","them","these","so",
 }
 
-# --- SEED DATA (Moved up to be defined before DBManager, and after hp) ---
 SEED_POSTS = [
     {"id":1,"author":"Carlos Mendez","author_email":"carlos@nebula.ai","avatar":"CM","area":"Neurociência",
      "title":"Efeitos da Privação de Sono na Plasticidade Sináptica",
@@ -151,13 +148,11 @@ CHAT_INIT = {
 }
 
 
-# Use st.cache_resource for functions that modify session_state or global resources
 @st.cache_resource(show_spinner=False)
 def get_db_manager():
     class DBManager:
         def __init__(self):
             self._db_data = None
-            # Pass seed data directly to load_initial_data
             self.load_initial_data(SEED_USERS, SEED_POSTS, CHAT_INIT)
 
         def load_initial_data(self, seed_users, seed_posts, chat_init):
@@ -192,7 +187,7 @@ def get_db_manager():
             st.session_state.setdefault("last_sq", "")
             st.session_state.setdefault("stats_data", {"h_index": 4, "fator_impacto": 3.8, "notes": ""})
             st.session_state.setdefault("compose_open", False)
-            st.session_state.setdefault("initialized", True) # Mark as initialized
+            st.session_state.setdefault("initialized", True)
 
         def save_db(self):
             try:
@@ -216,18 +211,18 @@ def extract_text_from_pdf_bytes(pdf_bytes):
     if PyPDF2 is None: return ""
     try:
         reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes)); text = ""
-        for page in reader.pages[:30]: # Limit pages for performance
+        for page in reader.pages[:30]:
             try: text += page.extract_text() + "\n"
             except: pass
-        return text[:50000] # Limit text length
+        return text[:50000]
     except: return ""
 
 @st.cache_data(show_spinner=False)
 def extract_text_from_csv_bytes(csv_bytes):
     try:
-        df = pd.read_csv(io.BytesIO(csv_bytes), nrows=200) # Limit rows
+        df = pd.read_csv(io.BytesIO(csv_bytes), nrows=200)
         summary = f"Colunas: {', '.join(df.columns.tolist())}\nLinhas: {len(df)}\n"
-        for col in df.columns[:10]: # Limit columns
+        for col in df.columns[:10]:
             if df[col].dtype == object: summary += f"{col}: {', '.join(str(v) for v in df[col].dropna().head(5).tolist())}\n"
             else: summary += f"{col}: min={df[col].min():.2f}, max={df[col].max():.2f}\n"
         return summary
@@ -238,12 +233,12 @@ def extract_text_from_xlsx_bytes(xlsx_bytes):
     if openpyxl is None: return ""
     try:
         wb = openpyxl.load_workbook(io.BytesIO(xlsx_bytes), read_only=True, data_only=True); text = ""
-        for sheet_name in wb.sheetnames[:3]: # Limit sheets
+        for sheet_name in wb.sheetnames[:3]:
             ws = wb[sheet_name]; text += f"\n=== {sheet_name} ===\n"
-            for row in list(ws.iter_rows(max_row=50, values_only=True)): # Limit rows
+            for row in list(ws.iter_rows(max_row=50, values_only=True)):
                 row_vals = [str(v) for v in row if v is not None]
-                if row_vals: text += " | ".join(row_vals[:10]) + "\n" # Limit columns
-        return text[:20000] # Limit text length
+                if row_vals: text += " | ".join(row_vals[:10]) + "\n"
+        return text[:20000]
     except: return ""
 
 @st.cache_data(show_spinner=False)
@@ -517,7 +512,7 @@ def record(tags, w=1.0):
     if not email or not tags: return
     prefs=st.session_state.user_prefs.setdefault(email,defaultdict(float))
     for t in tags: prefs[t.lower()]+=w
-    db_manager.save_db() # Save changes to preferences
+    db_manager.save_db()
 
 @st.cache_data(show_spinner=False)
 def get_recs(email, feed_posts_data, n=2):
@@ -539,71 +534,58 @@ def area_to_tags(area):
     return [w.strip() for w in a.replace(","," ").split() if len(w)>3][:5]
 
 
-# Initialize session state using the DBManager
 if "initialized" not in st.session_state:
     db_manager.load_initial_data(SEED_USERS, SEED_POSTS, CHAT_INIT)
 
 # ══════════════════════════════════════════════════════════════════
-#  CSS — LIQUID GLASS, PRETO, MODERNO, CORES VIBRANTES
+#  CSS — LIQUID GLASS · DARK THEME · LARANJA/AMARELO/VERDE
 # ══════════════════════════════════════════════════════════════════
 def inject_css():
     st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@400;500;600;700;800;900&family=Satoshi:wght@300;400;500;600;700&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 :root {
-  /* Backgrounds - Tema escuro com laranja como cor principal */
-  --bg:    #121212; /* Dark background */
+  --bg:    #121212;
   --s1:    #1A1A1A;
   --s2:    #222222;
   --s3:    #333333;
   --s4:    #444444;
 
-  /* Cores vibrantes para acentos (Laranja principal) */
-  --or1: #FF8C00; /* Dark Orange - Laranja principal */
-  --or2: #FFA500; /* Orange */
-  --or3: #FFD700; /* Gold */
-  --or4: #FF6347; /* Tomato */
+  --or1: #FF8C00;
+  --or2: #FFA500;
+  --or3: #FFD700;
+  --or4: #FF6347;
 
-  --am1: #FFD700; /* Gold - Amarelo */
+  --am1: #FFD700;
   --am2: #FFEB3B;
   --am3: #FFF176;
-  --am4: #FFF9C4;
 
-  --gr1: #4CAF50; /* Green - Verde */
+  --gr1: #4CAF50;
   --gr2: #66BB6A;
   --gr3: #81C784;
-  --gr4: #A5D6A7;
 
-  --bl1: #2196F3; /* Blue - Azul */
+  --bl1: #2196F3;
   --bl2: #42A5F5;
-  --bl3: #64B5F6;
-  --bl4: #90CAF9;
 
-  /* Texto - Ajustado para contraste em fundo escuro */
-  --t0: #F5F5F5;   /* headings */
-  --t1: #E0E0E0;   /* primary */
-  --t2: #BDBDBD;   /* secondary */
-  --t3: #9E9E9E;   /* muted */
-  --t4: #757575;   /* very muted */
+  --t0: #F5F5F5;
+  --t1: #E0E0E0;
+  --t2: #BDBDBD;
+  --t3: #9E9E9E;
+  --t4: #757575;
 
-  /* Glass surfaces — Mais escuro e translúcido */
-  --glass:  rgba(255, 255, 255, 0.08); /* Mais escuro para o efeito de vidro */
-  --glass2: rgba(255, 255, 255, 0.12); /* Um pouco mais opaco para contraste */
-  --glassl: rgba(255, 255, 255, 0.04); /* Overlay leve, mais visível */
+  --glass:  rgba(255,255,255,.08);
+  --glass2: rgba(255,255,255,.12);
+  --glassl: rgba(255,255,255,.04);
 
-  /* Borders - Mais sutis em tema escuro */
-  --gb1: rgba(255, 255, 255, 0.08);
-  --gb2: rgba(255, 255, 255, 0.12);
-  --gb3: rgba(255, 255, 255, 0.18);
+  --gb1: rgba(255,255,255,.08);
+  --gb2: rgba(255,255,255,.12);
+  --gb3: rgba(255,255,255,.18);
 
-  /* Status */
-  --ok: #4CAF50; /* Verde */
-  --warn: #FFD700; /* Amarelo */
-  --err: #EF5350; /* Vermelho */
+  --ok: #4CAF50;
+  --warn: #FFD700;
+  --err: #EF5350;
 
-  /* Radii */
   --r6:6px; --r10:10px; --r14:14px; --r18:18px; --r24:24px; --r32:32px;
 }
 
@@ -615,188 +597,118 @@ html, body, .stApp {
   font-family: 'Outfit', -apple-system, sans-serif !important;
 }
 
-/* ── Ambient background - Mais etéreo e escuro ── */
 .stApp::before {
   content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
   background:
-    radial-gradient(ellipse 70% 55% at 0% 0%, rgba(255,140,0,.08) 0%, transparent 55%), /* Laranja suave */
-    radial-gradient(ellipse 50% 60% at 100% 100%, rgba(76,175,80,.06) 0%, transparent 50%), /* Verde suave */
-    radial-gradient(ellipse 35% 35% at 55% 40%, rgba(33,150,243,.04) 0%, transparent 60%); /* Azul suave */
+    radial-gradient(ellipse 70% 55% at 0% 0%, rgba(255,140,0,.08) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 60% at 100% 100%, rgba(76,175,80,.06) 0%, transparent 50%),
+    radial-gradient(ellipse 35% 35% at 55% 40%, rgba(33,150,243,.04) 0%, transparent 60%);
 }
-/* ── Subtle star field - Mais discreto e brilhante ── */
 .stApp::after {
   content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
   background-image:
-    radial-gradient(1px 1px at 12% 18%, rgba(255,215,0,.2) 0%, transparent 100%), /* Amarelo */
-    radial-gradient(1px 1px at 34% 52%, rgba(255,140,0,.15) 0%, transparent 100%), /* Laranja */
-    radial-gradient(1.2px 1.2px at 67% 15%, rgba(76,175,80,.2) 0%, transparent 100%), /* Verde */
-    radial-gradient(1px 1px at 82% 70%, rgba(255,215,0,.1) 0%, transparent 100%), /* Amarelo */
-    radial-gradient(1px 1px at 48% 88%, rgba(33,150,243,.08) 0%, transparent 100%), /* Azul */
-    radial-gradient(1px 1px at 20% 76%, rgba(76,175,80,.1) 0%, transparent 100%), /* Verde */
-    radial-gradient(1px 1px at 90% 25%, rgba(255,140,0,.12) 0%, transparent 100%); /* Laranja */
+    radial-gradient(1px 1px at 12% 18%, rgba(255,215,0,.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 34% 52%, rgba(255,140,0,.15) 0%, transparent 100%),
+    radial-gradient(1.2px 1.2px at 67% 15%, rgba(76,175,80,.2) 0%, transparent 100%),
+    radial-gradient(1px 1px at 82% 70%, rgba(255,215,0,.1) 0%, transparent 100%),
+    radial-gradient(1px 1px at 48% 88%, rgba(33,150,243,.08) 0%, transparent 100%),
+    radial-gradient(1px 1px at 20% 76%, rgba(76,175,80,.1) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 25%, rgba(255,140,0,.12) 0%, transparent 100%);
 }
 
-/* ── Hide Streamlit chrome ── */
-[data-testid="collapsedControl"] { display:none !important; } /* Keep this to hide the collapse button */
+[data-testid="collapsedControl"] { display:none !important; }
 header[data-testid="stHeader"]   { display:none !important; }
 #MainMenu, footer, .stDeployButton { display:none !important; }
 [data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
 
-/* Main content area */
 .block-container {
   padding-top:0 !important; padding-bottom:4rem !important;
   max-width:1420px !important; position:relative; z-index:1;
   padding-left:.9rem !important; padding-right:.9rem !important;
 }
 
-/* ═══════════════════════════════════════
-   SIDEBAR
-═══════════════════════════════════════ */
+/* ═══════════════════ SIDEBAR ═══════════════════ */
 section[data-testid="stSidebar"] {
-  background: var(--glass) !important; /* Liquid glass background */
+  background: var(--glass) !important;
   backdrop-filter: blur(30px) saturate(180%) !important;
   -webkit-backdrop-filter: blur(30px) saturate(180%) !important;
   border-right: 1px solid var(--gb1) !important;
-  box-shadow: 2px 0 15px rgba(0,0,0,.2) !important; /* Sombra mais escura */
-  width: 70px !important; /* Largura menor para apenas ícones */
-  min-width: 70px !important;
-  max-width: 70px !important;
-  padding-top: 1.5rem;
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-  transition: transform .3s ease-in-out;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  box-shadow: 2px 0 15px rgba(0,0,0,.2) !important;
+  width: 72px !important;
+  min-width: 72px !important;
+  max-width: 72px !important;
+  padding-top: 1.2rem !important;
+  padding-left: 0.4rem !important;
+  padding-right: 0.4rem !important;
 }
 
-/* Adjust main content margin when sidebar is open */
-.main {
-  margin-left: 70px; /* Make space for the sidebar */
-  transition: margin-left .3s ease-in-out;
-}
-
-/* Sidebar Logo */
-.sidebar-logo {
-  text-align: center;
-  margin-bottom: 2rem;
-}
-.sidebar-logo .stButton>button {
+/* Avatar rendered above the button */
+.sidebar-av .stButton>button {
+  width: 100% !important;
+  height: 26px !important;
+  min-height: 26px !important;
+  border-radius: 8px !important;
+  padding: 0 !important;
+  font-family: 'Outfit', sans-serif !important;
+  font-weight: 700 !important;
+  font-size: 0.60rem !important;
+  color: rgba(255,255,255,.45) !important;
   background: transparent !important;
   border: none !important;
-  font-family: 'Outfit', sans-serif !important;
-  font-size: 1.5rem !important;
-  font-weight: 800 !important;
-  letter-spacing: -0.04em !important;
-  background: linear-gradient(135deg, var(--or1), var(--am1), var(--gr1)) !important; /* Laranja, Amarelo, Verde */
-  -webkit-background-clip: text !important;
-  -webkit-text-fill-color: transparent !important;
-  background-clip: text !important;
-  padding: 0.28rem 0.5rem !important;
   box-shadow: none !important;
-  height: auto !important;
-  min-height: auto !important;
+  letter-spacing: .06em !important;
+  text-transform: uppercase !important;
+  transition: color .15s !important;
+  margin-top: 2px !important;
+  margin-bottom: .5rem !important;
 }
-.sidebar-logo .stButton>button:hover {
-  transform: none !important;
+.sidebar-av .stButton>button:hover {
+  color: var(--or1) !important;
+  background: transparent !important;
+  border: none !important;
   box-shadow: none !important;
+  transform: none !important;
 }
 
-/* Sidebar Nav Pills - Icon Only */
+/* Nav pills */
 .sidebar-nav-pill .stButton>button {
   background: transparent !important;
   border: 1px solid transparent !important;
   border-radius: var(--r10) !important;
-  color: var(--t3) !important; /* Cor mais suave para ícones inativos */
+  color: var(--t3) !important;
   font-family: 'Outfit', sans-serif !important;
   font-weight: 500 !important;
-  font-size: 1.2rem !important; /* Tamanho maior para ícones */
-  padding: 0.6rem !important; /* Padding para ícones */
-  width: 100%;
-  text-align: center; /* Centralizar ícone */
-  display: flex;
-  align-items: center;
-  justify-content: center; /* Centralizar ícone */
+  font-size: 1.25rem !important;
+  padding: 0.55rem 0.3rem !important;
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   transition: all 0.15s !important;
   box-shadow: none !important;
-  height: 50px !important; /* Altura fixa para botões de ícone */
-  min-height: 50px !important;
-  margin-bottom: 0.3rem;
+  height: 48px !important;
+  min-height: 48px !important;
+  margin-bottom: 0.2rem !important;
 }
 .sidebar-nav-pill .stButton>button:hover {
-  background: rgba(255,255,255,.05) !important; /* Fundo claro no hover */
-  border-color: rgba(255,255,255,.10) !important;
-  color: var(--t1) !important; /* Cor mais clara no hover */
-  transform: none !important;
-  box-shadow: none !important;
-}
-.sidebar-nav-pill-active .stButton>button {
-  background: linear-gradient(135deg, rgba(255,140,0,.15), rgba(255,215,0,.1)) !important; /* Laranja/Amarelo */
-  border: 1px solid rgba(255,255,255,.15) !important;
-  color: var(--or1) !important; /* Laranja principal para ativo */
-  font-weight: 700 !important;
-  box-shadow: 0 2px 14px rgba(255,140,0,.08), inset 0 1px 0 rgba(255,255,255,.05) !important;
-}
-.sidebar-nav-pill-active .stButton>button:hover {
-  transform: none !important;
-}
-
-/* Sidebar Avatar Button */
-.sidebar-av .stButton>button {
-  width: 45px !important; /* Maior */
-  height: 45px !important;
-  min-height: 45px !important;
-  border-radius: 50% !important;
-  padding: 0 !important;
-  font-family: 'Outfit', sans-serif !important;
-  font-weight: 800 !important;
-  font-size: 0.9rem !important; /* Maior */
-  color: white !important;
-  border: 2px solid rgba(255,255,255,.15) !important;
-  box-shadow: 0 2px 10px rgba(0,0,0,.2) !important;
-  transition: all 0.18s !important;
-  line-height: 1 !important;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1.5rem; /* Espaçamento */
-}
-.sidebar-av .stButton>button:hover {
-  transform: scale(1.10) !important;
-  border-color: rgba(255,255,255,.25) !important;
-  box-shadow: 0 4px 16px rgba(255,140,0,.1) !important; /* Laranja suave */
-}
-
-/* Sidebar Settings Button */
-.sidebar-settings .stButton>button {
-  background: transparent !important;
-  border: 1px solid transparent !important;
-  border-radius: var(--r10) !important;
-  color: var(--t3) !important;
-  font-size: 1.2rem !important;
-  padding: 0.6rem !important;
-  width: 100%;
-  height: 50px !important;
-  min-height: 50px !important;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s !important;
-  box-shadow: none !important;
-  margin-top: auto; /* Empurra para o final da sidebar */
-}
-.sidebar-settings .stButton>button:hover {
   background: rgba(255,255,255,.05) !important;
   border-color: rgba(255,255,255,.10) !important;
   color: var(--t1) !important;
   transform: none !important;
   box-shadow: none !important;
 }
+.sidebar-nav-pill-active .stButton>button {
+  background: linear-gradient(135deg,rgba(255,140,0,.18),rgba(255,215,0,.10)) !important;
+  border: 1px solid rgba(255,255,255,.15) !important;
+  color: var(--or1) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 2px 14px rgba(255,140,0,.10), inset 0 1px 0 rgba(255,255,255,.05) !important;
+}
+.sidebar-nav-pill-active .stButton>button:hover {
+  transform: none !important;
+}
 
-
-/* ═══════════════════════════════════════
-   TYPOGRAPHY
-═══════════════════════════════════════ */
+/* ═══════════════════ TYPOGRAPHY ═══════════════════ */
 h1 { font-family:'Outfit',sans-serif !important; font-size:1.55rem !important;
      font-weight:800 !important; letter-spacing:-.03em; color:var(--t0) !important; }
 h2 { font-family:'Outfit',sans-serif !important; font-size:1.02rem !important;
@@ -804,9 +716,7 @@ h2 { font-family:'Outfit',sans-serif !important; font-size:1.02rem !important;
 h3 { font-family:'Outfit',sans-serif !important; font-size:.88rem !important;
      font-weight:600 !important; color:var(--t1) !important; }
 
-/* ═══════════════════════════════════════
-   BUTTONS
-═══════════════════════════════════════ */
+/* ═══════════════════ BUTTONS ═══════════════════ */
 .stButton>button {
   background:var(--glass) !important;
   backdrop-filter:blur(16px) !important; -webkit-backdrop-filter:blur(16px) !important;
@@ -815,84 +725,70 @@ h3 { font-family:'Outfit',sans-serif !important; font-size:.88rem !important;
   font-weight:500 !important; font-size:.78rem !important;
   padding:.40rem .82rem !important;
   transition:all .18s cubic-bezier(.4,0,.2,1) !important;
-  box-shadow:0 1px 8px rgba(0,0,0,.15) !important; /* Sombra mais escura */
+  box-shadow:0 1px 8px rgba(0,0,0,.15) !important;
   letter-spacing:.005em !important;
 }
 .stButton>button:hover {
-  background:linear-gradient(135deg,rgba(255,140,0,.1),rgba(255,215,0,.08)) !important; /* Laranja/Amarelo */
+  background:linear-gradient(135deg,rgba(255,140,0,.10),rgba(255,215,0,.08)) !important;
   border-color:rgba(255,255,255,.15) !important;
   color:var(--t0) !important;
   transform:translateY(-1px) !important;
-  box-shadow:0 4px 16px rgba(255,140,0,.1) !important;
+  box-shadow:0 4px 16px rgba(255,140,0,.10) !important;
 }
 .stButton>button:active { transform:scale(.97) !important; }
 
-/* Primary */
 .btn-primary .stButton>button {
-  background:linear-gradient(135deg,var(--or1),var(--or2)) !important; /* Laranja principal */
+  background:linear-gradient(135deg,var(--or1),var(--or2)) !important;
   border-color:rgba(255,255,255,.18) !important;
-  color:white !important;
-  font-weight:600 !important;
-  box-shadow:0 4px 18px rgba(255,140,0,.25), inset 0 1px 0 rgba(255,255,255,.2) !important;
+  color:white !important; font-weight:600 !important;
+  box-shadow:0 4px 18px rgba(255,140,0,.25),inset 0 1px 0 rgba(255,255,255,.2) !important;
 }
 .btn-primary .stButton>button:hover {
   background:linear-gradient(135deg,var(--or2),var(--or3)) !important;
   box-shadow:0 7px 24px rgba(255,140,0,.3) !important;
 }
-/* Danger */
 .btn-danger .stButton>button {
-  background:rgba(239,83,80,.07) !important; /* Vermelho */
+  background:rgba(239,83,80,.07) !important;
   border-color:rgba(239,83,80,.20) !important; color:#EF5350 !important;
 }
 .btn-danger .stButton>button:hover {
-  background:rgba(239,83,80,.14) !important;
-  border-color:rgba(239,83,80,.32) !important;
+  background:rgba(239,83,80,.14) !important; border-color:rgba(239,83,80,.32) !important;
 }
-/* Green */
 .btn-green .stButton>button {
-  background:linear-gradient(135deg,rgba(76,175,80,.25),rgba(102,187,106,.1)) !important; /* Verde */
-  border-color:rgba(76,175,80,.2) !important;
-  color:var(--gr2) !important;
+  background:linear-gradient(135deg,rgba(76,175,80,.25),rgba(102,187,106,.1)) !important;
+  border-color:rgba(76,175,80,.2) !important; color:var(--gr2) !important;
 }
-
-/* Compose prompt */
 .compose-prompt .stButton>button {
-  background:rgba(255,255,255,.03) !important; /* Mais escuro */
+  background:rgba(255,255,255,.03) !important;
   border:1px solid var(--gb1) !important; border-radius:var(--r32) !important;
   color:var(--t3) !important; font-size:.84rem !important; font-weight:400 !important;
   text-align:left !important; padding:.68rem 1.3rem !important; width:100% !important;
   display:flex !important; justify-content:flex-start !important; box-shadow:none !important;
 }
 .compose-prompt .stButton>button:hover {
-  background:rgba(255,255,255,.08) !important;
-  border-color:rgba(255,255,255,.12) !important;
-  color:var(--t2) !important;
-  transform:none !important; box-shadow:none !important;
+  background:rgba(255,255,255,.08) !important; border-color:rgba(255,255,255,.12) !important;
+  color:var(--t2) !important; transform:none !important; box-shadow:none !important;
 }
 
-/* ═══════════════════════════════════════
-   INPUTS
-═══════════════════════════════════════ */
+/* ═══════════════════ INPUTS ═══════════════════ */
 .stTextInput input, .stTextArea textarea {
-  background:var(--glassl) !important; /* Fundo translúcido */
+  background:var(--glassl) !important;
   border:1px solid var(--gb1) !important; border-radius:var(--r10) !important;
   color:var(--t1) !important; font-family:'Outfit',sans-serif !important;
-  font-size:.84rem !important; transition:border-color .15s, box-shadow .15s !important;
+  font-size:.84rem !important; transition:border-color .15s,box-shadow .15s !important;
 }
 .stTextInput input:focus, .stTextArea textarea:focus {
   border-color:rgba(255,255,255,.2) !important;
-  box-shadow:0 0 0 3px rgba(255,140,0,.1) !important; /* Sombra laranja no foco */
+  box-shadow:0 0 0 3px rgba(255,140,0,.10) !important;
 }
 .stTextInput label,.stTextArea label,.stSelectbox label,.stFileUploader label,.stNumberInput label {
   color:var(--t3) !important; font-size:.62rem !important;
   letter-spacing:.09em !important; text-transform:uppercase !important; font-weight:600 !important;
 }
 
-/* ═══════════════════════════════════════
-   AVATARS
-═══════════════════════════════════════ */
+/* ═══════════════════ AVATARS ═══════════════════ */
 .av {
-  border-radius:50%; background:linear-gradient(135deg,var(--or1),var(--or3)); /* Laranja/Gold */
+  border-radius:50%; background:linear-gradient(135deg,var(--or1),var(--or3));
   display:flex; align-items:center; justify-content:center;
   font-family:'Outfit',sans-serif; font-weight:700; color:white;
   border:1.5px solid rgba(255,255,255,.1);
@@ -900,14 +796,12 @@ h3 { font-family:'Outfit',sans-serif !important; font-size:.88rem !important;
   box-shadow:0 2px 8px rgba(0,0,0,.2);
 }
 
-/* ═══════════════════════════════════════
-   CARDS - More liquid glass effect
-═══════════════════════════════════════ */
+/* ═══════════════════ CARDS ═══════════════════ */
 .card {
   background:var(--glass); backdrop-filter:blur(24px) saturate(150%);
   -webkit-backdrop-filter:blur(24px) saturate(150%);
   border:1px solid var(--gb1); border-radius:var(--r18);
-  box-shadow:0 3px 24px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.05);
+  box-shadow:0 3px 24px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.05);
   position:relative; overflow:hidden;
 }
 .card::after {
@@ -915,95 +809,82 @@ h3 { font-family:'Outfit',sans-serif !important; font-size:.88rem !important;
   background:linear-gradient(90deg,transparent,rgba(255,255,255,.05),transparent);
   pointer-events:none;
 }
-
-/* Post card */
 .post {
   background:var(--glass); border:1px solid var(--gb1); border-radius:var(--r18);
   margin-bottom:.75rem; overflow:hidden; position:relative;
-  box-shadow:0 2px 16px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.05);
+  box-shadow:0 2px 16px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.05);
   animation:fadeUp .22s cubic-bezier(.34,1.1,.64,1) both;
-  transition:border-color .16s, box-shadow .16s;
+  transition:border-color .16s,box-shadow .16s;
 }
 .post:hover {
   border-color:rgba(255,255,255,.15);
-  box-shadow:0 6px 28px rgba(0,0,0,.25), 0 0 0 1px rgba(255,255,255,.08);
+  box-shadow:0 6px 28px rgba(0,0,0,.25),0 0 0 1px rgba(255,255,255,.08);
 }
 .post::after {
   content:''; position:absolute; top:0; left:0; right:0; height:1px;
   background:linear-gradient(90deg,transparent,rgba(255,255,255,.03),transparent);
   pointer-events:none;
 }
-
-/* Compose card */
 .compose-card {
   background:var(--glass); border:1px solid var(--gb2);
   border-radius:var(--r18); padding:1.15rem 1.35rem; margin-bottom:.85rem;
-  box-shadow:0 3px 20px rgba(0,0,0,.2), inset 0 1px 0 rgba(255,255,255,.05);
+  box-shadow:0 3px 20px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.05);
   animation:fadeUp .16s ease both;
 }
-
-/* Sidebar sections */
 .sc {
   background:var(--glass); border:1px solid var(--gb1);
   border-radius:var(--r18); padding:1rem 1.05rem; margin-bottom:.7rem;
 }
-/* Search result card */
 .scard {
   background:var(--glass); border:1px solid var(--gb1); border-radius:var(--r14);
   padding:.85rem 1.05rem; margin-bottom:.5rem;
-  transition:border-color .14s, transform .14s;
+  transition:border-color .14s,transform .14s;
 }
 .scard:hover { border-color:var(--gb2); transform:translateY(-1px); }
-
-/* Analytics box */
 .abox {
   background:var(--glass); border:1px solid var(--gb2);
   border-radius:var(--r14); padding:.95rem; margin-bottom:.7rem;
 }
 .pbox {
-  background:rgba(76,175,80,.08); border:1px solid rgba(76,175,80,.15); /* Verde */
+  background:rgba(76,175,80,.08); border:1px solid rgba(76,175,80,.15);
   border-radius:var(--r14); padding:.9rem; margin-bottom:.65rem;
 }
 .img-rc {
-  background:rgba(76,175,80,.08); border:1px solid rgba(76,175,80,.13); /* Verde */
+  background:rgba(76,175,80,.08); border:1px solid rgba(76,175,80,.13);
   border-radius:var(--r14); padding:.85rem; margin-bottom:.5rem;
 }
 .chart-glass {
   background:var(--glass); border:1px solid var(--gb1);
   border-radius:var(--r14); padding:.7rem; margin-bottom:.7rem;
 }
-
-/* Metrics box */
 .mbox {
   background:var(--glass); border:1px solid var(--gb1);
   border-radius:var(--r14); padding:.9rem; text-align:center;
 }
 .mval {
   font-family:'Outfit',sans-serif; font-size:1.65rem; font-weight:800;
-  background:linear-gradient(135deg,var(--or1),var(--or3)); /* Laranja/Gold */
+  background:linear-gradient(135deg,var(--or1),var(--or3));
   -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
 }
 .mval-green {
   font-family:'Outfit',sans-serif; font-size:1.65rem; font-weight:800;
-  background:linear-gradient(135deg,var(--gr1),var(--bl1)); /* Verde/Azul */
+  background:linear-gradient(135deg,var(--gr1),var(--bl1));
   -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
 }
 .mlbl { font-size:.60rem; color:var(--t3); margin-top:3px; letter-spacing:.09em; text-transform:uppercase; font-weight:600; }
 
-/* Alerts */
+/* ═══════════════════ ALERTS ═══════════════════ */
 .ai-warn {
-  background:rgba(255,215,0,.07); border:1px solid rgba(255,215,0,.20); /* Amarelo */
+  background:rgba(255,215,0,.07); border:1px solid rgba(255,215,0,.20);
   border-radius:var(--r10); padding:.65rem .95rem; margin:.45rem 0;
 }
-.str-ok  { background:rgba(76,175,80,.07); border:1px solid rgba(76,175,80,.18); border-radius:9px; padding:.36rem .72rem; font-size:.74rem; color:var(--gr2); margin-bottom:.28rem; } /* Verde */
-.str-imp { background:rgba(255,215,0,.07); border:1px solid rgba(255,215,0,.18); border-radius:9px; padding:.36rem .72rem; font-size:.74rem; color:var(--am2); margin-bottom:.28rem; } /* Amarelo */
+.str-ok  { background:rgba(76,175,80,.07); border:1px solid rgba(76,175,80,.18); border-radius:9px; padding:.36rem .72rem; font-size:.74rem; color:var(--gr2); margin-bottom:.28rem; }
+.str-imp { background:rgba(255,215,0,.07); border:1px solid rgba(255,215,0,.18); border-radius:9px; padding:.36rem .72rem; font-size:.74rem; color:var(--am2); margin-bottom:.28rem; }
 .ref-item { background:rgba(255,255,255,.05); border:1px solid rgba(255,255,255,.1); border-radius:var(--r10); padding:.6rem .85rem; font-size:.76rem; color:var(--t2); line-height:1.6; }
 
-/* ═══════════════════════════════════════
-   TABS
-═══════════════════════════════════════ */
+/* ═══════════════════ TABS ═══════════════════ */
 .stTabs [data-baseweb="tab-list"] {
-  background:var(--glassl) !important; /* Fundo translúcido */
+  background:var(--glassl) !important;
   border:1px solid var(--gb1) !important; border-radius:var(--r10) !important;
   padding:3px !important; gap:2px !important;
 }
@@ -1013,43 +894,38 @@ h3 { font-family:'Outfit',sans-serif !important; font-size:.88rem !important;
   font-family:'Outfit',sans-serif !important; font-weight:500 !important;
 }
 .stTabs [aria-selected="true"] {
-  background:linear-gradient(135deg,rgba(255,140,0,.15),rgba(255,215,0,.1)) !important; /* Laranja/Amarelo */
+  background:linear-gradient(135deg,rgba(255,140,0,.15),rgba(255,215,0,.10)) !important;
   color:var(--or1) !important; border:1px solid rgba(255,255,255,.15) !important;
   font-weight:700 !important;
 }
 .stTabs [data-baseweb="tab-panel"] { background:transparent !important; padding-top:.85rem !important; }
 
-/* ═══════════════════════════════════════
-   BADGES / TAGS
-═══════════════════════════════════════ */
+/* ═══════════════════ BADGES / TAGS ═══════════════════ */
 .tag {
   display:inline-block; background:rgba(255,255,255,.05);
-  border:1px solid rgba(255,255,255,.1);
-  border-radius:20px;
+  border:1px solid rgba(255,255,255,.10); border-radius:20px;
   padding:2px 8px; font-size:.62rem; color:var(--t1); margin:2px; font-weight:500;
 }
-.badge-on   { display:inline-block; background:rgba(255,215,0,.10); border:1px solid rgba(255,215,0,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:var(--am2); } /* Amarelo */
-.badge-pub  { display:inline-block; background:rgba(76,175,80,.10); border:1px solid rgba(76,175,80,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:var(--gr2); } /* Verde */
+.badge-on   { display:inline-block; background:rgba(255,215,0,.10); border:1px solid rgba(255,215,0,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:var(--am2); }
+.badge-pub  { display:inline-block; background:rgba(76,175,80,.10); border:1px solid rgba(76,175,80,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:var(--gr2); }
 .badge-done { display:inline-block; background:rgba(139,92,246,.10); border:1px solid rgba(139,92,246,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:#c4b5fd; }
-.badge-rec  { display:inline-block; background:rgba(255,140,0,.10); border:1px solid rgba(255,140,0,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:var(--or1); } /* Laranja */
+.badge-rec  { display:inline-block; background:rgba(255,140,0,.10); border:1px solid rgba(255,140,0,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:var(--or1); }
 
-/* ═══════════════════════════════════════
-   INDICATORS / MISC
-═══════════════════════════════════════ */
+/* ═══════════════════ INDICATORS ═══════════════════ */
 @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.75)} }
-.dot-on  { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--gr1); animation:pulse 2.5s infinite; margin-right:4px; vertical-align:middle; } /* Verde */
+.dot-on  { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--gr1); animation:pulse 2.5s infinite; margin-right:4px; vertical-align:middle; }
 .dot-off { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--t4); margin-right:4px; vertical-align:middle; }
 
 @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 .pw { animation:fadeIn .18s ease both; }
 @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
 
-/* Chat bubbles */
-.bme   { background:linear-gradient(135deg,rgba(255,140,0,.15),rgba(255,215,0,.1)); border:1px solid rgba(255,255,255,.15); border-radius:18px 18px 4px 18px; padding:.56rem .88rem; max-width:68%; margin-left:auto; margin-bottom:5px; font-size:.82rem; line-height:1.6; } /* Laranja/Amarelo */
+/* ═══════════════════ CHAT ═══════════════════ */
+.bme   { background:linear-gradient(135deg,rgba(255,140,0,.15),rgba(255,215,0,.10)); border:1px solid rgba(255,255,255,.15); border-radius:18px 18px 4px 18px; padding:.56rem .88rem; max-width:68%; margin-left:auto; margin-bottom:5px; font-size:.82rem; line-height:1.6; }
 .bthem { background:var(--glass); border:1px solid var(--gb1); border-radius:18px 18px 18px 4px; padding:.56rem .88rem; max-width:68%; margin-bottom:5px; font-size:.82rem; line-height:1.6; }
 .cmt   { background:var(--glassl); border:1px solid var(--gb1); border-radius:var(--r10); padding:.52rem .85rem; margin-bottom:.28rem; }
 
-/* Profile hero */
+/* ═══════════════════ PROFILE ═══════════════════ */
 .prof-hero {
   background:var(--glass); backdrop-filter:blur(30px) saturate(180%); -webkit-backdrop-filter:blur(30px) saturate(180%);
   border:1px solid var(--gb1); border-radius:var(--r24);
@@ -1058,29 +934,24 @@ h3 { font-family:'Outfit',sans-serif !important; font-size:.88rem !important;
 }
 .prof-photo {
   width:80px; height:80px; border-radius:50%;
-  background:linear-gradient(135deg,var(--or1),var(--or3)); /* Laranja/Gold */
+  background:linear-gradient(135deg,var(--or1),var(--or3));
   border:2px solid rgba(255,255,255,.15);
   flex-shrink:0; overflow:hidden;
   display:flex; align-items:center; justify-content:center;
   font-size:1.7rem; font-weight:700; color:white;
   box-shadow:0 4px 16px rgba(0,0,0,.2);
 }
-
-/* Person row */
 .person-row {
   display:flex; align-items:center; gap:8px; padding:.42rem .48rem;
   border-radius:var(--r10); border:1px solid transparent; transition:all .14s; margin-bottom:2px;
 }
 .person-row:hover { background:rgba(255,255,255,.03); border-color:var(--gb1); }
-
-/* Divider */
 .dtxt {
   display:flex; align-items:center; gap:.7rem; margin:.8rem 0;
   font-size:.60rem; color:var(--t3); letter-spacing:.09em; text-transform:uppercase; font-weight:600;
 }
 .dtxt::before,.dtxt::after { content:''; flex:1; height:1px; background:var(--gb1); }
 
-/* Misc */
 hr { border:none; border-top:1px solid var(--gb1) !important; margin:.85rem 0; }
 label { color:var(--t2) !important; }
 .stCheckbox label,.stRadio label { color:var(--t1) !important; }
@@ -1101,7 +972,7 @@ input[type="number"] { background:var(--glassl) !important; border:1px solid var
 # HTML HELPERS
 # ════════════════════════════════
 def avh(initials, sz=40, grad=None):
-    fs=max(sz//3,9); bg=grad or "linear-gradient(135deg,var(--or1),var(--or3))" # Laranja/Gold
+    fs=max(sz//3,9); bg=grad or "linear-gradient(135deg,var(--or1),var(--or3))"
     return f'<div class="av" style="width:{sz}px;height:{sz}px;font-size:{fs}px;background:{bg}">{initials}</div>'
 
 def tags_html(tags): return ' '.join(f'<span class="tag">{t}</span>' for t in (tags or []))
@@ -1112,12 +983,14 @@ def badge(s):
 
 def pc():
     return dict(plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="var(--t3)",family="Outfit",size=11),
+                font=dict(color="#9E9E9E",family="Outfit",size=11),
                 margin=dict(l=10,r=10,t=40,b=10),
-                xaxis=dict(showgrid=False,color="var(--t3)",tickfont=dict(size=10)),
-                yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.05)",color="var(--t3)",tickfont=dict(size=10))) # Changed gridcolor for dark theme
+                xaxis=dict(showgrid=False,color="#9E9E9E",tickfont=dict(size=10)),
+                yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.05)",color="#9E9E9E",tickfont=dict(size=10)))
 
-CHART_COLORS = ["#FF8C00","#FFD700","#4CAF50","#2196F3","#FF1493","#8A2BE2","#00CED1","#FF4500","#FFD700","#4CAF50"] # Updated vibrant colors for dark theme
+def var_t1(): return "#E0E0E0"
+
+CHART_COLORS = ["#FF8C00","#FFD700","#4CAF50","#2196F3","#FF1493","#8A2BE2","#00CED1","#FF4500","#FFEB3B","#66BB6A"]
 
 # ════════════════════════════════
 # AUTH PAGES
@@ -1129,7 +1002,7 @@ def page_login():
         st.markdown("""
         <div style="text-align:center;margin-bottom:2.5rem">
           <div style="font-family:'Outfit',sans-serif;font-size:4rem;font-weight:900;
-            background:linear-gradient(135deg,var(--or1) 15%,var(--am1) 55%,var(--gr1) 100%); /* Cores vibrantes */
+            background:linear-gradient(135deg,var(--or1) 15%,var(--am1) 55%,var(--gr1) 100%);
             -webkit-background-clip:text;-webkit-text-fill-color:transparent;
             background-clip:text;letter-spacing:-.06em;line-height:.9;margin-bottom:.7rem">Nebula</div>
           <div style="color:var(--t3);font-size:.62rem;letter-spacing:.26em;text-transform:uppercase;font-weight:600">
@@ -1178,75 +1051,93 @@ def page_verify_email():
     _,col,_ = st.columns([1,1.1,1])
     with col:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown(f'<h1 style="text-align:center;margin-bottom:1.5rem">Verifique seu e-mail</h1><p style="text-align:center;color:var(--t2);font-size:.85rem;margin-bottom:1.8rem">Enviamos um código para <strong style="color:var(--or1)">{st.session_state.pending_verify["email"]}</strong>. Verifique sua caixa de entrada.</p>', unsafe_allow_html=True)
-        code=st.text_input("Código de verificação",key="vc",max_chars=6)
-        st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-        if st.button("✓ Confirmar",use_container_width=True):
-            if code==st.session_state.pending_verify["code"]:
-                new_user=st.session_state.pending_verify
-                st.session_state.users[new_user["email"]]={"name":new_user["name"],"password":new_user["password"],"bio":"","area":new_user["area"],"followers":0,"following":0,"verified":True,"2fa_enabled":False}
-                db_manager.save_db(); st.success("Conta criada! Faça login.")
-                st.session_state.pending_verify=None; st.session_state.page="login"; st.rerun()
-            else: st.error("Código incorreto.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f'<h1 style="text-align:center;margin-bottom:1.5rem">Verifique seu e-mail</h1><p style="text-align:center;color:var(--t2);font-size:.85rem;margin-bottom:1.8rem">Enviamos um código para <strong style="color:var(--or1)">{st.session_state.pending_verify["email"]}</strong>.</p>', unsafe_allow_html=True)
+        with st.form("verify_form"):
+            code=st.text_input("Código de verificação",key="vc",max_chars=6)
+            st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+            sub=st.form_submit_button("✓ Confirmar",use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            if sub:
+                if code==st.session_state.pending_verify["code"]:
+                    new_user=st.session_state.pending_verify
+                    st.session_state.users[new_user["email"]]={"name":new_user["name"],"password":new_user["password"],"bio":"","area":new_user["area"],"followers":0,"following":0,"verified":True,"2fa_enabled":False}
+                    db_manager.save_db(); st.success("Conta criada! Faça login.")
+                    st.session_state.pending_verify=None; st.session_state.page="login"; st.rerun()
+                else: st.error("Código incorreto.")
         if st.button("← Voltar ao Login",key="back_login"): st.session_state.page="login"; st.rerun()
 
 def page_2fa():
     _,col,_ = st.columns([1,1.1,1])
     with col:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown(f'<h1 style="text-align:center;margin-bottom:1.5rem">Autenticação de 2 Fatores</h1><p style="text-align:center;color:var(--t2);font-size:.85rem;margin-bottom:1.8rem">Enviamos um código para <strong style="color:var(--or1)">{st.session_state.pending_2fa["email"]}</strong>. Insira-o abaixo.</p>', unsafe_allow_html=True)
-        code=st.text_input("Código",key="2fac",max_chars=6)
-        st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-        if st.button("✓ Confirmar",use_container_width=True):
-            if code==st.session_state.pending_2fa["code"]:
-                st.session_state.logged_in=True; st.session_state.current_user=st.session_state.pending_2fa["email"]
-                u=guser(); record(area_to_tags(u.get("area","")),1.0)
-                st.session_state.pending_2fa=None; st.session_state.page="feed"; st.rerun()
-            else: st.error("Código incorreto.")
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f'<h1 style="text-align:center;margin-bottom:1.5rem">Autenticação de 2 Fatores</h1><p style="text-align:center;color:var(--t2);font-size:.85rem;margin-bottom:1.8rem">Código enviado para <strong style="color:var(--or1)">{st.session_state.pending_2fa["email"]}</strong>.</p>', unsafe_allow_html=True)
+        with st.form("twofa_form"):
+            code=st.text_input("Código",key="2fac",max_chars=6)
+            st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+            sub=st.form_submit_button("✓ Confirmar",use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            if sub:
+                if code==st.session_state.pending_2fa["code"]:
+                    st.session_state.logged_in=True; st.session_state.current_user=st.session_state.pending_2fa["email"]
+                    u=guser(); record(area_to_tags(u.get("area","")),1.0)
+                    st.session_state.pending_2fa=None; st.session_state.page="feed"; st.rerun()
+                else: st.error("Código incorreto.")
         if st.button("← Voltar ao Login",key="back_login_2fa"): st.session_state.page="login"; st.rerun()
 
 # ════════════════════════════════
-# SIDEBAR NAVIGATION
+# SIDEBAR NAVIGATION  ← BUG FIXED: st.button() não aceita unsafe_allow_html
 # ════════════════════════════════
 def render_sidebar_nav():
     with st.sidebar:
-        email=st.session_state.current_user
-        u=guser(); uname=u.get("name","?"); uin=ini(uname)
-        g=ugrad(email)
+        email = st.session_state.current_user
+        u = guser(); uname = u.get("name", "?"); uin = ini(uname)
+        g = ugrad(email)
 
-        # Profile Avatar Button
-        if st.button(avh(uin,45,g), key="sidebar_profile_btn", help="Meu Perfil", unsafe_allow_html=True):
-            st.session_state.profile_view=email; st.rerun()
+        # ── Avatar visual (HTML) + botão de clique abaixo ──
+        st.markdown(
+            f'<div style="display:flex;justify-content:center;margin-bottom:.25rem">'
+            f'{avh(uin, 46, g)}'
+            f'</div>',
+            unsafe_allow_html=True
+        )
+        # Botão com texto simples — st.button NÃO aceita unsafe_allow_html
+        st.markdown('<div class="sidebar-av">', unsafe_allow_html=True)
+        if st.button(uname.split()[0] if uname != "?" else uin,
+                     key="sidebar_profile_btn",
+                     help="Meu Perfil",
+                     use_container_width=True):
+            st.session_state.profile_view = email
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown("<hr style='margin: 1.5rem 0 1rem 0;'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin:.6rem 0 .9rem 0;'>", unsafe_allow_html=True)
 
-        # Navigation Buttons (Icon Only)
+        # ── Navegação (ícones) ──
         nav_items = [
-            ("feed", "🔬", "Feed"),
-            ("search", "🔍", "Busca"),
-            ("knowledge", "🕸", "Conexões"),
-            ("folders", "📁", "Pastas"),
-            ("analytics", "📊", "Análises"),
+            ("feed",       "🔬", "Feed"),
+            ("search",     "🔍", "Busca"),
+            ("knowledge",  "🕸",  "Conexões"),
+            ("folders",    "📁", "Pastas"),
+            ("analytics",  "📊", "Análises"),
             ("img_search", "🖼️", "Análise de Imagem"),
-            ("chat", "💬", "Chat"),
+            ("chat",       "💬", "Chat"),
         ]
 
         for page_name, icon, tooltip in nav_items:
-            active_class = "sidebar-nav-pill-active" if st.session_state.page == page_name else ""
-            st.markdown(f'<div class="sidebar-nav-pill {active_class}">', unsafe_allow_html=True)
+            cls = "sidebar-nav-pill-active" if st.session_state.page == page_name else "sidebar-nav-pill"
+            st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
             if st.button(icon, key=f"nav_{page_name}", help=tooltip, use_container_width=True):
                 st.session_state.page = page_name
-                st.session_state.profile_view = None # Clear profile view when navigating
+                st.session_state.profile_view = None
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # Settings Button at the bottom
-        st.markdown("<div style='flex-grow: 1;'></div>", unsafe_allow_html=True) # Push settings to bottom
-        st.markdown('<div class="sidebar-settings">', unsafe_allow_html=True)
+        # ── Configurações (base) ──
+        st.markdown("<div style='margin-top:1rem'></div>", unsafe_allow_html=True)
+        cls_s = "sidebar-nav-pill-active" if st.session_state.page == "settings" else "sidebar-nav-pill"
+        st.markdown(f'<div class="{cls_s}">', unsafe_allow_html=True)
         if st.button("⚙️", key="nav_settings", help="Configurações", use_container_width=True):
-            st.session_state.page = "settings" # Assuming a settings page
+            st.session_state.page = "settings"
             st.session_state.profile_view = None
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
@@ -1269,7 +1160,6 @@ def page_profile(target_email):
 
     st.markdown('<div class="pw">', unsafe_allow_html=True)
 
-    # Back button for profile view
     if st.session_state.profile_view and not is_my_profile:
         if st.button("← Voltar", key="back_from_profile"):
             st.session_state.profile_view = None
@@ -1298,13 +1188,10 @@ def page_profile(target_email):
         new_name=st.text_input("Nome",value=t_name,key="p_name")
         new_bio=st.text_area("Bio",value=t_bio,key="p_bio",height=70)
         new_area=st.text_input("Área de Pesquisa",value=t_area,key="p_area")
-        # Removed photo upload
         if st.button("💾 Salvar Perfil",key="save_profile"):
             st.session_state.users[email].update({"name":new_name,"bio":new_bio,"area":new_area})
-            db_manager.save_db(); st.success("Perfil atualizado!")
-            st.rerun()
+            db_manager.save_db(); st.success("Perfil atualizado!"); st.rerun()
         st.markdown("<hr>", unsafe_allow_html=True)
-        # Display liked and saved articles
         st.markdown('<h2 style="margin-bottom:.65rem">❤️ Minhas Curtidas</h2>', unsafe_allow_html=True)
         my_liked_posts = [p for p in st.session_state.feed_posts if email in p.get("liked_by", [])]
         if my_liked_posts:
@@ -1315,8 +1202,7 @@ def page_profile(target_email):
         if st.session_state.saved_articles:
             for idx, a in enumerate(st.session_state.saved_articles): render_web_article(a, idx=idx, ctx="saved_profile")
         else: st.info("Você ainda não salvou nenhum artigo.")
-
-    else: # Viewing another user's profile
+    else:
         c1,c2,c3=st.columns(3)
         with c1:
             if st.button("✓ Seguindo" if is_following else "+ Seguir",key="follow_btn",use_container_width=True):
@@ -1334,11 +1220,11 @@ def page_profile(target_email):
         with c3:
             st.markdown('<div class="btn-green">', unsafe_allow_html=True)
             if st.button("🔗 Conectar",key="connect_btn",use_container_width=True):
-                st.toast(f"Solicitação de conexão enviada para {t_name}!")
+                st.toast(f"Solicitação enviada para {t_name}!")
             st.markdown('</div>', unsafe_allow_html=True)
 
         st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown('<h2 style="margin-bottom:.65rem">Publicações de {t_name.split()[0]}</h2>', unsafe_allow_html=True)
+        st.markdown(f'<h2 style="margin-bottom:.65rem">Publicações de {t_name.split()[0]}</h2>', unsafe_allow_html=True)
         user_posts=[p for p in st.session_state.feed_posts if p.get("author_email")==target_email]
         if user_posts:
             for p in user_posts: render_post(p,ctx="user_profile",compact=True)
@@ -1347,7 +1233,7 @@ def page_profile(target_email):
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ════════════════════════════════
-# FEED — no stories row
+# POST RENDERER
 # ════════════════════════════════
 def render_post(post, ctx="feed", compact=False):
     pid=post["id"]; aname=post["author"]; aemail=post["author_email"]
@@ -1438,7 +1324,7 @@ def render_post(post, ctx="feed", compact=False):
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ════════════════════════════════
-# FEED — no stories row
+# FEED
 # ════════════════════════════════
 def page_feed():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
@@ -1448,7 +1334,6 @@ def page_feed():
     compose_open=st.session_state.get("compose_open",False)
     col_main,col_side=st.columns([2,.9],gap="medium")
     with col_main:
-        # Compose area
         g=ugrad(email)
         if compose_open:
             av_c=f'<div class="av" style="width:42px;height:42px;font-size:13px;background:{g}">{uin}</div>'
@@ -1487,10 +1372,8 @@ def page_feed():
                     st.session_state.compose_open=True; st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
 
-        # Feed filter
         ff=st.radio("",["🌐 Todos","👥 Seguidos","🔖 Salvos","🔥 Populares"],
                     horizontal=True,key="ff",label_visibility="collapsed")
-        # Recommendations
         recs=get_recs(email, st.session_state.feed_posts, 2)
         if recs and "Seguidos" not in ff and "Salvos" not in ff:
             st.markdown('<div class="dtxt"><span class="badge-rec">✨ Recomendado</span></div>', unsafe_allow_html=True)
@@ -1507,7 +1390,6 @@ def page_feed():
             for p in posts: render_post(p,ctx="feed")
 
     with col_side:
-        # Search people
         sq=st.text_input("",placeholder="🔍 Buscar pesquisadores…",key="ppl_s",label_visibility="collapsed")
         st.markdown('<div class="sc">', unsafe_allow_html=True)
         st.markdown('<div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.82rem;margin-bottom:.85rem;display:flex;justify-content:space-between;color:var(--t0)"><span>Quem seguir</span><span style="font-size:.64rem;color:var(--t3);font-weight:400">Sugestões</span></div>', unsafe_allow_html=True)
@@ -1532,15 +1414,12 @@ def page_feed():
                 if st.button("👤 Perfil",key=f"svr_{ue}",use_container_width=True):
                     st.session_state.profile_view=ue; st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-        # Trending
         st.markdown('<div class="sc">', unsafe_allow_html=True)
         st.markdown('<div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.82rem;margin-bottom:.82rem;color:var(--t0)">🔥 Em Alta</div>', unsafe_allow_html=True)
         trending=[("Quantum ML","34"),("CRISPR 2026","28"),("Neuroplasticidade","22"),("LLMs Científicos","19"),("Matéria Escura","15")]
         for i,(topic,cnt) in enumerate(trending):
-            color=CHART_COLORS[i]
-            st.markdown(f'<div style="padding:.38rem .32rem;border-radius:9px;margin-bottom:2px"><div><div style="font-size:.59rem;color:var(--t3);margin-bottom:1px">#{i+1}</div><div style="font-size:.78rem;font-weight:600;color:var(--t0)">{topic}</div><div style="font-size:.59rem;color:var(--t3)">{cnt} pesquisas</div></div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="padding:.38rem .32rem;border-radius:9px;margin-bottom:2px"><div style="font-size:.59rem;color:var(--t3);margin-bottom:1px">#{i+1}</div><div style="font-size:.78rem;font-weight:600;color:var(--t0)">{topic}</div><div style="font-size:.59rem;color:var(--t3)">{cnt} pesquisas</div></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        # Notifications
         if st.session_state.notifications:
             st.markdown('<div class="sc">', unsafe_allow_html=True)
             st.markdown('<div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.82rem;margin-bottom:.72rem;color:var(--t0)">🔔 Atividade</div>', unsafe_allow_html=True)
@@ -1612,13 +1491,14 @@ def page_search():
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ════════════════════════════════
-# KNOWLEDGE
+# KNOWLEDGE NETWORK
 # ════════════════════════════════
 def page_knowledge():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">🕸 Rede de Conexões</h1>', unsafe_allow_html=True)
     email=st.session_state.current_user
     users=st.session_state.users if isinstance(st.session_state.users,dict) else {}
+
     @st.cache_data(show_spinner=False)
     def get_user_tags(ue_local, all_users, all_posts):
         ud=all_users.get(ue_local,{}); tags=set(area_to_tags(ud.get("area","")))
@@ -1641,16 +1521,20 @@ def page_knowledge():
     for e1,e2,common,strength in edges:
         p1=pos[e1]; p2=pos[e2]; alpha=min(0.55,0.10+strength*0.06)
         fig.add_trace(go.Scatter3d(x=[p1["x"],p2["x"],None],y=[p1["y"],p2["y"],None],z=[p1["z"],p2["z"],None],
-            mode="lines",line=dict(color=f"rgba(255,255,255,{alpha:.2f})",width=min(4,1+strength)),hoverinfo="none",showlegend=False)) # White lines for dark theme
-    ncolors=["#FF8C00" if ue==email else ("#4CAF50" if ue in st.session_state.followed else "#2196F3") for ue in rlist] # Laranja/Verde/Azul
+            mode="lines",line=dict(color=f"rgba(255,255,255,{alpha:.2f})",width=min(4,1+strength)),hoverinfo="none",showlegend=False))
+    ncolors=["#FF8C00" if ue==email else ("#4CAF50" if ue in st.session_state.followed else "#2196F3") for ue in rlist]
     nsizes=[24 if ue==email else (18 if ue in st.session_state.followed else max(12,10+sum(1 for e1,e2,_,__ in edges if e1==ue or e2==ue))) for ue in rlist]
     ntext=[users.get(ue,{}).get("name","?").split()[0] for ue in rlist]
     nhover=[f"<b>{users.get(ue,{}).get('name','?')}</b><br>{users.get(ue,{}).get('area','')}<extra></extra>" for ue in rlist]
     fig.add_trace(go.Scatter3d(x=[pos[ue]["x"] for ue in rlist],y=[pos[ue]["y"] for ue in rlist],z=[pos[ue]["z"] for ue in rlist],
-        mode="markers+text",marker=dict(size=nsizes,color=ncolors,opacity=.9,line=dict(color="rgba(255,255,255,.12)",width=1.5)), # Light border
-        text=ntext,textposition="top center",textfont=dict(color="var(--t3)",size=9,family="Outfit"),
+        mode="markers+text",marker=dict(size=nsizes,color=ncolors,opacity=.9,line=dict(color="rgba(255,255,255,.12)",width=1.5)),
+        text=ntext,textposition="top center",textfont=dict(color="#9E9E9E",size=9,family="Outfit"),
         hovertemplate=nhover,showlegend=False))
-    fig.update_layout(height=430,scene=dict(xaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),yaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),zaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),bgcolor="rgba(0,0,0,0)"),paper_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=0,t=0,b=0))
+    fig.update_layout(height=430,scene=dict(
+        xaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
+        yaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
+        zaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
+        bgcolor="rgba(0,0,0,0)"),paper_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=0,t=0,b=0))
     st.plotly_chart(fig,use_container_width=True)
     c1,c2,c3,c4=st.columns(4)
     for col,(v,l) in zip([c1,c2,c3,c4],[(len(rlist),"Pesquisadores"),(len(edges),"Conexões"),(len(st.session_state.followed),"Seguindo"),(len(st.session_state.feed_posts),"Pesquisas")]):
@@ -1682,7 +1566,7 @@ def page_knowledge():
             rn=ud.get("name","?"); uarea=ud.get("area","")
             if sq2 and sq2.lower() not in rn.lower() and sq2.lower() not in uarea.lower(): continue
             is_fol=ue in st.session_state.followed; rg=ugrad(ue)
-            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{avh(ini(rn),36,rg)}<div style="flex:1"><div><div style="font-size:.84rem;font-weight:700;font-family:Outfit,sans-serif;color:var(--t0)">{rn}</div><div style="font-size:.68rem;color:var(--t3)">{uarea}</div></div></div></div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{avh(ini(rn),36,rg)}<div style="flex:1"><div style="font-size:.84rem;font-weight:700;font-family:Outfit,sans-serif;color:var(--t0)">{rn}</div><div style="font-size:.68rem;color:var(--t3)">{uarea}</div></div></div></div>', unsafe_allow_html=True)
             ca2,cb2,cc2=st.columns(3)
             with ca2:
                 if st.button("👤 Perfil",key=f"av_{ue}",use_container_width=True): st.session_state.profile_view=ue; st.rerun()
@@ -1698,7 +1582,7 @@ def page_knowledge():
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ════════════════════════════════
-# FOLDERS
+# DOCUMENT ANALYSIS HELPER
 # ════════════════════════════════
 def render_document_analysis(fname, analysis, research_area=""):
     if not analysis: return
@@ -1708,7 +1592,7 @@ def render_document_analysis(fname, analysis, research_area=""):
     strengths_a=analysis.get("strengths",[]); improvements=analysis.get("improvements",[])
     rel=analysis.get("relevance_score",0); wq=analysis.get("writing_quality",0)
     rt=analysis.get("reading_time",0); wc=analysis.get("word_count",0)
-    sc=analysis.get("sentence_complexity",0); cf=analysis.get("concept_frequency",{})
+    sc=analysis.get("sentence_complexity",0)
     rel_color="var(--gr1)" if rel>=70 else ("var(--am1)" if rel>=45 else "var(--err)")
     wq_color="var(--gr1)" if wq>=70 else ("var(--am1)" if wq>=45 else "var(--err)")
     wq_label="Excelente" if wq>=80 else ("Boa" if wq>=60 else ("Regular" if wq>=40 else "Básica"))
@@ -1735,7 +1619,7 @@ def render_document_analysis(fname, analysis, research_area=""):
         if kws:
             weights=[max(1,25-i) for i in range(len(kws))]
             fig=go.Figure(go.Bar(x=weights[:20],y=kws[:20],orientation='h',
-                marker=dict(color=weights[:20],colorscale=[[0,"var(--s2)"],[.4,"var(--or1)"],[.7,"var(--am1)"],[1,"var(--gr1)"]],line=dict(color="var(--s2)",width=1)),
+                marker=dict(color=weights[:20],colorscale=[[0,"#222222"],[.4,"#FF8C00"],[.7,"#FFD700"],[1,"#4CAF50"]],line=dict(color="#222222",width=1)),
                 text=kws[:20],textposition='inside',textfont=dict(color='white',size=9)))
             layout={**pc(),'height':max(310,len(kws[:20])*17),'yaxis':dict(showticklabels=False),'title':dict(text="TF-IDF Keywords",font=dict(color=var_t1(),family="Outfit",size=12))}
             fig.update_layout(**layout)
@@ -1747,9 +1631,9 @@ def render_document_analysis(fname, analysis, research_area=""):
     with tab_topics:
         if topics:
             fig_pie=go.Figure(go.Pie(labels=list(topics.keys()),values=list(topics.values()),hole=0.50,
-                marker=dict(colors=CHART_COLORS[:len(topics)],line=dict(color=["var(--s2)"]*15,width=2)),
+                marker=dict(colors=CHART_COLORS[:len(topics)],line=dict(color=["#222222"]*15,width=2)),
                 textfont=dict(color="white",size=9),hoverinfo="label+percent"))
-            fig_pie.update_layout(height=290,title=dict(text="Distribuição Temática",font=dict(color=var_t1(),family="Outfit",size=12)),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",legend=dict(font=dict(color="var(--t3)",size=9)),margin=dict(l=0,r=0,t=38,b=0))
+            fig_pie.update_layout(height=290,title=dict(text="Distribuição Temática",font=dict(color=var_t1(),family="Outfit",size=12)),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",legend=dict(font=dict(color="#9E9E9E",size=9)),margin=dict(l=0,r=0,t=38,b=0))
             st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
             st.plotly_chart(fig_pie,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1764,7 +1648,7 @@ def render_document_analysis(fname, analysis, research_area=""):
         else: st.markdown('<div style="color:var(--t3);font-size:.77rem">Nenhum autor identificado.</div>', unsafe_allow_html=True)
         if years:
             yl=[y for y,_ in years[:8]]; yv=[c for _,c in years[:8]]
-            fig_y=go.Figure(go.Bar(x=yl,y=yv,marker=dict(color=yv,colorscale=[[0,"var(--s2)"],[.5,"var(--or1)"],[1,"var(--am1)"]]),text=yv,textposition="outside",textfont=dict(color="var(--t3)",size=9)))
+            fig_y=go.Figure(go.Bar(x=yl,y=yv,marker=dict(color=yv,colorscale=[[0,"#222222"],[.5,"#FF8C00"],[1,"#FFD700"]]),text=yv,textposition="outside",textfont=dict(color="#9E9E9E",size=9)))
             layout_y={**pc(),'height':185,'title':dict(text="Anos Citados",font=dict(color=var_t1(),family="Outfit",size=11))}
             fig_y.update_layout(**layout_y)
             st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
@@ -1790,8 +1674,9 @@ def render_document_analysis(fname, analysis, research_area=""):
             st.markdown('<div style="font-size:.61rem;color:var(--t3);text-transform:uppercase;letter-spacing:.09em;margin:.7rem 0 .5rem;font-weight:600">→ Sugestões</div>', unsafe_allow_html=True)
             for imp in improvements: st.markdown(f'<div class="str-imp">→ {imp}</div>', unsafe_allow_html=True)
 
-def var_t1(): return "#E0E0E0" # Adjusted to new t1 for dark theme
-
+# ════════════════════════════════
+# FOLDERS
+# ════════════════════════════════
 def page_folders():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">📁 Pastas de Pesquisa</h1>', unsafe_allow_html=True)
@@ -1901,8 +1786,8 @@ def page_analytics():
             for col,(v,l) in zip([c1,c2,c3,c4],[(len(folders),"Pastas"),(total_files,"Arquivos"),(len(all_analyses),"Analisados"),(len(set(all_kws[:100])),"Keywords")]):
                 with col: st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>', unsafe_allow_html=True)
             if all_topics:
-                fig_t=go.Figure(go.Bar(x=list(all_topics.values())[:8],y=list(all_topics.keys())[:8],orientation='h',marker=dict(color=CHART_COLORS[:8]),text=[str(v) for v in list(all_topics.values())[:8]],textposition="outside",textfont=dict(color="var(--t3)",size=9)))
-                layout_t={**pc(),'height':270,'yaxis':dict(showgrid=False,color="var(--t3)",tickfont=dict(size=9)),'title':dict(text="Temas",font=dict(color=var_t1(),family="Outfit",size=12))}
+                fig_t=go.Figure(go.Bar(x=list(all_topics.values())[:8],y=list(all_topics.keys())[:8],orientation='h',marker=dict(color=CHART_COLORS[:8]),text=[str(v) for v in list(all_topics.values())[:8]],textposition="outside",textfont=dict(color="#9E9E9E",size=9)))
+                layout_t={**pc(),'height':270,'yaxis':dict(showgrid=False,color="#9E9E9E",tickfont=dict(size=9)),'title':dict(text="Temas",font=dict(color=var_t1(),family="Outfit",size=12))}
                 fig_t.update_layout(**layout_t)
                 st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
                 st.plotly_chart(fig_t,use_container_width=True)
@@ -1920,7 +1805,7 @@ def page_analytics():
             fig_eng=go.Figure()
             fig_eng.add_trace(go.Bar(name="Curtidas",x=titles_s,y=[p["likes"] for p in my_posts],marker_color=CHART_COLORS[0]))
             fig_eng.add_trace(go.Bar(name="Comentários",x=titles_s,y=[len(p.get("comments",[])) for p in my_posts],marker_color=CHART_COLORS[2]))
-            fig_eng.update_layout(barmode="group",title=dict(text="Engajamento",font=dict(color=var_t1(),family="Outfit",size=12)),height=250,**pc(),legend=dict(font=dict(color="var(--t3)")))
+            fig_eng.update_layout(barmode="group",title=dict(text="Engajamento",font=dict(color=var_t1(),family="Outfit",size=12)),height=250,**pc(),legend=dict(font=dict(color="#9E9E9E")))
             st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
             st.plotly_chart(fig_eng,use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
@@ -1945,8 +1830,8 @@ def page_analytics():
             cats=[t for t,_ in top[:8]]; vals=[round(s/mx*100) for _,s in top[:8]]
             if len(cats)>=3:
                 fig_r=go.Figure(go.Scatterpolar(r=vals+[vals[0]],theta=cats+[cats[0]],fill='toself',
-                    line=dict(color="#FF8C00"),fillcolor="rgba(255,140,0,.13)")) # Dark Orange
-                fig_r.update_layout(height=275,polar=dict(bgcolor="rgba(0,0,0,0)",radialaxis=dict(visible=True,gridcolor="rgba(255,255,255,.07)",color="var(--t3)",tickfont=dict(size=8)),angularaxis=dict(gridcolor="rgba(255,255,255,.07)",color="var(--t3)",tickfont=dict(size=9))),paper_bgcolor="rgba(0,0,0,0)",margin=dict(l=40,r=40,t=18,b=18))
+                    line=dict(color="#FF8C00"),fillcolor="rgba(255,140,0,.13)"))
+                fig_r.update_layout(height=275,polar=dict(bgcolor="rgba(0,0,0,0)",radialaxis=dict(visible=True,gridcolor="rgba(255,255,255,.07)",color="#9E9E9E",tickfont=dict(size=8)),angularaxis=dict(gridcolor="rgba(255,255,255,.07)",color="#9E9E9E",tickfont=dict(size=9))),paper_bgcolor="rgba(0,0,0,0)",margin=dict(l=40,r=40,t=18,b=18))
                 st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
                 st.plotly_chart(fig_r,use_container_width=True)
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -1975,7 +1860,7 @@ def page_img_search():
         st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
         run=st.button("🔬 Analisar",use_container_width=True,key="btn_run")
         st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('<div class="ai-warn" style="margin-top:.85rem"><div style="font-size:.67rem;color:var(--am1);font-weight:700;margin-bottom:2px">⚠️ Aviso</div><div style="font-size:.64rem;color:var(--t2);line-height:1.62">Análise por algoritmos computacionais. Não substitui especialistas.</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="ai-warn" style="margin-top:.85rem"><div style="font-size:.67rem;color:var(--am1);font-weight:700;margin-bottom:2px">⚠️ Aviso IA</div><div style="font-size:.64rem;color:var(--t2);line-height:1.62">Análise por algoritmos computacionais. Não substitui especialistas.</div></div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     with col_res:
         if run and uploaded_img_bytes:
@@ -2022,10 +1907,10 @@ def page_img_search():
                 if rep.get("histograms"):
                     h=rep["histograms"]; bins_x=list(range(0,256,8))[:32]
                     fig_h=go.Figure()
-                    fig_h.add_trace(go.Scatter(x=bins_x,y=h["r"][:32],fill='tozeroy',name='R',line=dict(color='rgba(255,140,0,.8)',width=1.5),fillcolor='rgba(255,140,0,.10)')) # Dark Orange
-                    fig_h.add_trace(go.Scatter(x=bins_x,y=h["g"][:32],fill='tozeroy',name='G',line=dict(color='rgba(76,175,80,.8)',width=1.5),fillcolor='rgba(76,175,80,.10)')) # Green
-                    fig_h.add_trace(go.Scatter(x=bins_x,y=h["b"][:32],fill='tozeroy',name='B',line=dict(color='rgba(33,150,243,.8)',width=1.5),fillcolor='rgba(33,150,243,.10)')) # Blue
-                    fig_h.update_layout(height=172,title=dict(text="Histograma RGB",font=dict(color=var_t1(),family="Outfit",size=11)),**pc(),legend=dict(font=dict(color="var(--t3)",size=9)),margin=dict(l=10,r=10,t=32,b=8))
+                    fig_h.add_trace(go.Scatter(x=bins_x,y=h["r"][:32],fill='tozeroy',name='R',line=dict(color='rgba(255,140,0,.8)',width=1.5),fillcolor='rgba(255,140,0,.10)'))
+                    fig_h.add_trace(go.Scatter(x=bins_x,y=h["g"][:32],fill='tozeroy',name='G',line=dict(color='rgba(76,175,80,.8)',width=1.5),fillcolor='rgba(76,175,80,.10)'))
+                    fig_h.add_trace(go.Scatter(x=bins_x,y=h["b"][:32],fill='tozeroy',name='B',line=dict(color='rgba(33,150,243,.8)',width=1.5),fillcolor='rgba(33,150,243,.10)'))
+                    fig_h.update_layout(height=172,title=dict(text="Histograma RGB",font=dict(color=var_t1(),family="Outfit",size=11)),**pc(),legend=dict(font=dict(color="#9E9E9E",size=9)),margin=dict(l=10,r=10,t=32,b=8))
                     st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
                     st.plotly_chart(fig_h,use_container_width=True)
                     st.markdown('</div>', unsafe_allow_html=True)
@@ -2120,7 +2005,7 @@ def page_chat():
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ════════════════════════════════
-# SETTINGS PAGE (New)
+# SETTINGS
 # ════════════════════════════════
 def page_settings():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
@@ -2131,7 +2016,6 @@ def page_settings():
     st.markdown('<h2 style="margin-bottom:.65rem;color:var(--t0)">Conta</h2>', unsafe_allow_html=True)
     st.markdown(f'<p style="color:var(--t2);font-size:.85rem">E-mail: <strong style="color:var(--or1)">{email}</strong></p>', unsafe_allow_html=True)
 
-    # 2FA Toggle
     current_2fa = user_data.get("2fa_enabled", False)
     new_2fa = st.checkbox("Ativar Autenticação de Dois Fatores (2FA)", value=current_2fa, key="toggle_2fa")
     if new_2fa != current_2fa:
@@ -2141,15 +2025,14 @@ def page_settings():
         st.rerun()
 
     st.markdown("<hr>", unsafe_allow_html=True)
-
     st.markdown('<h2 style="margin-bottom:.65rem;color:var(--t0)">Preferências de Notificação</h2>', unsafe_allow_html=True)
     st.checkbox("Receber notificações de curtidas", value=True, key="notif_likes")
     st.checkbox("Receber notificações de comentários", value=True, key="notif_comments")
     st.checkbox("Receber notificações de novas conexões", value=True, key="notif_connections")
-    st.button("💾 Salvar Preferências", key="save_notif_prefs") # Placeholder for saving logic
+    if st.button("💾 Salvar Preferências", key="save_notif_prefs"):
+        st.success("Preferências salvas!")
 
     st.markdown("<hr>", unsafe_allow_html=True)
-
     st.markdown('<h2 style="margin-bottom:.65rem;color:var(--t0)">Sair</h2>', unsafe_allow_html=True)
     st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
     if st.button("🚪 Sair da Conta", key="logout_btn", use_container_width=True):
@@ -2159,9 +2042,7 @@ def page_settings():
         st.session_state.profile_view = None
         st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
-
     st.markdown('</div>', unsafe_allow_html=True)
-
 
 # ════════════════════════════════
 # ROUTER
@@ -2174,13 +2055,18 @@ def main():
         elif p=="2fa": page_2fa()
         else: page_login()
         return
-    render_sidebar_nav() # Render the new sidebar navigation
+    render_sidebar_nav()
     if st.session_state.profile_view:
         page_profile(st.session_state.profile_view); return
     {
-        "feed":page_feed,"search":page_search,"knowledge":page_knowledge,
-        "folders":page_folders,"analytics":page_analytics,"img_search":page_img_search,
-        "chat":page_chat,"settings":page_settings, # Added settings page
-    }.get(st.session_state.page,page_feed)()
+        "feed":     page_feed,
+        "search":   page_search,
+        "knowledge":page_knowledge,
+        "folders":  page_folders,
+        "analytics":page_analytics,
+        "img_search":page_img_search,
+        "chat":     page_chat,
+        "settings": page_settings,
+    }.get(st.session_state.page, page_feed)()
 
 main()
