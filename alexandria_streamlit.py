@@ -1,4 +1,3 @@
-
 import subprocess, sys, os, json, hashlib, random, string, base64, re, io
 from datetime import datetime
 from collections import defaultdict, Counter
@@ -60,12 +59,10 @@ def save_db():
 
 def hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
 def code6(): return ''.join(random.choices(string.digits,k=6))
-
 def ini(n):
     if not isinstance(n,str): n=str(n)
     p=n.strip().split()
     return ''.join(w[0].upper() for w in p[:2]) if p else "?"
-
 def img_to_b64(f):
     try:
         f.seek(0); data=f.read()
@@ -73,7 +70,6 @@ def img_to_b64(f):
         mime={"jpg":"jpeg","jpeg":"jpeg","png":"png","gif":"gif","webp":"webp"}.get(ext,"png")
         return f"data:image/{mime};base64,{base64.b64encode(data).decode()}"
     except: return None
-
 def time_ago(date_str):
     try:
         dt=datetime.strptime(date_str,"%Y-%m-%d"); delta=datetime.now()-dt
@@ -83,35 +79,28 @@ def time_ago(date_str):
         if delta.days<30: return f"{delta.days//7}sem"
         return f"{delta.days//30}m"
     except: return date_str
-
 def fmt_num(n):
     try:
         n=int(n)
         return f"{n/1000:.1f}k" if n>=1000 else str(n)
     except: return str(n)
-
 def guser():
     if not isinstance(st.session_state.get("users"),dict): return {}
     return st.session_state.users.get(st.session_state.current_user,{})
-
 def get_photo(email):
     u=st.session_state.get("users",{})
     if not isinstance(u,dict): return None
     return u.get(email,{}).get("photo_b64")
 
 USER_GRADIENTS = [
-    "135deg,#f97316,#f59e0b",
-    "135deg,#10b981,#3b82f6",
-    "135deg,#8b5cf6,#ec4899",
-    "135deg,#f59e0b,#10b981",
-    "135deg,#ef4444,#f97316",
-    "135deg,#3b82f6,#8b5cf6",
-    "135deg,#06b6d4,#10b981",
-    "135deg,#f97316,#ef4444",
+    "135deg,#f97316,#f59e0b","135deg,#10b981,#3b82f6","135deg,#8b5cf6,#ec4899",
+    "135deg,#f59e0b,#10b981","135deg,#ef4444,#f97316","135deg,#3b82f6,#8b5cf6",
+    "135deg,#06b6d4,#10b981","135deg,#f97316,#ef4444",
 ]
+def ugrad(email): return f"linear-gradient({USER_GRADIENTS[hash(email or '') % len(USER_GRADIENTS)]})"
 
-def ugrad(email):
-    return f"linear-gradient({USER_GRADIENTS[hash(email or '') % len(USER_GRADIENTS)]})"
+# ── online status: deterministic per email, no random each render ──
+def is_online(email): return (hash(email+"online") % 3) != 0
 
 STOPWORDS = {
     "de","a","o","que","e","do","da","em","um","para","é","com","uma","os","no","se",
@@ -139,11 +128,8 @@ def extract_text_from_csv_bytes(csv_bytes):
         df = pd.read_csv(io.BytesIO(csv_bytes), nrows=200)
         summary = f"Colunas: {', '.join(df.columns.tolist())}\nLinhas: {len(df)}\n"
         for col in df.columns[:10]:
-            if df[col].dtype == object:
-                vals = df[col].dropna().head(5).tolist()
-                summary += f"{col}: {', '.join(str(v) for v in vals)}\n"
-            else:
-                summary += f"{col}: min={df[col].min():.2f}, max={df[col].max():.2f}\n"
+            if df[col].dtype == object: summary += f"{col}: {', '.join(str(v) for v in df[col].dropna().head(5).tolist())}\n"
+            else: summary += f"{col}: min={df[col].min():.2f}, max={df[col].max():.2f}\n"
         return summary
     except: return ""
 
@@ -208,9 +194,7 @@ def compute_topic_distribution(keywords):
     return dict(sorted(scores.items(), key=lambda x:-x[1])) if scores else {"Pesquisa Geral": 1}
 
 def estimate_reading_time(text):
-    words = len(text.split())
-    minutes = max(1, round(words / 200))
-    return minutes, words
+    words = len(text.split()); return max(1, round(words/200)), words
 
 def compute_writing_quality(text, keywords, references):
     score = 50
@@ -246,9 +230,8 @@ def search_references_online(keywords, n=5):
 def analyze_document_intelligent(fname, fbytes, ftype, research_area=""):
     result = {"file":fname,"type":ftype,"text_length":0,"keywords":[],"authors":[],
               "years":[],"references":[],"topics":{},"references_online":[],"relevance_score":0,
-              "summary":"","strengths":[],"improvements":[],"progress":random.randint(55,98),
-              "writing_quality":0,"reading_time":0,"word_count":0,"key_concepts":[],
-              "concept_frequency":{},"sentence_complexity":0}
+              "summary":"","strengths":[],"improvements":[],"writing_quality":0,"reading_time":0,
+              "word_count":0,"key_concepts":[],"concept_frequency":{},"sentence_complexity":0}
     text = ""
     if ftype=="PDF" and fbytes: text=extract_text_from_pdf_bytes(fbytes)
     elif ftype in ("Planilha","Dados") and fbytes:
@@ -265,37 +248,35 @@ def analyze_document_intelligent(fname, fbytes, ftype, research_area=""):
         result["references"]=extract_references_from_text(text)
         result["topics"]=compute_topic_distribution(result["keywords"])
         minutes, words = estimate_reading_time(text)
-        result["reading_time"] = minutes
-        result["word_count"] = words
-        result["writing_quality"] = compute_writing_quality(text, result["keywords"], result["references"])
-        # Key concepts = top keywords with frequency
-        words_list = re.findall(r'\b[a-záàâãéêíóôõúüçA-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ]{4,}\b', text.lower())
-        words_filtered = [w for w in words_list if w not in STOPWORDS]
-        freq = Counter(words_filtered)
-        result["concept_frequency"] = dict(freq.most_common(20))
-        result["key_concepts"] = [w for w, _ in freq.most_common(10)]
-        sentences = re.split(r'[.!?]+', text)
-        result["sentence_complexity"] = round(sum(len(s.split()) for s in sentences) / max(len(sentences), 1), 1)
+        result["reading_time"]=minutes; result["word_count"]=words
+        result["writing_quality"]=compute_writing_quality(text,result["keywords"],result["references"])
+        words_list=re.findall(r'\b[a-záàâãéêíóôõúüçA-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ]{4,}\b',text.lower())
+        words_filtered=[w for w in words_list if w not in STOPWORDS]
+        freq=Counter(words_filtered)
+        result["concept_frequency"]=dict(freq.most_common(20))
+        result["key_concepts"]=[w for w,_ in freq.most_common(10)]
+        sentences=re.split(r'[.!?]+',text)
+        result["sentence_complexity"]=round(sum(len(s.split()) for s in sentences)/max(len(sentences),1),1)
         if research_area:
             area_words=research_area.lower().split()
             rel=sum(1 for w in area_words if any(w in kw for kw in result["keywords"]))
-            result["relevance_score"]=min(100,rel*15+random.randint(20,50))
-        else: result["relevance_score"]=random.randint(45,85)
+            result["relevance_score"]=min(100,rel*15+45)
+        else: result["relevance_score"]=65
         n_refs=len(result["references"]); n_kw=len(result["keywords"])
-        if n_refs>5: result["strengths"].append(f"Boa referenciação ({n_refs} refs encontradas)")
+        if n_refs>5: result["strengths"].append(f"Boa referenciação ({n_refs} refs)")
         if n_kw>15: result["strengths"].append(f"Vocabulário técnico rico ({n_kw} termos)")
-        if result["authors"]: result["strengths"].append(f"Autoria identificada: {result['authors'][0]}")
-        if result["writing_quality"]>70: result["strengths"].append("Alta qualidade de escrita técnica")
-        if words>3000: result["strengths"].append(f"Texto extenso e detalhado ({words} palavras)")
-        if n_refs<3: result["improvements"].append("Adicionar mais referências bibliográficas")
-        if not result["authors"]: result["improvements"].append("Incluir autoria explícita no documento")
-        if result["writing_quality"]<50: result["improvements"].append("Melhorar densidade técnica e estrutura")
-        if words<500: result["improvements"].append("Expandir o conteúdo para maior profundidade")
+        if result["authors"]: result["strengths"].append(f"Autoria: {result['authors'][0]}")
+        if result["writing_quality"]>70: result["strengths"].append("Alta qualidade técnica")
+        if words>3000: result["strengths"].append(f"Texto detalhado ({words} palavras)")
+        if n_refs<3: result["improvements"].append("Adicionar mais referências")
+        if not result["authors"]: result["improvements"].append("Incluir autoria explícita")
+        if result["writing_quality"]<50: result["improvements"].append("Melhorar densidade técnica")
+        if words<500: result["improvements"].append("Expandir o conteúdo")
         top_topics=list(result["topics"].keys())[:3]; top_kw=result["keywords"][:5]
-        result["summary"]=f"Documento {ftype} · {words} palavras · ~{minutes} min leitura · Temas: {', '.join(top_topics)} · Keywords: {', '.join(top_kw)}."
+        result["summary"]=f"{ftype} · {words} palavras · ~{minutes} min · Temas: {', '.join(top_topics)} · {', '.join(top_kw)}."
     else:
-        result["summary"]=f"Arquivo {ftype} — análise de texto não disponível para este formato."
-        result["relevance_score"]=random.randint(30,60)
+        result["summary"]=f"Arquivo {ftype} — análise de texto não disponível."
+        result["relevance_score"]=50
         result["keywords"]=extract_keywords_tfidf(fname.lower().replace("_"," "),5)
         result["topics"]=compute_topic_distribution(result["keywords"])
     return result
@@ -344,29 +325,20 @@ def analyze_image_advanced(uploaded_file):
         if lr_sym>0.75: shapes.append("Simetria Bilateral")
         if edge_intensity>32: shapes.append("Contornos Nítidos")
         if not shapes: shapes.append("Irregular")
-        if skin_pct>0.15 and mr>140:
-            cat,desc,kw,material,obj_type,context="Histopatologia H&E",f"Tecido orgânico detectado ({skin_pct*100:.0f}% da área). Padrão típico de lâminas H&E com coloração rosa-violeta.","hematoxylin eosin HE staining histopathology tissue","Tecido Biológico","Amostra Histopatológica","Microscopia óptica de tecidos corados"
-        elif has_grid and edge_intensity>18:
-            cat,desc,kw,material,obj_type,context="Cristalografia / Difração",f"Padrão periódico detectado (borda: {edge_intensity:.1f}). Grade cristalina ou padrão de difração.","X-ray diffraction crystallography TEM crystal structure","Material Cristalino","Rede Cristalina","Análise de estrutura atômica"
-        elif mg>165 and mr<125:
-            cat,desc,kw,material,obj_type,context="Fluorescência GFP/FITC",f"Canal verde dominante (G={mg:.0f}). Marcação fluorescente típica de proteínas GFP ou FITC.","GFP fluorescence confocal microscopy protein","Proteínas Fluorescentes","Células Marcadas","Microscopia confocal de fluorescência"
-        elif mb>165 and mr<110:
-            cat,desc,kw,material,obj_type,context="Fluorescência DAPI",f"Canal azul dominante (B={mb:.0f}). Coloração de DNA/cromatina com DAPI.","DAPI nuclear staining DNA fluorescence nucleus","DNA / Cromatina","Núcleos Celulares","Marcação nuclear fluorescente"
-        elif has_circular and edge_intensity>24:
-            cat,desc,kw,material,obj_type,context="Microscopia Celular",f"Estruturas circulares detectadas (intensidade: {edge_intensity:.1f}). Possíveis células, vesículas ou organelas.","cell organelle vesicle bacteria microscopy biology","Componentes Celulares","Células/Organelas","Microscopia de campo claro ou fluorescência"
-        elif edge_intensity>40:
-            cat,desc,kw,material,obj_type,context="Diagrama / Gráfico Científico","Bordas muito nítidas detectadas. Possível diagrama, fluxograma ou gráfico de dados.","scientific visualization chart diagram data","Dados Estruturados","Gráfico/Diagrama","Representação visual de dados"
-        elif sym>0.82:
-            cat,desc,kw,material,obj_type,context="Estrutura Molecular",f"Alta simetria detectada ({sym:.3f}). Possível estrutura molecular, cristal ou padrão atômico.","molecular structure protein crystal symmetry chemistry","Moléculas","Estrutura Molecular","Visualização molecular 3D ou cristalografia"
+        if skin_pct>0.15 and mr>140: cat,desc,kw,material,obj_type,context="Histopatologia H&E",f"Tecido orgânico detectado ({skin_pct*100:.0f}% da área).","hematoxylin eosin HE staining histopathology tissue","Tecido Biológico","Amostra Histopatológica","Microscopia óptica de tecidos corados"
+        elif has_grid and edge_intensity>18: cat,desc,kw,material,obj_type,context="Cristalografia / Difração",f"Padrão periódico detectado (borda: {edge_intensity:.1f}).","X-ray diffraction crystallography TEM crystal structure","Material Cristalino","Rede Cristalina","Análise de estrutura atômica"
+        elif mg>165 and mr<125: cat,desc,kw,material,obj_type,context="Fluorescência GFP/FITC",f"Canal verde dominante (G={mg:.0f}).","GFP fluorescence confocal microscopy protein","Proteínas Fluorescentes","Células Marcadas","Microscopia confocal de fluorescência"
+        elif mb>165 and mr<110: cat,desc,kw,material,obj_type,context="Fluorescência DAPI",f"Canal azul dominante (B={mb:.0f}).","DAPI nuclear staining DNA fluorescence nucleus","DNA / Cromatina","Núcleos Celulares","Marcação nuclear fluorescente"
+        elif has_circular and edge_intensity>24: cat,desc,kw,material,obj_type,context="Microscopia Celular",f"Estruturas circulares detectadas (intensidade: {edge_intensity:.1f}).","cell organelle vesicle bacteria microscopy biology","Componentes Celulares","Células/Organelas","Microscopia de campo claro"
+        elif edge_intensity>40: cat,desc,kw,material,obj_type,context="Diagrama / Gráfico Científico","Bordas muito nítidas detectadas.","scientific visualization chart diagram data","Dados Estruturados","Gráfico/Diagrama","Representação visual de dados"
+        elif sym>0.82: cat,desc,kw,material,obj_type,context="Estrutura Molecular",f"Alta simetria detectada ({sym:.3f}).","molecular structure protein crystal symmetry chemistry","Moléculas","Estrutura Molecular","Visualização molecular 3D"
         else:
             temp="quente" if warm else ("fria" if cool else "neutra")
-            cat,desc,kw,material,obj_type,context="Imagem Científica Geral",f"Imagem com temperatura de cor {temp}. Análise geral aplicada.","scientific image analysis research microscopy","Variado","Imagem Científica","Análise de imagem científica genérica"
+            cat,desc,kw,material,obj_type,context="Imagem Científica Geral",f"Temperatura de cor {temp}.","scientific image analysis research microscopy","Variado","Imagem Científica","Análise genérica"
         conf=min(96,48+edge_intensity/2+entropy*2.8+sym*5+(8 if skin_pct>0.1 else 0)+(6 if has_grid else 0))
-        # Histogram data for visualization
-        hist_data = np.histogram(gray, bins=32, range=(0,255))
-        r_hist = np.histogram(r.ravel(), bins=32, range=(0,255))[0].tolist()
-        g_hist = np.histogram(g.ravel(), bins=32, range=(0,255))[0].tolist()
-        b_hist = np.histogram(b_ch.ravel(), bins=32, range=(0,255))[0].tolist()
+        r_hist=np.histogram(r.ravel(),bins=32,range=(0,255))[0].tolist()
+        g_hist=np.histogram(g.ravel(),bins=32,range=(0,255))[0].tolist()
+        b_hist=np.histogram(b_ch.ravel(),bins=32,range=(0,255))[0].tolist()
         return {"category":cat,"description":desc,"kw":kw,"material":material,"object_type":obj_type,
                 "context":context,"confidence":round(conf,1),
                 "lines":{"direction":line_dir,"intensity":round(edge_intensity,2),"strengths":strengths},
@@ -376,8 +348,7 @@ def analyze_image_advanced(uploaded_file):
                            "complexity":"Alta" if entropy>5.5 else ("Média" if entropy>4 else "Baixa")},
                 "palette":palette,"size":orig,
                 "histograms":{"r":r_hist,"g":g_hist,"b":b_hist},
-                "brightness":round(float(gray.mean()),1),
-                "sharpness":round(edge_intensity,2)}
+                "brightness":round(float(gray.mean()),1),"sharpness":round(edge_intensity,2)}
     except Exception as e: st.error(f"Erro na análise: {e}"); return None
 
 EMAP = {"pdf":"PDF","docx":"Word","doc":"Word","xlsx":"Planilha","xls":"Planilha",
@@ -516,7 +487,7 @@ def init():
     raw_posts=disk.get("feed_posts",[dict(p) for p in SEED_POSTS])
     for p in raw_posts:
         p.setdefault("liked_by",[]); p.setdefault("saved_by",[])
-        p.setdefault("comments",[]); p.setdefault("views",random.randint(80,800))
+        p.setdefault("comments",[]); p.setdefault("views",200)
     st.session_state.setdefault("feed_posts",raw_posts)
     st.session_state.setdefault("folders",disk.get("folders",{}))
     st.session_state.setdefault("folder_files_bytes",{})
@@ -535,845 +506,1575 @@ def init():
 
 init()
 
-# ══════════════════════════════════════════════════
-# CSS — ORANGE / AMBER / GREEN LIQUID GLASS
-# ══════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════
+#  CSS — WARM AMBER / TERRACOTTA — lighter, modern, clean
+# ══════════════════════════════════════════════════════════════════
 def inject_css():
     st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@400;500;600;700;800;900&family=Satoshi:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 :root {
-  --bg: #060504; --s1: #0d0905; --s2: #120c06;
-  --bg3: #1a0e06;
+  /* Backgrounds — slightly lighter, warm dark */
+  --bg:    #0e0c0a;
+  --s1:    #151210;
+  --s2:    #1c1814;
+  --s3:    #242018;
+  --s4:    #2e281e;
+
+  /* Orange-amber spectrum */
   --or1: #7c2d00; --or2: #c2410c; --or3: #ea580c; --or4: #f97316;
-  --or5: #fb923c; --or6: #fdba74; --or7: #fed7aa;
+  --or5: #fb923c; --or6: #fdba74; --or7: #fff1e6;
   --am1: #78350f; --am2: #b45309; --am3: #d97706; --am4: #f59e0b;
   --am5: #fbbf24; --am6: #fde68a;
-  --gr1: #064e3b; --gr2: #065f46; --gr3: #059669; --gr4: #10b981;
-  --gr5: #34d399; --gr6: #6ee7b7;
-  --bl1: #1e3a5f; --bl2: #1e40af; --bl3: #2563eb; --bl4: #3b82f6;
-  --bl5: #60a5fa; --bl6: #93c5fd;
-  --pur: #7c3aed; --pink: #db2777; --cy: #06b6d4;
-  --t1: #fef3e2; --t2: #d4a06a; --t3: #8b5e3c; --t4: #4a3020;
+
+  /* Accent greens */
+  --gr3: #059669; --gr4: #10b981; --gr5: #34d399; --gr6: #a7f3d0;
+
+  /* Accent blues */
+  --bl3: #2563eb; --bl4: #3b82f6; --bl5: #60a5fa;
+
+  /* Purple & pink */
+  --pur: #8b5cf6; --pink: #f472b6;
+
+  /* Text */
+  --t0: #fff8f0;   /* headings */
+  --t1: #f0e6d8;   /* primary */
+  --t2: #b89880;   /* secondary */
+  --t3: #7a5c44;   /* muted */
+  --t4: #3d2a1a;   /* very muted */
+
+  /* Glass surfaces — lighter than before */
+  --glass:  rgba(28,22,16,.72);
+  --glass2: rgba(36,28,20,.80);
+  --glassl: rgba(255,255,255,.04);   /* light overlay */
+
+  /* Borders */
+  --gb1: rgba(249,115,22,.10);
+  --gb2: rgba(249,115,22,.20);
+  --gb3: rgba(249,115,22,.36);
+
+  /* Status */
   --ok: #10b981; --warn: #f59e0b; --err: #ef4444;
-  --glass: rgba(18,10,4,.70); --glass2: rgba(25,14,5,.78);
-  --gborder: rgba(249,115,22,.14); --gborder2: rgba(251,146,60,.30);
-  --r8:8px; --r12:12px; --r16:16px; --r20:20px; --r28:28px; --r50:50px;
-  --text: #fef3e2; --text2: #c8906a; --muted: #6b4a2a;
-  --border: rgba(255,255,255,.06); --border2: rgba(249,115,22,.18);
+
+  /* Radii */
+  --r6:6px; --r10:10px; --r14:14px; --r18:18px; --r24:24px; --r32:32px;
 }
 
 *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+
 html, body, .stApp {
-  background:var(--bg) !important;
-  color:var(--text) !important;
-  font-family:'DM Sans',-apple-system,sans-serif !important;
+  background: var(--bg) !important;
+  color: var(--t1) !important;
+  font-family: 'Outfit', -apple-system, sans-serif !important;
 }
 
+/* ── Ambient background ── */
 .stApp::before {
   content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
   background:
-    radial-gradient(ellipse 80% 60% at 5% 0%, rgba(249,115,22,.14) 0%, transparent 55%),
-    radial-gradient(ellipse 55% 65% at 95% 100%, rgba(16,185,129,.08) 0%, transparent 50%),
-    radial-gradient(ellipse 40% 40% at 50% 50%, rgba(245,158,11,.05) 0%, transparent 60%);
+    radial-gradient(ellipse 70% 55% at 0% 0%, rgba(249,115,22,.12) 0%, transparent 55%),
+    radial-gradient(ellipse 50% 60% at 100% 100%, rgba(16,185,129,.07) 0%, transparent 50%),
+    radial-gradient(ellipse 35% 35% at 55% 40%, rgba(245,158,11,.04) 0%, transparent 60%);
 }
+/* ── Subtle star field ── */
 .stApp::after {
   content:''; position:fixed; inset:0; pointer-events:none; z-index:0;
   background-image:
-    radial-gradient(1px 1px at 8% 12%,  rgba(251,191,36,.55) 0%, transparent 100%),
-    radial-gradient(1px 1px at 24% 38%, rgba(249,115,22,.40) 0%, transparent 100%),
-    radial-gradient(1.5px 1.5px at 55% 18%,rgba(52,211,153,.45) 0%, transparent 100%),
-    radial-gradient(1px 1px at 77% 62%, rgba(251,191,36,.35) 0%, transparent 100%),
-    radial-gradient(1px 1px at 90% 30%, rgba(249,115,22,.40) 0%, transparent 100%),
-    radial-gradient(1px 1px at 42% 84%, rgba(96,165,250,.30) 0%, transparent 100%),
-    radial-gradient(1px 1px at 15% 72%, rgba(52,211,153,.25) 0%, transparent 100%),
-    radial-gradient(1px 1px at 66% 5%,  rgba(251,191,36,.30) 0%, transparent 100%);
+    radial-gradient(1px 1px at 12% 18%, rgba(251,191,36,.5) 0%, transparent 100%),
+    radial-gradient(1px 1px at 34% 52%, rgba(249,115,22,.35) 0%, transparent 100%),
+    radial-gradient(1.2px 1.2px at 67% 15%, rgba(52,211,153,.4) 0%, transparent 100%),
+    radial-gradient(1px 1px at 82% 70%, rgba(251,191,36,.3) 0%, transparent 100%),
+    radial-gradient(1px 1px at 48% 88%, rgba(96,165,250,.25) 0%, transparent 100%),
+    radial-gradient(1px 1px at 20% 76%, rgba(52,211,153,.22) 0%, transparent 100%),
+    radial-gradient(1px 1px at 90% 25%, rgba(249,115,22,.30) 0%, transparent 100%);
 }
 
+/* ── Hide Streamlit chrome ── */
 [data-testid="collapsedControl"], section[data-testid="stSidebar"] { display:none !important; }
-header[data-testid="stHeader"] { display:none !important; }
-#MainMenu { display:none !important; }
-footer { display:none !important; }
-.stDeployButton { display:none !important; }
-[data-testid="stToolbar"] { display:none !important; }
-[data-testid="stDecoration"] { display:none !important; }
+header[data-testid="stHeader"]   { display:none !important; }
+#MainMenu, footer, .stDeployButton { display:none !important; }
+[data-testid="stToolbar"], [data-testid="stDecoration"] { display:none !important; }
 
 .block-container {
-  padding-top:0 !important;
-  padding-bottom:5rem !important;
-  max-width:1440px !important;
-  position:relative; z-index:1;
-  padding-left:1rem !important;
-  padding-right:1rem !important;
+  padding-top:0 !important; padding-bottom:4rem !important;
+  max-width:1420px !important; position:relative; z-index:1;
+  padding-left:.9rem !important; padding-right:.9rem !important;
 }
 
-h1 { font-family:'Syne',sans-serif !important; font-size:1.6rem !important; font-weight:800 !important; letter-spacing:-.03em; color:var(--text) !important; }
-h2 { font-family:'Syne',sans-serif !important; font-size:1.05rem !important; font-weight:700 !important; letter-spacing:-.01em; color:var(--text) !important; }
-h3 { font-family:'Syne',sans-serif !important; font-size:.88rem !important; font-weight:600 !important; color:var(--text) !important; }
+/* ═══════════════════════════════════════
+   TYPOGRAPHY
+═══════════════════════════════════════ */
+h1 { font-family:'Outfit',sans-serif !important; font-size:1.55rem !important;
+     font-weight:800 !important; letter-spacing:-.03em; color:var(--t0) !important; }
+h2 { font-family:'Outfit',sans-serif !important; font-size:1.02rem !important;
+     font-weight:700 !important; letter-spacing:-.01em; color:var(--t0) !important; }
+h3 { font-family:'Outfit',sans-serif !important; font-size:.88rem !important;
+     font-weight:600 !important; color:var(--t1) !important; }
 
-/* ═══════ TOP NAV ═══════ */
+/* ═══════════════════════════════════════
+   TOP NAV
+═══════════════════════════════════════ */
 .neb-navwrap {
   position:sticky; top:0; z-index:1000;
-  background:rgba(6,4,2,.94);
-  backdrop-filter:blur(48px) saturate(200%);
-  -webkit-backdrop-filter:blur(48px) saturate(200%);
-  border-bottom:1px solid rgba(249,115,22,.12);
-  margin-bottom:1.2rem;
-  box-shadow:0 1px 0 rgba(249,115,22,.06), 0 6px 32px rgba(0,0,0,.6);
-  padding:.45rem .8rem;
+  background:rgba(12,9,7,.92);
+  backdrop-filter:blur(40px) saturate(180%);
+  -webkit-backdrop-filter:blur(40px) saturate(180%);
+  border-bottom:1px solid var(--gb1);
+  padding:.42rem .9rem;
+  box-shadow:0 1px 0 rgba(249,115,22,.05), 0 4px 24px rgba(0,0,0,.5);
+  margin-bottom:1.1rem;
 }
 .neb-navwrap [data-testid="stHorizontalBlock"] {
-  align-items:center !important;
-  gap:1px !important;
+  align-items:center !important; gap:0 !important;
 }
-.neb-navwrap [data-testid="stHorizontalBlock"] > div {
-  padding:0 1px !important;
-}
+.neb-navwrap [data-testid="stHorizontalBlock"] > div { padding:0 2px !important; }
 
-/* Nav pill inactive */
+/* Logo button */
+.nav-logo .stButton>button {
+  background:transparent !important; border:none !important;
+  font-family:'Outfit',sans-serif !important; font-size:.95rem !important;
+  font-weight:800 !important; letter-spacing:-.04em !important;
+  background:linear-gradient(135deg,#f97316,#fbbf24,#34d399) !important;
+  -webkit-background-clip:text !important; -webkit-text-fill-color:transparent !important;
+  background-clip:text !important;
+  padding:.28rem .5rem !important; box-shadow:none !important;
+  height:36px !important; min-height:36px !important;
+}
+.nav-logo .stButton>button:hover { transform:none !important; box-shadow:none !important; }
+
+/* Nav pills */
 .nav-pill .stButton>button {
-  background:transparent !important;
-  border:1px solid transparent !important;
-  border-radius:50px !important;
-  color:var(--t3) !important;
-  font-family:'DM Sans',sans-serif !important;
-  font-size:1.0rem !important;
-  font-weight:500 !important;
-  padding:.28rem .50rem !important;
-  box-shadow:none !important;
-  white-space:nowrap !important;
-  height:34px !important; min-height:34px !important;
-  line-height:1 !important;
-  transition:all .16s !important;
+  background:transparent !important; border:1px solid transparent !important;
+  border-radius:var(--r32) !important; color:var(--t3) !important;
+  font-family:'Outfit',sans-serif !important; font-size:.78rem !important;
+  font-weight:500 !important; padding:.26rem .55rem !important;
+  box-shadow:none !important; white-space:nowrap !important;
+  height:32px !important; min-height:32px !important;
+  transition:all .15s !important;
 }
 .nav-pill .stButton>button:hover {
-  background:rgba(249,115,22,.12) !important;
-  border-color:rgba(249,115,22,.22) !important;
-  color:var(--t1) !important;
-  transform:none !important;
-  box-shadow:none !important;
+  background:rgba(249,115,22,.10) !important;
+  border-color:rgba(249,115,22,.18) !important;
+  color:var(--t1) !important; transform:none !important; box-shadow:none !important;
 }
-/* Nav pill active */
 .nav-pill-active .stButton>button {
-  background:linear-gradient(135deg,rgba(234,88,12,.48),rgba(245,158,11,.22)) !important;
-  border:1px solid rgba(249,115,22,.38) !important;
-  color:var(--or6) !important;
-  font-weight:700 !important;
-  box-shadow:0 2px 16px rgba(234,88,12,.22), inset 0 1px 0 rgba(253,186,116,.12) !important;
-  height:34px !important; min-height:34px !important;
-  font-size:1.0rem !important;
+  background:linear-gradient(135deg,rgba(234,88,12,.40),rgba(245,158,11,.18)) !important;
+  border:1px solid rgba(249,115,22,.32) !important;
+  color:var(--or5) !important; font-weight:700 !important;
+  box-shadow:0 2px 14px rgba(234,88,12,.18), inset 0 1px 0 rgba(253,186,116,.10) !important;
+  height:32px !important; min-height:32px !important; font-size:.78rem !important;
 }
-.nav-pill-active .stButton>button:hover {
-  transform:none !important;
-  box-shadow:0 4px 20px rgba(234,88,12,.30) !important;
+.nav-pill-active .stButton>button:hover { transform:none !important; }
+
+/* Avatar button */
+.nav-av .stButton>button {
+  width:34px !important; height:34px !important; min-height:34px !important;
+  border-radius:50% !important; padding:0 !important;
+  font-family:'Outfit',sans-serif !important; font-weight:800 !important;
+  font-size:.70rem !important; color:white !important;
+  border:2px solid rgba(249,115,22,.28) !important;
+  box-shadow:0 2px 10px rgba(0,0,0,.4) !important;
+  transition:all .18s !important; line-height:1 !important;
+}
+.nav-av .stButton>button:hover {
+  transform:scale(1.10) !important;
+  border-color:rgba(249,115,22,.56) !important;
+  box-shadow:0 4px 16px rgba(249,115,22,.28) !important;
 }
 
-/* Avatar button styled as circle */
-.nav-av-btn .stButton>button {
-  width:36px !important; height:36px !important; min-height:36px !important;
-  border-radius:50% !important;
-  padding:0 !important;
-  font-family:'Syne',sans-serif !important;
-  font-weight:800 !important;
-  font-size:.72rem !important;
-  color:white !important;
-  border:2px solid rgba(249,115,22,.30) !important;
-  box-shadow:0 2px 12px rgba(0,0,0,.5) !important;
-  transition:all .2s !important;
-  line-height:1 !important;
-}
-.nav-av-btn .stButton>button:hover {
-  transform:scale(1.08) !important;
-  border-color:rgba(249,115,22,.60) !important;
-  box-shadow:0 4px 18px rgba(249,115,22,.30) !important;
-}
-
-/* ═══════ BUTTONS ═══════ */
+/* ═══════════════════════════════════════
+   BUTTONS
+═══════════════════════════════════════ */
 .stButton>button {
-  background:linear-gradient(135deg,rgba(30,15,5,.72),rgba(18,10,4,.58)) !important;
-  backdrop-filter:blur(20px) saturate(180%) !important;
-  -webkit-backdrop-filter:blur(20px) saturate(180%) !important;
-  border:1px solid var(--gborder) !important;
-  border-radius:var(--r12) !important;
-  color:var(--t2) !important;
-  font-family:'DM Sans',sans-serif !important;
-  font-weight:500 !important;
-  font-size:.80rem !important;
-  padding:.44rem .88rem !important;
-  transition:all .2s cubic-bezier(.4,0,.2,1) !important;
-  box-shadow:0 2px 10px rgba(0,0,0,.35), inset 0 1px 0 rgba(249,115,22,.06) !important;
-  position:relative !important;
-  overflow:hidden !important;
-  letter-spacing:.01em !important;
+  background:var(--glass) !important;
+  backdrop-filter:blur(16px) !important; -webkit-backdrop-filter:blur(16px) !important;
+  border:1px solid var(--gb1) !important; border-radius:var(--r10) !important;
+  color:var(--t2) !important; font-family:'Outfit',sans-serif !important;
+  font-weight:500 !important; font-size:.78rem !important;
+  padding:.40rem .82rem !important;
+  transition:all .18s cubic-bezier(.4,0,.2,1) !important;
+  box-shadow:0 1px 8px rgba(0,0,0,.3) !important;
+  letter-spacing:.005em !important;
 }
 .stButton>button:hover {
-  background:linear-gradient(135deg,rgba(234,88,12,.55),rgba(245,158,11,.20)) !important;
-  border-color:rgba(249,115,22,.38) !important;
-  color:var(--text) !important;
+  background:linear-gradient(135deg,rgba(234,88,12,.42),rgba(245,158,11,.16)) !important;
+  border-color:rgba(249,115,22,.32) !important; color:var(--t0) !important;
   transform:translateY(-1px) !important;
-  box-shadow:0 6px 20px rgba(234,88,12,.24), inset 0 1px 0 rgba(253,186,116,.10) !important;
+  box-shadow:0 4px 16px rgba(234,88,12,.20) !important;
 }
 .stButton>button:active { transform:scale(.97) !important; }
 
+/* Primary */
 .btn-primary .stButton>button {
   background:linear-gradient(135deg,#ea580c,#d97706) !important;
-  border-color:rgba(249,115,22,.5) !important;
-  color:white !important;
+  border-color:rgba(249,115,22,.45) !important; color:white !important;
   font-weight:600 !important;
-  box-shadow:0 4px 20px rgba(234,88,12,.38), inset 0 1px 0 rgba(255,255,255,.14) !important;
+  box-shadow:0 4px 18px rgba(234,88,12,.32), inset 0 1px 0 rgba(255,255,255,.12) !important;
 }
 .btn-primary .stButton>button:hover {
   background:linear-gradient(135deg,#f97316,#f59e0b) !important;
-  box-shadow:0 8px 28px rgba(234,88,12,.45) !important;
+  box-shadow:0 7px 24px rgba(234,88,12,.40) !important;
 }
+/* Danger */
 .btn-danger .stButton>button {
-  background:rgba(239,68,68,.08) !important;
-  border-color:rgba(239,68,68,.22) !important;
-  color:#fca5a5 !important;
+  background:rgba(239,68,68,.07) !important;
+  border-color:rgba(239,68,68,.20) !important; color:#fca5a5 !important;
 }
 .btn-danger .stButton>button:hover {
-  background:rgba(239,68,68,.16) !important;
-  border-color:rgba(239,68,68,.36) !important;
+  background:rgba(239,68,68,.14) !important;
+  border-color:rgba(239,68,68,.32) !important;
 }
+/* Green */
 .btn-green .stButton>button {
-  background:linear-gradient(135deg,rgba(5,150,105,.55),rgba(6,182,212,.22)) !important;
-  border-color:rgba(52,211,153,.35) !important;
-  color:var(--gr6) !important;
-}
-
-/* Story circles */
-.sc-base .stButton>button {
-  width:60px !important; height:60px !important; border-radius:50% !important;
-  padding:0 !important; font-family:'Syne',sans-serif !important;
-  font-weight:800 !important; font-size:.9rem !important; color:white !important;
-  border:2.5px solid rgba(249,115,22,.30) !important;
-  box-shadow:0 4px 18px rgba(0,0,0,.5), inset 0 1px 0 rgba(249,115,22,.08) !important;
-  transition:transform .22s cubic-bezier(.34,1.56,.64,1), box-shadow .2s !important;
-  display:flex !important; align-items:center !important; justify-content:center !important;
-  margin:0 auto !important;
-}
-.sc-base .stButton>button:hover {
-  transform:translateY(-3px) scale(1.07) !important;
-  box-shadow:0 10px 28px rgba(249,115,22,.32) !important;
-}
-.sc-followed .stButton>button { border-color:rgba(52,211,153,.55) !important; }
-.sc-publish .stButton>button {
-  background:rgba(249,115,22,.06) !important;
-  border:2.5px dashed rgba(249,115,22,.40) !important;
-  color:var(--or5) !important; font-size:1.5rem !important; font-weight:300 !important;
-}
-.sc-publish .stButton>button:hover {
-  background:rgba(249,115,22,.14) !important;
-  border-color:rgba(249,115,22,.70) !important;
-  box-shadow:0 0 28px rgba(249,115,22,.20) !important;
-}
-.sc-publish-open .stButton>button {
-  background:rgba(249,115,22,.16) !important;
-  border:2.5px solid rgba(249,115,22,.58) !important;
-  color:var(--or5) !important; font-size:1.3rem !important;
-  box-shadow:0 0 22px rgba(249,115,22,.28) !important;
+  background:linear-gradient(135deg,rgba(5,150,105,.45),rgba(6,182,212,.18)) !important;
+  border-color:rgba(52,211,153,.32) !important; color:var(--gr6) !important;
 }
 
 /* Compose prompt */
 .compose-prompt .stButton>button {
   background:rgba(255,255,255,.025) !important;
-  border:1px solid var(--gborder) !important; border-radius:40px !important;
-  color:var(--t3) !important; font-size:.875rem !important; font-weight:400 !important;
-  text-align:left !important; padding:.72rem 1.4rem !important; width:100% !important;
+  border:1px solid var(--gb1) !important; border-radius:var(--r32) !important;
+  color:var(--t3) !important; font-size:.84rem !important; font-weight:400 !important;
+  text-align:left !important; padding:.68rem 1.3rem !important; width:100% !important;
   display:flex !important; justify-content:flex-start !important; box-shadow:none !important;
 }
 .compose-prompt .stButton>button:hover {
-  background:rgba(249,115,22,.07) !important;
-  border-color:rgba(249,115,22,.28) !important;
-  color:var(--t2) !important; transform:none !important; box-shadow:none !important;
+  background:rgba(249,115,22,.06) !important;
+  border-color:rgba(249,115,22,.25) !important; color:var(--t2) !important;
+  transform:none !important; box-shadow:none !important;
 }
 
-/* INPUTS */
+/* ═══════════════════════════════════════
+   INPUTS
+═══════════════════════════════════════ */
 .stTextInput input, .stTextArea textarea {
-  background:rgba(8,5,2,.82) !important;
-  border:1px solid var(--gborder) !important;
-  border-radius:var(--r12) !important;
-  color:var(--text) !important;
-  font-family:'DM Sans',sans-serif !important;
-  font-size:.875rem !important;
-  transition:border-color .18s, box-shadow .18s !important;
+  background:rgba(10,8,6,.88) !important;
+  border:1px solid var(--gb1) !important; border-radius:var(--r10) !important;
+  color:var(--t1) !important; font-family:'Outfit',sans-serif !important;
+  font-size:.84rem !important; transition:border-color .15s, box-shadow .15s !important;
 }
 .stTextInput input:focus, .stTextArea textarea:focus {
-  border-color:rgba(249,115,22,.45) !important;
-  box-shadow:0 0 0 3px rgba(249,115,22,.10) !important;
-  background:rgba(8,5,2,.92) !important;
+  border-color:rgba(249,115,22,.40) !important;
+  box-shadow:0 0 0 3px rgba(249,115,22,.09) !important;
 }
 .stTextInput label,.stTextArea label,.stSelectbox label,.stFileUploader label,.stNumberInput label {
-  color:var(--t3) !important; font-size:.63rem !important;
-  letter-spacing:.10em !important; text-transform:uppercase !important; font-weight:600 !important;
+  color:var(--t3) !important; font-size:.62rem !important;
+  letter-spacing:.09em !important; text-transform:uppercase !important; font-weight:600 !important;
 }
 
-/* AVATAR */
+/* ═══════════════════════════════════════
+   AVATARS
+═══════════════════════════════════════ */
 .av {
-  border-radius:50%;
-  background:linear-gradient(135deg,#ea580c,#d97706);
+  border-radius:50%; background:linear-gradient(135deg,#ea580c,#d97706);
   display:flex; align-items:center; justify-content:center;
-  font-family:'Syne',sans-serif; font-weight:700; color:white;
-  border:2px solid rgba(249,115,22,.22); flex-shrink:0; overflow:hidden;
-  box-shadow:0 2px 10px rgba(0,0,0,.4);
+  font-family:'Outfit',sans-serif; font-weight:700; color:white;
+  border:1.5px solid rgba(249,115,22,.20); flex-shrink:0; overflow:hidden;
+  box-shadow:0 2px 8px rgba(0,0,0,.35);
 }
 .av img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
 
-/* GLASS CARDS */
+/* ═══════════════════════════════════════
+   CARDS
+═══════════════════════════════════════ */
 .card {
-  background:var(--glass);
-  backdrop-filter:blur(28px) saturate(160%);
-  -webkit-backdrop-filter:blur(28px) saturate(160%);
-  border:1px solid var(--gborder); border-radius:var(--r20);
-  box-shadow:0 4px 32px rgba(0,0,0,.5), inset 0 1px 0 rgba(249,115,22,.05);
+  background:var(--glass); backdrop-filter:blur(24px) saturate(150%);
+  -webkit-backdrop-filter:blur(24px) saturate(150%);
+  border:1px solid var(--gb1); border-radius:var(--r18);
+  box-shadow:0 3px 24px rgba(0,0,0,.40), inset 0 1px 0 rgba(249,115,22,.04);
   position:relative; overflow:hidden;
 }
 .card::after {
   content:''; position:absolute; top:0; left:0; right:0; height:1px;
-  background:linear-gradient(90deg,transparent,rgba(249,115,22,.10),transparent);
+  background:linear-gradient(90deg,transparent,rgba(249,115,22,.09),transparent);
   pointer-events:none;
 }
+
+/* Post card */
 .post {
-  background:var(--glass); border:1px solid var(--gborder); border-radius:var(--r20);
-  margin-bottom:.8rem; overflow:hidden;
-  box-shadow:0 2px 20px rgba(0,0,0,.40), inset 0 1px 0 rgba(249,115,22,.04);
-  animation:fadeUp .24s cubic-bezier(.34,1.2,.64,1) both;
-  transition:border-color .18s, box-shadow .18s;
+  background:var(--glass); border:1px solid var(--gb1); border-radius:var(--r18);
+  margin-bottom:.75rem; overflow:hidden; position:relative;
+  box-shadow:0 2px 16px rgba(0,0,0,.35), inset 0 1px 0 rgba(249,115,22,.03);
+  animation:fadeUp .22s cubic-bezier(.34,1.1,.64,1) both;
+  transition:border-color .16s, box-shadow .16s;
 }
 .post:hover {
-  border-color:var(--gborder2);
-  box-shadow:0 8px 36px rgba(0,0,0,.50), 0 0 0 1px rgba(249,115,22,.06);
+  border-color:rgba(249,115,22,.18);
+  box-shadow:0 6px 28px rgba(0,0,0,.45), 0 0 0 1px rgba(249,115,22,.05);
 }
 .post::after {
   content:''; position:absolute; top:0; left:0; right:0; height:1px;
-  background:linear-gradient(90deg,transparent,rgba(249,115,22,.07),transparent);
+  background:linear-gradient(90deg,transparent,rgba(249,115,22,.06),transparent);
   pointer-events:none;
 }
-@keyframes fadeUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
 
+/* Compose card */
 .compose-card {
-  background:rgba(18,10,4,.78); border:1px solid rgba(249,115,22,.25);
-  border-radius:var(--r20); padding:1.2rem 1.4rem; margin-bottom:.9rem;
-  box-shadow:0 4px 24px rgba(0,0,0,.30), inset 0 1px 0 rgba(249,115,22,.07);
-  animation:fadeUp .18s ease both;
+  background:rgba(22,16,10,.80); border:1px solid rgba(249,115,22,.22);
+  border-radius:var(--r18); padding:1.15rem 1.35rem; margin-bottom:.85rem;
+  box-shadow:0 3px 20px rgba(0,0,0,.28), inset 0 1px 0 rgba(249,115,22,.06);
+  animation:fadeUp .16s ease both;
 }
 
-/* TABS */
+/* Sidebar sections */
+.sc {
+  background:var(--glass); border:1px solid var(--gb1);
+  border-radius:var(--r18); padding:1rem 1.05rem; margin-bottom:.7rem;
+}
+/* Search result card */
+.scard {
+  background:var(--glass); border:1px solid var(--gb1); border-radius:var(--r14);
+  padding:.85rem 1.05rem; margin-bottom:.5rem;
+  transition:border-color .14s, transform .14s;
+}
+.scard:hover { border-color:var(--gb2); transform:translateY(-1px); }
+
+/* Analytics box */
+.abox {
+  background:rgba(22,14,8,.80); border:1px solid rgba(249,115,22,.14);
+  border-radius:var(--r14); padding:.95rem; margin-bottom:.7rem;
+}
+.pbox {
+  background:rgba(5,150,105,.04); border:1px solid rgba(52,211,153,.15);
+  border-radius:var(--r14); padding:.9rem; margin-bottom:.65rem;
+}
+.img-rc {
+  background:rgba(5,150,105,.04); border:1px solid rgba(52,211,153,.13);
+  border-radius:var(--r14); padding:.85rem; margin-bottom:.5rem;
+}
+.chart-glass {
+  background:var(--glass); border:1px solid var(--gb1);
+  border-radius:var(--r14); padding:.7rem; margin-bottom:.7rem;
+}
+
+/* Metrics box */
+.mbox {
+  background:var(--glass); border:1px solid var(--gb1);
+  border-radius:var(--r14); padding:.9rem; text-align:center;
+}
+.mval {
+  font-family:'Outfit',sans-serif; font-size:1.65rem; font-weight:800;
+  background:linear-gradient(135deg,var(--or4),var(--am5));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+}
+.mval-green {
+  font-family:'Outfit',sans-serif; font-size:1.65rem; font-weight:800;
+  background:linear-gradient(135deg,var(--gr4),var(--bl5));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+}
+.mlbl { font-size:.60rem; color:var(--t3); margin-top:3px; letter-spacing:.09em; text-transform:uppercase; font-weight:600; }
+
+/* Alerts */
+.ai-warn {
+  background:rgba(245,158,11,.07); border:1px solid rgba(245,158,11,.20);
+  border-radius:var(--r10); padding:.65rem .95rem; margin:.45rem 0;
+}
+.str-ok  { background:rgba(16,185,129,.07); border:1px solid rgba(16,185,129,.18); border-radius:9px; padding:.36rem .72rem; font-size:.74rem; color:var(--gr5); margin-bottom:.28rem; }
+.str-imp { background:rgba(245,158,11,.07); border:1px solid rgba(245,158,11,.18); border-radius:9px; padding:.36rem .72rem; font-size:.74rem; color:var(--am5); margin-bottom:.28rem; }
+.ref-item { background:rgba(5,150,105,.03); border:1px solid rgba(52,211,153,.11); border-radius:var(--r10); padding:.6rem .85rem; margin-bottom:.38rem; font-size:.76rem; color:var(--t2); line-height:1.6; }
+
+/* ═══════════════════════════════════════
+   TABS
+═══════════════════════════════════════ */
 .stTabs [data-baseweb="tab-list"] {
-  background:rgba(8,5,2,.85) !important;
-  border:1px solid var(--gborder) !important;
-  border-radius:var(--r12) !important;
-  padding:4px !important; gap:2px !important;
+  background:rgba(8,6,4,.88) !important;
+  border:1px solid var(--gb1) !important; border-radius:var(--r10) !important;
+  padding:3px !important; gap:2px !important;
 }
 .stTabs [data-baseweb="tab"] {
   background:transparent !important; color:var(--t3) !important;
-  border-radius:9px !important; font-size:.77rem !important;
-  font-family:'DM Sans',sans-serif !important;
+  border-radius:8px !important; font-size:.76rem !important;
+  font-family:'Outfit',sans-serif !important; font-weight:500 !important;
 }
 .stTabs [aria-selected="true"] {
-  background:linear-gradient(135deg,rgba(234,88,12,.38),rgba(245,158,11,.16)) !important;
-  color:var(--or5) !important;
-  border:1px solid rgba(249,115,22,.28) !important;
+  background:linear-gradient(135deg,rgba(234,88,12,.35),rgba(245,158,11,.14)) !important;
+  color:var(--or5) !important; border:1px solid rgba(249,115,22,.26) !important;
+  font-weight:700 !important;
 }
-.stTabs [data-baseweb="tab-panel"] { background:transparent !important; padding-top:.9rem !important; }
+.stTabs [data-baseweb="tab-panel"] { background:transparent !important; padding-top:.85rem !important; }
 
-.stSelectbox [data-baseweb="select"] { background:rgba(8,5,2,.85) !important; border:1px solid var(--gborder) !important; border-radius:var(--r12) !important; }
-.stFileUploader section { background:rgba(8,5,2,.55) !important; border:1.5px dashed rgba(249,115,22,.20) !important; border-radius:var(--r16) !important; }
-.stExpander { background:var(--glass) !important; border:1px solid var(--gborder) !important; border-radius:var(--r16) !important; }
+/* ═══════════════════════════════════════
+   BADGES / TAGS
+═══════════════════════════════════════ */
+.tag {
+  display:inline-block; background:rgba(249,115,22,.09);
+  border:1px solid rgba(249,115,22,.18); border-radius:20px;
+  padding:2px 8px; font-size:.62rem; color:var(--or5); margin:2px; font-weight:500;
+}
+.badge-on   { display:inline-block; background:rgba(245,158,11,.10); border:1px solid rgba(245,158,11,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:var(--am5); }
+.badge-pub  { display:inline-block; background:rgba(16,185,129,.10); border:1px solid rgba(16,185,129,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:var(--gr5); }
+.badge-done { display:inline-block; background:rgba(139,92,246,.10); border:1px solid rgba(139,92,246,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:#c4b5fd; }
+.badge-rec  { display:inline-block; background:rgba(249,115,22,.10); border:1px solid rgba(249,115,22,.22); border-radius:20px; padding:2px 8px; font-size:.62rem; font-weight:600; color:var(--or5); }
 
-/* TAGS & BADGES */
-.tag { display:inline-block; background:rgba(249,115,22,.10); border:1px solid rgba(249,115,22,.20); border-radius:20px; padding:2px 9px; font-size:.63rem; color:var(--or5); margin:2px; font-weight:500; }
-.badge-on   { display:inline-block; background:rgba(245,158,11,.10); border:1px solid rgba(245,158,11,.24); border-radius:20px; padding:2px 9px; font-size:.63rem; font-weight:600; color:var(--am5); }
-.badge-pub  { display:inline-block; background:rgba(16,185,129,.10); border:1px solid rgba(16,185,129,.24); border-radius:20px; padding:2px 9px; font-size:.63rem; font-weight:600; color:var(--gr5); }
-.badge-done { display:inline-block; background:rgba(139,92,246,.10); border:1px solid rgba(139,92,246,.24); border-radius:20px; padding:2px 9px; font-size:.63rem; font-weight:600; color:#a78bfa; }
-.badge-rec  { display:inline-block; background:rgba(249,115,22,.10); border:1px solid rgba(249,115,22,.24); border-radius:20px; padding:2px 9px; font-size:.63rem; font-weight:600; color:var(--or5); }
-
-.mbox { background:var(--glass); border:1px solid var(--gborder); border-radius:var(--r16); padding:.95rem; text-align:center; }
-.mval { font-family:'Syne',sans-serif; font-size:1.75rem; font-weight:800; background:linear-gradient(135deg,var(--or4),var(--am5)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
-.mval-green { font-family:'Syne',sans-serif; font-size:1.75rem; font-weight:800; background:linear-gradient(135deg,var(--gr4),var(--bl4)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
-.mlbl { font-size:.61rem; color:var(--t3); margin-top:3px; letter-spacing:.10em; text-transform:uppercase; font-weight:600; }
-
-.prog-wrap { height:4px; background:rgba(249,115,22,.08); border-radius:4px; overflow:hidden; margin:.15rem 0 .38rem; }
-.prog-fill  { height:100%; border-radius:4px; transition:width .6s ease; }
-
-@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.78)} }
-.dot-on  { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--gr4); animation:pulse 2s infinite; margin-right:4px; vertical-align:middle; }
+/* ═══════════════════════════════════════
+   INDICATORS / MISC
+═══════════════════════════════════════ */
+@keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.75)} }
+.dot-on  { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--gr4); animation:pulse 2.5s infinite; margin-right:4px; vertical-align:middle; }
 .dot-off { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--t4); margin-right:4px; vertical-align:middle; }
-# ========================= FEED / POSTS =========================
-def render_post(post):
-    user = st.session_state.users.get(post["author"], {})
-    name = user.get("name", post["author"])
-    area = user.get("area", "Pesquisa")
 
-    photo = user.get("photo_b64")
-    if photo:
-        avatar = f"<img src='{photo}' class='avatar-img'/>"
-    else:
-        avatar = f"<div class='avatar' style='background:{ugrad(post['author'])}'>{ini(name)}</div>"
+.prog-wrap { height:4px; background:rgba(249,115,22,.08); border-radius:4px; overflow:hidden; margin:.13rem 0 .35rem; }
+.prog-fill  { height:100%; border-radius:4px; transition:width .5s ease; }
 
-    st.markdown(f"""
-    <div class="post-card">
-        <div class="post-header">
-            {avatar}
-            <div>
-                <div class="post-author">{name}</div>
-                <div class="post-area">{area} • {time_ago(post["date"])}</div>
-            </div>
-        </div>
+@keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+.pw { animation:fadeIn .18s ease both; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
 
-        <div class="post-title">{post["title"]}</div>
-        <div class="post-desc">{post["description"]}</div>
+/* Chat bubbles */
+.bme   { background:linear-gradient(135deg,rgba(234,88,12,.42),rgba(245,158,11,.18)); border:1px solid rgba(249,115,22,.20); border-radius:18px 18px 4px 18px; padding:.56rem .88rem; max-width:68%; margin-left:auto; margin-bottom:5px; font-size:.82rem; line-height:1.6; }
+.bthem { background:var(--glass); border:1px solid var(--gb1); border-radius:18px 18px 18px 4px; padding:.56rem .88rem; max-width:68%; margin-bottom:5px; font-size:.82rem; line-height:1.6; }
+.cmt   { background:rgba(8,5,2,.88); border:1px solid var(--gb1); border-radius:var(--r10); padding:.52rem .85rem; margin-bottom:.28rem; }
 
-        <div class="post-tags">
-            {" ".join([f"<span class='tag'>{t}</span>" for t in post.get("tags", [])])}
-        </div>
+/* Profile hero */
+.prof-hero {
+  background:var(--glass); border:1px solid var(--gb1); border-radius:var(--r24);
+  padding:1.6rem; display:flex; gap:1.3rem; align-items:flex-start;
+  box-shadow:0 5px 32px rgba(0,0,0,.40); position:relative; overflow:hidden; margin-bottom:1.1rem;
+}
+.prof-photo {
+  width:80px; height:80px; border-radius:50%;
+  background:linear-gradient(135deg,#ea580c,#d97706);
+  border:2px solid rgba(249,115,22,.26); flex-shrink:0; overflow:hidden;
+  display:flex; align-items:center; justify-content:center;
+  font-size:1.7rem; font-weight:700; color:white;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);
+}
+.prof-photo img { width:100%; height:100%; object-fit:cover; border-radius:50%; }
 
-        <div class="post-actions">
-            <span>❤️ {fmt_num(post.get("likes",0))}</span>
-            <span>💬 {fmt_num(post.get("comments",0))}</span>
-            <span>🔖</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+/* Person row */
+.person-row {
+  display:flex; align-items:center; gap:8px; padding:.42rem .48rem;
+  border-radius:var(--r10); border:1px solid transparent; transition:all .14s; margin-bottom:2px;
+}
+.person-row:hover { background:rgba(249,115,22,.05); border-color:var(--gb1); }
 
+/* Divider */
+.dtxt {
+  display:flex; align-items:center; gap:.7rem; margin:.8rem 0;
+  font-size:.60rem; color:var(--t3); letter-spacing:.09em; text-transform:uppercase; font-weight:600;
+}
+.dtxt::before,.dtxt::after { content:''; flex:1; height:1px; background:var(--gb1); }
 
-def page_feed():
-    st.markdown("<h2 class='section-title'>Feed de Pesquisas</h2>", unsafe_allow_html=True)
+/* Misc */
+hr { border:none; border-top:1px solid var(--gb1) !important; margin:.85rem 0; }
+label { color:var(--t2) !important; }
+.stCheckbox label,.stRadio label { color:var(--t1) !important; }
+.stAlert { background:var(--glass) !important; border:1px solid var(--gb1) !important; border-radius:var(--r14) !important; }
+.stSelectbox [data-baseweb="select"] { background:rgba(8,6,4,.88) !important; border:1px solid var(--gb1) !important; border-radius:var(--r10) !important; }
+.stFileUploader section { background:rgba(8,6,4,.55) !important; border:1.5px dashed rgba(249,115,22,.18) !important; border-radius:var(--r14) !important; }
+.stExpander { background:var(--glass) !important; border:1px solid var(--gb1) !important; border-radius:var(--r14) !important; }
+.stRadio > div { display:flex !important; gap:4px !important; flex-wrap:wrap !important; }
+.stRadio > div > label { background:var(--glass) !important; border:1px solid var(--gb1) !important; border-radius:50px !important; padding:.28rem .78rem !important; font-size:.74rem !important; cursor:pointer !important; color:var(--t2) !important; }
+.stRadio > div > label:hover { border-color:var(--gb2) !important; color:var(--t1) !important; }
+input[type="number"] { background:rgba(8,6,4,.88) !important; border:1px solid var(--gb1) !important; border-radius:var(--r10) !important; color:var(--t1) !important; }
+::-webkit-scrollbar { width:4px; height:4px; }
+::-webkit-scrollbar-thumb { background:var(--s4); border-radius:4px; }
+.js-plotly-plot .plotly .modebar { display:none !important; }
+</style>""", unsafe_allow_html=True)
 
-    with st.container():
-        st.markdown("<div class='new-post-box'>", unsafe_allow_html=True)
+# ════════════════════════════════
+# HTML HELPERS
+# ════════════════════════════════
+def avh(initials, sz=40, photo=None, grad=None):
+    fs=max(sz//3,9); bg=grad or "linear-gradient(135deg,#ea580c,#d97706)"
+    if photo: return f'<div class="av" style="width:{sz}px;height:{sz}px;background:{bg}"><img src="{photo}"/></div>'
+    return f'<div class="av" style="width:{sz}px;height:{sz}px;font-size:{fs}px;background:{bg}">{initials}</div>'
 
-        col1, col2 = st.columns([1,8])
-        with col1:
-            user = guser()
-            photo = user.get("photo_b64")
-            if photo:
-                st.markdown(f"<img src='{photo}' class='avatar-img-lg'/>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div class='avatar-lg' style='background:{ugrad(st.session_state.current_user)}'>{ini(user.get('name','J'))}</div>", unsafe_allow_html=True)
+def tags_html(tags): return ' '.join(f'<span class="tag">{t}</span>' for t in (tags or []))
 
-        with col2:
-            title = st.text_input("Título da pesquisa")
-            desc = st.text_area("Descrição")
-            tags = st.text_input("Tags separadas por vírgula")
+def badge(s):
+    cls={"Publicado":"badge-pub","Concluído":"badge-done"}.get(s,"badge-on")
+    return f'<span class="{cls}">{s}</span>'
 
-            if st.button("Publicar"):
-                if title.strip():
-                    st.session_state.feed_posts.insert(0,{
-                        "author": st.session_state.current_user,
-                        "title": title,
-                        "description": desc,
-                        "tags": [t.strip() for t in tags.split(",") if t.strip()],
-                        "date": datetime.now().strftime("%Y-%m-%d"),
-                        "likes": 0,
-                        "comments": 0
-                    })
-                    save_db()
-                    st.success("Publicado!")
-                else:
-                    st.warning("Digite um título")
+def prog_bar(pct, color="#f97316"):
+    return f'<div class="prog-wrap"><div class="prog-fill" style="width:{pct}%;background:{color}"></div></div>'
 
-        st.markdown("</div>", unsafe_allow_html=True)
+def pc():
+    return dict(plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#7a5c44",family="Outfit",size=11),
+                margin=dict(l=10,r=10,t=40,b=10),
+                xaxis=dict(showgrid=False,color="#7a5c44",tickfont=dict(size=10)),
+                yaxis=dict(showgrid=True,gridcolor="rgba(249,115,22,.05)",color="#7a5c44",tickfont=dict(size=10)))
 
-    for post in st.session_state.feed_posts:
-        render_post(post)
+CHART_COLORS = ["#f97316","#f59e0b","#10b981","#3b82f6","#8b5cf6","#ec4899","#06b6d4","#fbbf24","#34d399","#60a5fa"]
 
+# ════════════════════════════════
+# AUTH PAGES
+# ════════════════════════════════
+def page_login():
+    _,col,_ = st.columns([1,1.1,1])
+    with col:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown("""
+        <div style="text-align:center;margin-bottom:2.5rem">
+          <div style="font-family:'Outfit',sans-serif;font-size:4rem;font-weight:900;
+            background:linear-gradient(135deg,#f97316 15%,#fbbf24 55%,#34d399 100%);
+            -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+            background-clip:text;letter-spacing:-.06em;line-height:.9;margin-bottom:.7rem">Nebula</div>
+          <div style="color:#4a3020;font-size:.62rem;letter-spacing:.26em;text-transform:uppercase;font-weight:600">
+            Rede do Conhecimento Científico
+          </div>
+        </div>""", unsafe_allow_html=True)
+        t_in,t_up = st.tabs(["  🔑 Entrar  ","  ✨ Criar conta  "])
+        with t_in:
+            with st.form("login_form"):
+                email=st.text_input("E-mail",placeholder="seu@email.com",key="li_e")
+                pw=st.text_input("Senha",placeholder="••••••••",type="password",key="li_p")
+                st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+                submitted=st.form_submit_button("→  Entrar",use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+                if submitted:
+                    u=st.session_state.users.get(email)
+                    if not u: st.error("E-mail não encontrado.")
+                    elif u["password"]!=hp(pw): st.error("Senha incorreta.")
+                    elif u.get("2fa_enabled"):
+                        c=code6(); st.session_state.pending_2fa={"email":email,"code":c}
+                        st.session_state.page="2fa"; st.rerun()
+                    else:
+                        st.session_state.logged_in=True; st.session_state.current_user=email
+                        record(area_to_tags(u.get("area","")),1.0)
+                        st.session_state.page="feed"; st.rerun()
+            st.markdown('<div style="text-align:center;color:#4a3020;font-size:.69rem;margin-top:.7rem">Demo: demo@nebula.ai / demo123</div>', unsafe_allow_html=True)
+        with t_up:
+            with st.form("signup_form"):
+                n_name=st.text_input("Nome completo",key="su_n")
+                n_email=st.text_input("E-mail",key="su_e")
+                n_area=st.text_input("Área de pesquisa",key="su_a")
+                n_pw=st.text_input("Senha",type="password",key="su_p")
+                n_pw2=st.text_input("Confirmar senha",type="password",key="su_p2")
+                st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+                sub2=st.form_submit_button("✓  Criar conta",use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+                if sub2:
+                    if not all([n_name,n_email,n_area,n_pw,n_pw2]): st.error("Preencha todos os campos.")
+                    elif n_pw!=n_pw2: st.error("Senhas não coincidem.")
+                    elif len(n_pw)<6: st.error("Mínimo 6 caracteres.")
+                    elif n_email in st.session_state.users: st.error("E-mail já cadastrado.")
+                    else:
+                        c=code6(); st.session_state.pending_verify={"email":n_email,"name":n_name,"pw":hp(n_pw),"area":n_area,"code":c}
+                        st.session_state.page="verify_email"; st.rerun()
 
-# ========================= PERFIL + CONFIG =========================
-def page_profile():
-    user = guser()
+def page_verify_email():
+    pv=st.session_state.pending_verify
+    _,col,_ = st.columns([1,1.1,1])
+    with col:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="card" style="padding:2rem;text-align:center">
+          <div style="font-size:2rem;margin-bottom:.8rem;opacity:.5">✉</div>
+          <h2 style="margin-bottom:.4rem">Verifique seu e-mail</h2>
+          <p style="color:var(--t2);font-size:.82rem">Código para <strong style="color:var(--or5)">{pv['email']}</strong></p>
+          <div style="background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.18);border-radius:12px;padding:1rem;margin:1rem 0">
+            <div style="font-size:.59rem;color:var(--t3);letter-spacing:.12em;text-transform:uppercase;margin-bottom:5px;font-weight:600">Código (demo)</div>
+            <div style="font-family:'Outfit',sans-serif;font-size:2.6rem;font-weight:900;letter-spacing:.28em;color:var(--or5)">{pv['code']}</div>
+          </div>
+        </div>""", unsafe_allow_html=True)
+        with st.form("verify_form"):
+            typed=st.text_input("Código",max_chars=6,key="ev_c")
+            st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+            sub=st.form_submit_button("✓  Verificar",use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            if sub:
+                if typed.strip()==pv["code"]:
+                    st.session_state.users[pv["email"]]={"name":pv["name"],"password":pv["pw"],"bio":"","area":pv["area"],"followers":0,"following":0,"verified":True,"2fa_enabled":False,"photo_b64":None}
+                    save_db(); st.session_state.pending_verify=None
+                    st.session_state.logged_in=True; st.session_state.current_user=pv["email"]
+                    record(area_to_tags(pv["area"]),2.0); st.session_state.page="feed"; st.rerun()
+                else: st.error("Código inválido.")
+        if st.button("← Voltar",key="btn_ev_bk"): st.session_state.page="login"; st.rerun()
 
-    st.markdown("<h2 class='section-title'>Perfil & Configurações</h2>", unsafe_allow_html=True)
+def page_2fa():
+    p2=st.session_state.pending_2fa
+    _,col,_ = st.columns([1,1.1,1])
+    with col:
+        st.markdown("<br><br>", unsafe_allow_html=True)
+        st.markdown(f"""
+        <div class="card" style="padding:2rem;text-align:center">
+          <div style="font-size:2rem;margin-bottom:.8rem;opacity:.5">🔑</div>
+          <h2>Verificação 2FA</h2>
+          <div style="background:rgba(249,115,22,.08);border:1px solid rgba(249,115,22,.18);border-radius:12px;padding:.9rem;margin:1rem 0">
+            <div style="font-size:.59rem;color:var(--t3);text-transform:uppercase;letter-spacing:.10em;margin-bottom:5px;font-weight:600">Código</div>
+            <div style="font-family:'Outfit',sans-serif;font-size:2.6rem;font-weight:900;letter-spacing:.26em;color:var(--or5)">{p2['code']}</div>
+          </div>
+        </div>""", unsafe_allow_html=True)
+        with st.form("twofa_form"):
+            typed=st.text_input("Código",max_chars=6,key="fa_c",label_visibility="collapsed")
+            st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+            sub=st.form_submit_button("✓  Verificar",use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            if sub:
+                if typed.strip()==p2["code"]:
+                    st.session_state.logged_in=True; st.session_state.current_user=p2["email"]
+                    st.session_state.pending_2fa=None; st.session_state.page="feed"; st.rerun()
+                else: st.error("Código inválido.")
+        if st.button("← Voltar",key="btn_fa_bk"): st.session_state.page="login"; st.rerun()
 
-    col1, col2 = st.columns([1,3])
+# ════════════════════════════════
+# TOP NAV — compact, icon-only pills
+# ════════════════════════════════
+NAV = [
+    ("feed","🏠 Feed"),("search","🔍 Artigos"),("knowledge","🕸 Conexões"),
+    ("folders","📁 Pastas"),("analytics","📊 Análises"),("img_search","🔬 Imagem"),
+    ("chat","💬 Chat"),
+]
 
-    with col1:
-        photo = user.get("photo_b64")
+def render_topnav():
+    u=guser(); name=u.get("name","?"); photo=u.get("photo_b64")
+    in_=ini(name); cur=st.session_state.page
+    email=st.session_state.current_user; g=ugrad(email or "")
+    notif=len(st.session_state.notifications)
+    st.markdown('<div class="neb-navwrap">', unsafe_allow_html=True)
+    cols=st.columns([.9]+[.65]*len(NAV)+[.5])
+    with cols[0]:
+        st.markdown('<div class="nav-logo">', unsafe_allow_html=True)
+        if st.button("🔬 Nebula",key="nav_logo"):
+            st.session_state.profile_view=None; st.session_state.page="feed"; st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    for i,(key,label) in enumerate(NAV):
+        with cols[i+1]:
+            active=(cur==key)
+            cls="nav-pill-active" if active else "nav-pill"
+            st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
+            if st.button(label,key=f"tnav_{key}",use_container_width=True):
+                st.session_state.profile_view=None; st.session_state.page=key; st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+    with cols[-1]:
+        nb=""
+        if notif: nb=f'<div style="position:absolute;top:-1px;right:-1px;background:#ef4444;color:white;width:13px;height:13px;border-radius:50%;font-size:.46rem;display:flex;align-items:center;justify-content:center;font-weight:700;z-index:10;pointer-events:none">{notif}</div>'
+        st.markdown(f'<div style="position:relative;display:inline-block">{nb}</div>', unsafe_allow_html=True)
+        st.markdown('<div class="nav-av">', unsafe_allow_html=True)
         if photo:
-            st.markdown(f"<img src='{photo}' class='avatar-img-xl'/>", unsafe_allow_html=True)
+            st.markdown(f"""<style>.nav-av .stButton>button{{background-image:url("{photo}") !important;background-size:cover !important;background-position:center !important;color:transparent !important;font-size:0 !important}}</style>""", unsafe_allow_html=True)
+            btn_label="·"
         else:
-            st.markdown(f"<div class='avatar-xl' style='background:{ugrad(st.session_state.current_user)}'>{ini(user.get('name','J'))}</div>", unsafe_allow_html=True)
+            st.markdown(f"""<style>div[data-testid="stHorizontalBlock"]>div:last-child .nav-av .stButton>button{{background:{g} !important}}</style>""", unsafe_allow_html=True)
+            btn_label=in_
+        if st.button(btn_label,key="nav_me"):
+            st.session_state.profile_view=email; st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-        new_photo = st.file_uploader("Alterar foto", type=["png","jpg","jpeg"])
-        if new_photo:
-            st.session_state.users[st.session_state.current_user]["photo_b64"] = img_to_b64(new_photo)
-            save_db()
-            st.success("Foto atualizada")
+# ════════════════════════════════
+# PROFILE + SETTINGS (merged)
+# ════════════════════════════════
+def page_profile(target_email):
+    tu=st.session_state.users.get(target_email,{})
+    if not tu:
+        st.error("Perfil não encontrado.")
+        if st.button("← Voltar",key="bk_err"): st.session_state.profile_view=None; st.rerun()
+        return
+    tname=tu.get("name","?"); tin=ini(tname); tphoto=tu.get("photo_b64")
+    email=st.session_state.current_user; is_me=(email==target_email)
+    is_fol=target_email in st.session_state.followed
+    user_posts=[p for p in st.session_state.feed_posts if p.get("author_email")==target_email]
+    liked_posts=[p for p in st.session_state.feed_posts if target_email in p.get("liked_by",[])]
+    total_likes=sum(p["likes"] for p in user_posts); g=ugrad(target_email)
+    if st.button("← Voltar",key="back_prof"): st.session_state.profile_view=None; st.rerun()
+    photo_html=f'<img src="{tphoto}"/>' if tphoto else f'<span style="font-size:1.85rem;font-family:Outfit,sans-serif">{tin}</span>'
+    v_badge='<span style="font-size:.68rem;color:var(--gr4);margin-left:5px">✓</span>' if tu.get("verified") else ""
+    st.markdown(f"""
+    <div class="prof-hero">
+      <div class="prof-photo" style="background:{g}">{photo_html}</div>
+      <div style="flex:1;z-index:1">
+        <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:.25rem">
+          <h1 style="margin:0">{tname}</h1>{v_badge}
+        </div>
+        <div style="color:var(--or5);font-size:.82rem;margin-bottom:.4rem;font-weight:600">{tu.get("area","")}</div>
+        <div style="color:var(--t2);font-size:.80rem;line-height:1.65;margin-bottom:.85rem;max-width:540px">{tu.get("bio","Sem biografia.")}</div>
+        <div style="display:flex;gap:1.8rem;flex-wrap:wrap">
+          <div><span style="font-family:Outfit,sans-serif;font-weight:800;font-size:1.05rem">{tu.get("followers",0)}</span><span style="color:var(--t3);font-size:.70rem"> seguidores</span></div>
+          <div><span style="font-family:Outfit,sans-serif;font-weight:800;font-size:1.05rem">{tu.get("following",0)}</span><span style="color:var(--t3);font-size:.70rem"> seguindo</span></div>
+          <div><span style="font-family:Outfit,sans-serif;font-weight:800;font-size:1.05rem">{len(user_posts)}</span><span style="color:var(--t3);font-size:.70rem"> pesquisas</span></div>
+          <div><span style="font-family:Outfit,sans-serif;font-weight:800;font-size:1.05rem">{fmt_num(total_likes)}</span><span style="color:var(--t3);font-size:.70rem"> curtidas</span></div>
+        </div>
+      </div>
+    </div>""", unsafe_allow_html=True)
 
-    with col2:
-        name = st.text_input("Nome", value=user.get("name",""))
-        area = st.text_input("Área", value=user.get("area",""))
-        bio = st.text_area("Bio", value=user.get("bio",""))
+    if not is_me:
+        c1,c2,_=st.columns([1,1,3])
+        with c1:
+            if st.button("✓ Seguindo" if is_fol else "+ Seguir",key="pf_fol",use_container_width=True):
+                if is_fol: st.session_state.followed.remove(target_email); tu["followers"]=max(0,tu.get("followers",0)-1)
+                else: st.session_state.followed.append(target_email); tu["followers"]=tu.get("followers",0)+1
+                save_db(); st.rerun()
+        with c2:
+            if st.button("💬 Mensagem",key="pf_chat",use_container_width=True):
+                if target_email not in st.session_state.chat_messages: st.session_state.chat_messages[target_email]=[]
+                st.session_state.active_chat=target_email; st.session_state.page="chat"; st.rerun()
+        # Tabs for other user: posts + liked
+        tab_posts,tab_liked=st.tabs([f"  📝 Pesquisas ({len(user_posts)})  ",f"  ❤️ Curtidas ({len(liked_posts)})  "])
+        with tab_posts:
+            if user_posts:
+                for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="profile",show_author=False)
+            else: st.markdown('<div class="card" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa publicada.</div>', unsafe_allow_html=True)
+        with tab_liked:
+            if liked_posts:
+                for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="prof_liked",compact=True)
+            else: st.markdown('<div class="card" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma curtida.</div>', unsafe_allow_html=True)
+    else:
+        # MY PROFILE — merged with settings
+        d=st.session_state.stats_data
+        tab_posts,tab_liked,tab_edit,tab_sec,tab_saved=st.tabs([
+            f"  📝 Pesquisas ({len(user_posts)})  ",
+            f"  ❤️ Curtidas ({len(liked_posts)})  ",
+            "  ✏️ Editar Perfil  ",
+            "  🔐 Segurança  ",
+            f"  🔖 Salvos ({len(st.session_state.saved_articles)})  ",
+        ])
+        with tab_posts:
+            if user_posts:
+                for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="myprof",show_author=False)
+            else: st.markdown('<div class="card" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa publicada.</div>', unsafe_allow_html=True)
+        with tab_liked:
+            if liked_posts:
+                for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="mylk",compact=True)
+            else: st.markdown('<div class="card" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma curtida.</div>', unsafe_allow_html=True)
+        with tab_edit:
+            ph=st.file_uploader("📷 Foto de perfil",type=["png","jpg","jpeg","webp"],key="ph_up")
+            if ph:
+                b64=img_to_b64(ph)
+                if b64: st.session_state.users[email]["photo_b64"]=b64; save_db(); st.success("✓ Foto atualizada!"); st.rerun()
+            new_n=st.text_input("Nome completo",value=tu.get("name",""),key="cfg_n")
+            new_a=st.text_input("Área de pesquisa",value=tu.get("area",""),key="cfg_a")
+            new_b=st.text_area("Biografia",value=tu.get("bio",""),key="cfg_b",height=88)
+            c_save,c_out=st.columns(2)
+            with c_save:
+                st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+                if st.button("💾 Salvar",key="btn_sp",use_container_width=True):
+                    st.session_state.users[email]["name"]=new_n
+                    st.session_state.users[email]["area"]=new_a
+                    st.session_state.users[email]["bio"]=new_b
+                    save_db(); record(area_to_tags(new_a),1.5); st.success("✓ Perfil salvo!"); st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            with c_out:
+                st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
+                if st.button("🚪 Sair",key="btn_logout",use_container_width=True):
+                    st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown("<hr>", unsafe_allow_html=True)
+            # Quick stats
+            c1,c2,c3=st.columns(3)
+            with c1: st.markdown(f'<div class="mbox"><div class="mval">{d.get("h_index",4)}</div><div class="mlbl">Índice H</div></div>', unsafe_allow_html=True)
+            with c2: st.markdown(f'<div class="mbox"><div class="mval">{d.get("fator_impacto",3.8):.1f}</div><div class="mlbl">Fator Impacto</div></div>', unsafe_allow_html=True)
+            with c3: st.markdown(f'<div class="mbox"><div class="mval-green">{sum(p["likes"] for p in user_posts)}</div><div class="mlbl">Curtidas Totais</div></div>', unsafe_allow_html=True)
+            new_h=st.number_input("Índice H",0,200,d.get("h_index",4),key="e_h")
+            new_fi=st.number_input("Fator de impacto",0.0,100.0,float(d.get("fator_impacto",3.8)),step=0.1,key="e_fi")
+            if st.button("💾 Salvar métricas",key="btn_save_m"):
+                d.update({"h_index":new_h,"fator_impacto":new_fi}); st.success("✓ Salvo!")
+        with tab_sec:
+            st.markdown('<h3 style="margin-bottom:.9rem">🔑 Alterar senha</h3>', unsafe_allow_html=True)
+            with st.form("change_pw_form"):
+                op=st.text_input("Senha atual",type="password",key="op")
+                np_=st.text_input("Nova senha",type="password",key="np_")
+                np2=st.text_input("Confirmar",type="password",key="np2")
+                if st.form_submit_button("🔑 Alterar"):
+                    if hp(op)!=tu.get("password",""): st.error("Senha atual incorreta.")
+                    elif np_!=np2: st.error("Não coincidem.")
+                    elif len(np_)<6: st.error("Mínimo 6 caracteres.")
+                    else: st.session_state.users[email]["password"]=hp(np_); save_db(); st.success("✓ Alterada!")
+            st.markdown("<hr>", unsafe_allow_html=True)
+            en=tu.get("2fa_enabled",False)
+            st.markdown(f'<div class="card" style="padding:.9rem 1.2rem;display:flex;align-items:center;justify-content:space-between;margin-bottom:.9rem"><div><div style="font-weight:700;font-size:.87rem">🔐 2FA — {"<span style=\'color:var(--gr4)\'>Ativo</span>" if en else "<span style=\'color:var(--err)\'>Inativo</span>"}</div><div style="font-size:.69rem;color:var(--t3)">{email}</div></div></div>', unsafe_allow_html=True)
+            if st.button("✕ Desativar 2FA" if en else "✓ Ativar 2FA",key="btn_2fa"):
+                st.session_state.users[email]["2fa_enabled"]=not en; save_db(); st.rerun()
+            st.markdown("<hr>", unsafe_allow_html=True)
+            prots=[("🔒 AES-256","Criptografia end-to-end"),("🔏 SHA-256","Hash de senhas"),("🛡 TLS 1.3","Transmissão segura")]
+            for n2,d2 in prots:
+                st.markdown(f'<div style="display:flex;align-items:center;gap:10px;background:rgba(16,185,129,.05);border:1px solid rgba(16,185,129,.13);border-radius:10px;padding:10px;margin-bottom:7px"><div style="width:26px;height:26px;border-radius:7px;background:rgba(16,185,129,.10);display:flex;align-items:center;justify-content:center;color:var(--gr4);font-size:.75rem;flex-shrink:0">✓</div><div><div style="font-weight:600;color:var(--gr4);font-size:.80rem">{n2}</div><div style="font-size:.68rem;color:var(--t3)">{d2}</div></div></div>', unsafe_allow_html=True)
+        with tab_saved:
+            if st.session_state.saved_articles:
+                for idx,a in enumerate(st.session_state.saved_articles):
+                    render_web_article(a,idx=idx+3000,ctx="saved")
+                    uid=re.sub(r'[^a-zA-Z0-9]','',f"rm_{a.get('doi','nd')}_{idx}")[:30]
+                    st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
+                    if st.button("🗑 Remover",key=f"rms_{uid}"):
+                        st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]
+                        save_db(); st.toast("Removido!"); st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="card" style="padding:2.5rem;text-align:center;color:var(--t3)">Nenhum artigo salvo.</div>', unsafe_allow_html=True)
 
-        if st.button("Salvar alterações"):
-            st.session_state.users[st.session_state.current_user].update({
-                "name": name,
-                "area": area,
-                "bio": bio
-            })
-            save_db()
-            st.success("Perfil atualizado")
+# ════════════════════════════════
+# POST CARD
+# ════════════════════════════════
+def render_post(post, ctx="feed", show_author=True, compact=False):
+    email=st.session_state.current_user; pid=post["id"]
+    liked=email in post.get("liked_by",[]); saved=email in post.get("saved_by",[])
+    aemail=post.get("author_email",""); aphoto=get_photo(aemail)
+    ain=post.get("avatar","??"); aname=post.get("author","?"); aarea=post.get("area","")
+    dt=time_ago(post.get("date","")); views=post.get("views",200)
+    abstract=post.get("abstract","")
+    if compact and len(abstract)>200: abstract=abstract[:200]+"…"
+    g=ugrad(aemail)
+    if show_author:
+        av_html=(f'<div class="av" style="width:40px;height:40px;background:{g};font-size:12px"><img src="{aphoto}"/></div>'
+                 if aphoto else f'<div class="av" style="width:40px;height:40px;background:{g};font-size:12px">{ain}</div>')
+        v_mark=' <span style="font-size:.58rem;color:var(--gr4)">✓</span>' if st.session_state.users.get(aemail,{}).get("verified") else ""
+        header=(f'<div style="padding:.85rem 1.15rem .6rem;display:flex;align-items:center;gap:9px;border-bottom:1px solid rgba(249,115,22,.06)">'
+                f'{av_html}'
+                f'<div style="flex:1;min-width:0">'
+                f'<div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.86rem">{aname}{v_mark}</div>'
+                f'<div style="color:var(--t3);font-size:.65rem;margin-top:1px">{aarea} · {dt}</div>'
+                f'</div>{badge(post["status"])}</div>')
+    else:
+        header=(f'<div style="padding:.4rem 1.15rem .2rem;display:flex;justify-content:space-between;align-items:center">'
+                f'<span style="color:var(--t3);font-size:.65rem">{dt}</span>{badge(post["status"])}</div>')
+    st.markdown(
+        f'<div class="post">{header}'
+        f'<div style="padding:.7rem 1.15rem">'
+        f'<div style="font-family:Outfit,sans-serif;font-size:.95rem;font-weight:700;margin-bottom:.35rem;line-height:1.4;color:var(--t0)">{post["title"]}</div>'
+        f'<div style="color:var(--t2);font-size:.80rem;line-height:1.65;margin-bottom:.55rem">{abstract}</div>'
+        f'<div>{tags_html(post.get("tags",[]))}</div>'
+        f'</div></div>', unsafe_allow_html=True)
+    heart="❤️" if liked else "🤍"; book="🔖" if saved else "📌"
+    nc=len(post.get("comments",[]))
+    ca,cb,cc,cd,ce,cf=st.columns([1.1,1,.7,.6,1,1.1])
+    with ca:
+        if st.button(f"{heart} {fmt_num(post['likes'])}",key=f"lk_{ctx}_{pid}",use_container_width=True):
+            if liked: post["liked_by"].remove(email); post["likes"]=max(0,post["likes"]-1)
+            else: post["liked_by"].append(email); post["likes"]+=1; record(post.get("tags",[]),1.5)
+            save_db(); st.rerun()
+    with cb:
+        if st.button(f"💬 {nc}" if nc else "💬",key=f"cm_{ctx}_{pid}",use_container_width=True):
+            k=f"cmt_{ctx}_{pid}"; st.session_state[k]=not st.session_state.get(k,False); st.rerun()
+    with cc:
+        if st.button(book,key=f"sv_{ctx}_{pid}",use_container_width=True):
+            if saved: post["saved_by"].remove(email)
+            else: post["saved_by"].append(email)
+            save_db(); st.rerun()
+    with cd:
+        if st.button("↗",key=f"sh_{ctx}_{pid}",use_container_width=True):
+            k=f"shr_{ctx}_{pid}"; st.session_state[k]=not st.session_state.get(k,False); st.rerun()
+    with ce:
+        st.markdown(f'<div style="text-align:center;color:var(--t3);font-size:.69rem;padding:.48rem 0">👁 {fmt_num(views)}</div>', unsafe_allow_html=True)
+    with cf:
+        if show_author and aemail:
+            if st.button(f"👤 {aname.split()[0]}",key=f"vp_{ctx}_{pid}",use_container_width=True):
+                st.session_state.profile_view=aemail; st.rerun()
+    if st.session_state.get(f"shr_{ctx}_{pid}",False):
+        url=f"https://nebula.ai/post/{pid}"; te=post['title'][:50].replace(" ","%20")
+        st.markdown(
+            f'<div class="card" style="padding:.85rem 1.15rem;margin-bottom:.48rem">'
+            f'<div style="font-family:Outfit,sans-serif;font-weight:600;font-size:.80rem;margin-bottom:.6rem;color:var(--t2)">↗ Compartilhar</div>'
+            f'<div style="display:flex;gap:.45rem;flex-wrap:wrap">'
+            f'<a href="https://twitter.com/intent/tweet?text={te}" target="_blank" style="text-decoration:none"><div style="background:rgba(29,161,242,.08);border:1px solid rgba(29,161,242,.16);border-radius:8px;padding:.32rem .65rem;font-size:.70rem;color:#1da1f2">𝕏 Twitter</div></a>'
+            f'<a href="https://linkedin.com/sharing/share-offsite/?url={url}" target="_blank" style="text-decoration:none"><div style="background:rgba(10,102,194,.08);border:1px solid rgba(10,102,194,.16);border-radius:8px;padding:.32rem .65rem;font-size:.70rem;color:#0a66c2">in LinkedIn</div></a>'
+            f'<a href="https://wa.me/?text={te}%20{url}" target="_blank" style="text-decoration:none"><div style="background:rgba(37,211,102,.07);border:1px solid rgba(37,211,102,.14);border-radius:8px;padding:.32rem .65rem;font-size:.70rem;color:#25d366">📱 WhatsApp</div></a>'
+            f'</div></div>', unsafe_allow_html=True)
+    if st.session_state.get(f"cmt_{ctx}_{pid}",False):
+        comments=post.get("comments",[])
+        for c in comments:
+            c_in=ini(c["user"]); c_email=next((e for e,u in st.session_state.users.items() if u.get("name")==c["user"]),"")
+            c_photo=get_photo(c_email); c_grad=ugrad(c_email)
+            st.markdown(f'<div class="cmt"><div style="display:flex;align-items:center;gap:7px;margin-bottom:.22rem">{avh(c_in,26,c_photo,c_grad)}<span style="font-size:.74rem;font-weight:600;color:var(--or5)">{c["user"]}</span></div><div style="font-size:.78rem;color:var(--t2);line-height:1.55;padding-left:33px">{c["text"]}</div></div>', unsafe_allow_html=True)
+        nc_txt=st.text_input("",placeholder="Escreva um comentário…",key=f"ci_{ctx}_{pid}",label_visibility="collapsed")
+        if st.button("→ Enviar",key=f"cs_{ctx}_{pid}"):
+            if nc_txt:
+                uu=guser(); post["comments"].append({"user":uu.get("name","Você"),"text":nc_txt})
+                record(post.get("tags",[]),.8); save_db(); st.rerun()
 
-        st.markdown("---")
+# ════════════════════════════════
+# FEED — no stories row
+# ════════════════════════════════
+def page_feed():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    email=st.session_state.current_user; u=guser()
+    uname=u.get("name","?"); uphoto=u.get("photo_b64"); uin=ini(uname)
+    users=st.session_state.users if isinstance(st.session_state.users,dict) else {}
+    compose_open=st.session_state.get("compose_open",False)
+    col_main,col_side=st.columns([2,.9],gap="medium")
+    with col_main:
+        # Compose area
+        g=ugrad(email)
+        if compose_open:
+            av_c=(f'<div class="av" style="width:42px;height:42px;background:{g}"><img src="{uphoto}"/></div>'
+                  if uphoto else f'<div class="av" style="width:42px;height:42px;font-size:13px;background:{g}">{uin}</div>')
+            st.markdown(f'<div class="compose-card"><div style="display:flex;align-items:center;gap:9px;margin-bottom:.95rem">{av_c}<div><div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.90rem">{uname}</div><div style="font-size:.67rem;color:var(--t3)">{u.get("area","Pesquisador")}</div></div></div>', unsafe_allow_html=True)
+            np_t=st.text_input("Título *",key="np_t",placeholder="Ex: Efeitos da meditação na neuroplasticidade…")
+            np_ab=st.text_area("Resumo / Abstract *",key="np_ab",height=108,placeholder="Descreva sua pesquisa…")
+            c1c,c2c=st.columns(2)
+            with c1c: np_tg=st.text_input("Tags (vírgula)",key="np_tg",placeholder="neurociência, fMRI")
+            with c2c: np_st=st.selectbox("Status",["Em andamento","Publicado","Concluído"],key="np_st")
+            cpub,ccan=st.columns([2,1])
+            with cpub:
+                st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+                if st.button("🚀 Publicar",key="btn_pub",use_container_width=True):
+                    if not np_t or not np_ab: st.warning("Título e resumo obrigatórios.")
+                    else:
+                        tags=[t.strip() for t in np_tg.split(",") if t.strip()] if np_tg else []
+                        new_p={"id":len(st.session_state.feed_posts)+200+hash(np_t)%99,
+                               "author":uname,"author_email":email,"avatar":uin,"area":u.get("area",""),
+                               "title":np_t,"abstract":np_ab,"tags":tags,"likes":0,"comments":[],
+                               "status":np_st,"date":datetime.now().strftime("%Y-%m-%d"),
+                               "liked_by":[],"saved_by":[],"connections":tags[:3],"views":1}
+                        st.session_state.feed_posts.insert(0,new_p)
+                        record(tags,2.0); save_db(); st.session_state.compose_open=False; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            with ccan:
+                if st.button("✕ Cancelar",key="btn_cancel",use_container_width=True):
+                    st.session_state.compose_open=False; st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            av_c2=(f'<div class="av" style="width:38px;height:38px;flex-shrink:0;background:{g}"><img src="{uphoto}"/></div>'
+                   if uphoto else f'<div class="av" style="width:38px;height:38px;font-size:12px;flex-shrink:0;background:{g}">{uin}</div>')
+            avc,btnc=st.columns([.05,1],gap="small")
+            with avc: st.markdown(f'<div style="padding-top:6px">{av_c2}</div>', unsafe_allow_html=True)
+            with btnc:
+                st.markdown('<div class="compose-prompt">', unsafe_allow_html=True)
+                if st.button(f"No que você está pesquisando, {uname.split()[0]}?",key="open_compose",use_container_width=True):
+                    st.session_state.compose_open=True; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
-        st.subheader("Segurança")
-        if st.button("Gerar código 2FA"):
-            code = code6()
-            st.session_state.users[st.session_state.current_user]["2fa"] = code
-            save_db()
-            st.info(f"Código gerado: {code}")
+        # Feed filter
+        ff=st.radio("",["🌐 Todos","👥 Seguidos","🔖 Salvos","🔥 Populares"],
+                    horizontal=True,key="ff",label_visibility="collapsed")
+        # Recommendations
+        recs=get_recs(email,2)
+        if recs and "Seguidos" not in ff and "Salvos" not in ff:
+            st.markdown('<div class="dtxt"><span class="badge-rec">✨ Recomendado</span></div>', unsafe_allow_html=True)
+            for p in recs: render_post(p,ctx="rec",compact=True)
+            st.markdown('<div class="dtxt">Mais pesquisas</div>', unsafe_allow_html=True)
+        posts=list(st.session_state.feed_posts)
+        if "Seguidos" in ff: posts=[p for p in posts if p.get("author_email") in st.session_state.followed]
+        elif "Salvos" in ff: posts=[p for p in posts if email in p.get("saved_by",[])]
+        elif "Populares" in ff: posts=sorted(posts,key=lambda p:p["likes"],reverse=True)
+        else: posts=sorted(posts,key=lambda p:p.get("date",""),reverse=True)
+        if not posts:
+            st.markdown('<div class="card" style="padding:3rem;text-align:center"><div style="font-size:2rem;opacity:.2;margin-bottom:.8rem">🔬</div><div style="color:var(--t3)">Nenhuma pesquisa aqui ainda.</div></div>', unsafe_allow_html=True)
+        else:
+            for p in posts: render_post(p,ctx="feed")
 
+    with col_side:
+        # Search people
+        sq=st.text_input("",placeholder="🔍 Buscar pesquisadores…",key="ppl_s",label_visibility="collapsed")
+        st.markdown('<div class="sc">', unsafe_allow_html=True)
+        st.markdown('<div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.82rem;margin-bottom:.85rem;display:flex;justify-content:space-between"><span>Quem seguir</span><span style="font-size:.64rem;color:var(--t3);font-weight:400">Sugestões</span></div>', unsafe_allow_html=True)
+        shown_n=0
+        for ue,ud in list(users.items()):
+            if ue==email or shown_n>=5: continue
+            rname=ud.get("name","?")
+            if sq and sq.lower() not in rname.lower() and sq.lower() not in ud.get("area","").lower(): continue
+            shown_n+=1; is_fol=ue in st.session_state.followed
+            uphoto_r=ud.get("photo_b64"); uin_r=ini(rname); rg=ugrad(ue)
+            online=is_online(ue)
+            dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
+            av_r=avh(uin_r,32,uphoto_r,rg)
+            st.markdown(f'<div class="person-row">{av_r}<div style="flex:1;min-width:0"><div style="font-size:.78rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{dot}{rname}</div><div style="font-size:.62rem;color:var(--t3)">{ud.get("area","")[:22]}</div></div></div>', unsafe_allow_html=True)
+            cf_b,cv_b=st.columns(2)
+            with cf_b:
+                if st.button("✓ Seg." if is_fol else "+ Seguir",key=f"sf_{ue}",use_container_width=True):
+                    if is_fol: st.session_state.followed.remove(ue); ud["followers"]=max(0,ud.get("followers",0)-1)
+                    else: st.session_state.followed.append(ue); ud["followers"]=ud.get("followers",0)+1
+                    save_db(); st.rerun()
+            with cv_b:
+                if st.button("👤 Perfil",key=f"svr_{ue}",use_container_width=True):
+                    st.session_state.profile_view=ue; st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+        # Trending
+        st.markdown('<div class="sc">', unsafe_allow_html=True)
+        st.markdown('<div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.82rem;margin-bottom:.82rem">🔥 Em Alta</div>', unsafe_allow_html=True)
+        trending=[("Quantum ML","34"),("CRISPR 2026","28"),("Neuroplasticidade","22"),("LLMs Científicos","19"),("Matéria Escura","15")]
+        for i,(topic,cnt) in enumerate(trending):
+            color=CHART_COLORS[i]
+            st.markdown(f'<div style="padding:.38rem .32rem;border-radius:9px;margin-bottom:2px"><div style="font-size:.59rem;color:var(--t3);margin-bottom:1px">#{i+1}</div><div style="font-size:.78rem;font-weight:600;color:var(--t0)">{topic}</div><div style="font-size:.59rem;color:var(--t3)">{cnt} pesquisas</div></div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        # Notifications
+        if st.session_state.notifications:
+            st.markdown('<div class="sc">', unsafe_allow_html=True)
+            st.markdown('<div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.82rem;margin-bottom:.72rem">🔔 Atividade</div>', unsafe_allow_html=True)
+            for notif in st.session_state.notifications[:3]:
+                st.markdown(f'<div style="font-size:.71rem;color:var(--t2);padding:.32rem 0;border-bottom:1px solid var(--gb1)">· {notif}</div>', unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# ========================= PASTAS =========================
-def page_folders():
-    st.markdown("<h2 class='section-title'>Pastas de Pesquisa</h2>", unsafe_allow_html=True)
-
-    folders = st.session_state.folders.get(st.session_state.current_user, [])
-
-    new_folder = st.text_input("Nova pasta")
-    if st.button("Criar pasta"):
-        if new_folder:
-            folders.append({"name": new_folder, "files":[]})
-            st.session_state.folders[st.session_state.current_user] = folders
-            save_db()
-            st.success("Pasta criada")
-
-    for f in folders:
-        with st.expander(f["name"]):
-            up = st.file_uploader(f"Upload em {f['name']}", key=f["name"], accept_multiple_files=True)
-            if up:
-                for file in up:
-                    f["files"].append(file.name)
-                save_db()
-                st.success("Arquivos adicionados")
-
-            for file in f["files"]:
-                st.write("📄", file)
-
-
-# ========================= CHAT =========================
-def page_chat():
-    st.markdown("<h2 class='section-title'>Chat</h2>", unsafe_allow_html=True)
-
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    msg = st.text_input("Mensagem")
-    if st.button("Enviar"):
-        st.session_state.messages.append(("você", msg))
-
-    for u,m in st.session_state.messages:
-        st.markdown(f"**{u}:** {m}")
-
-
-# ========================= NAVEGAÇÃO =========================
-def navbar():
-    cols = st.columns(6)
-    pages = ["Feed","Perfil","Pastas","Chat","Conexões","Buscar"]
-
-    for i,p in enumerate(pages):
-        if cols[i].button(p):
-            st.session_state.page = p
-
-
-# ========================= MAIN =========================
-if "users" not in st.session_state:
-    st.session_state.users = {}
-if "feed_posts" not in st.session_state:
-    st.session_state.feed_posts = []
-if "folders" not in st.session_state:
-    st.session_state.folders = {}
-if "saved_articles" not in st.session_state:
-    st.session_state.saved_articles = []
-if "current_user" not in st.session_state:
-    st.session_state.current_user = "guest"
-if "page" not in st.session_state:
-    st.session_state.page = "Feed"
-
-navbar()
-
-if st.session_state.page == "Feed":
-    page_feed()
-elif st.session_state.page == "Perfil":
-    page_profile()
-elif st.session_state.page == "Pastas":
-    page_folders()
-elif st.session_state.page == "Chat":
-    page_chat()
-else:
-    page_feed() 
-# ========================= ANÁLISE DE TEXTO CIENTÍFICO =========================
-def extract_keywords(text, top_n=10):
-    words = re.findall(r'\b[a-zA-ZÀ-ÿ]{4,}\b', text.lower())
-    words = [w for w in words if w not in STOPWORDS]
-    freq = Counter(words)
-    return [w for w,_ in freq.most_common(top_n)]
-
-def extract_authors(text):
-    # padrão simples: Nomes Próprios (Capitalizados)
-    names = re.findall(r'\b[A-Z][a-z]+ [A-Z][a-z]+\b', text)
-    return list(set(names))[:10]
-
-def extract_years(text):
-    years = re.findall(r'\b(19|20)\d{2}\b', text)
-    return list(set(years))
-
-def analyze_document(text):
-    return {
-        "keywords": extract_keywords(text),
-        "authors": extract_authors(text),
-        "years": extract_years(text)
-    }
-
-
-# ========================= BUSCA DE ARTIGOS (API ARXIV SIMPLES) =========================
-def search_arxiv(query):
-    url = f"http://export.arxiv.org/api/query?search_query=all:{query}&start=0&max_results=5"
-    try:
-        res = requests.get(url, timeout=10)
-        if res.status_code != 200:
-            return []
-
-        entries = res.text.split("<entry>")
-        results = []
-
-        for e in entries[1:]:
-            title = re.search(r"<title>(.*?)</title>", e, re.S)
-            summary = re.search(r"<summary>(.*?)</summary>", e, re.S)
-            link = re.search(r"<id>(.*?)</id>", e)
-
-            results.append({
-                "title": title.group(1).strip() if title else "",
-                "summary": summary.group(1).strip()[:300] if summary else "",
-                "link": link.group(1) if link else ""
-            })
-
-        return results
-    except Exception:
-        return []
-
+# ════════════════════════════════
+# SEARCH
+# ════════════════════════════════
+def render_web_article(a, idx=0, ctx="web"):
+    src_color="var(--gr5)" if a.get("origin")=="semantic" else "var(--am5)"
+    src_name="Semantic Scholar" if a.get("origin")=="semantic" else "CrossRef"
+    cite=f" · {a['citations']} cit." if a.get("citations") else ""
+    uid=re.sub(r'[^a-zA-Z0-9]','',f"{ctx}_{idx}_{str(a.get('doi',''))[:10]}")[:32]
+    is_saved=any(s.get('doi')==a.get('doi') for s in st.session_state.saved_articles)
+    abstract=(a.get("abstract","") or "")[:260]
+    if len(a.get("abstract",""))>260: abstract+="…"
+    st.markdown(f'<div class="scard"><div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:.32rem"><div style="flex:1;font-family:Outfit,sans-serif;font-size:.88rem;font-weight:700">{a["title"]}</div><span style="font-size:.60rem;color:{src_color};background:rgba(249,115,22,.05);border-radius:7px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{src_name}</span></div><div style="color:var(--t3);font-size:.66rem;margin-bottom:.35rem">{a["authors"]} · <em>{a["source"]}</em> · {a["year"]}{cite}</div><div style="color:var(--t2);font-size:.78rem;line-height:1.62">{abstract}</div></div>', unsafe_allow_html=True)
+    ca,cb,cc=st.columns(3)
+    with ca:
+        if st.button("🔖 Salvo" if is_saved else "📌 Salvar",key=f"svw_{uid}"):
+            if is_saved: st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]; st.toast("Removido")
+            else: st.session_state.saved_articles.append(a); st.toast("Salvo!")
+            save_db(); st.rerun()
+    with cb:
+        if st.button("📋 Citar",key=f"ctw_{uid}"): st.toast(f'{a["authors"]} ({a["year"]}). {a["title"]}.')
+    with cc:
+        if a.get("url"):
+            st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:var(--or5);font-size:.78rem;text-decoration:none;line-height:2.4;display:block">↗ Abrir artigo</a>', unsafe_allow_html=True)
 
 def page_search():
-    st.markdown("<h2 class='section-title'>Buscar Artigos Científicos</h2>", unsafe_allow_html=True)
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.35rem">🔍 Busca Acadêmica</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--t3);font-size:.78rem;margin-bottom:.9rem">Semantic Scholar · CrossRef · Nebula</p>', unsafe_allow_html=True)
+    c1,c2=st.columns([4,1])
+    with c1: q=st.text_input("",placeholder="CRISPR · quantum ML · dark matter · neuroplasticity…",key="sq",label_visibility="collapsed")
+    with c2:
+        st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+        if st.button("🔍 Buscar",use_container_width=True,key="btn_s"):
+            if q:
+                with st.spinner("Buscando…"):
+                    nebula_r=[p for p in st.session_state.feed_posts if q.lower() in p["title"].lower() or q.lower() in p["abstract"].lower() or any(q.lower() in t.lower() for t in p.get("tags",[]))]
+                    ss_r=search_ss(q,6); cr_r=search_cr(q,4)
+                    st.session_state.search_results={"nebula":nebula_r,"ss":ss_r,"cr":cr_r}
+                    st.session_state.last_sq=q; record([q.lower()],.3)
+        st.markdown('</div>', unsafe_allow_html=True)
+    if st.session_state.get("search_results") and st.session_state.get("last_sq"):
+        res=st.session_state.search_results
+        neb=res.get("nebula",[]); ss=res.get("ss",[]); cr=res.get("cr",[])
+        web=ss+[x for x in cr if not any(x["title"].lower()==s["title"].lower() for s in ss)]
+        t_all,t_neb,t_web=st.tabs([f"  Todos ({len(neb)+len(web)})  ",f"  🔬 Nebula ({len(neb)})  ",f"  🌐 Internet ({len(web)})  "])
+        with t_all:
+            if neb:
+                st.markdown('<div style="font-size:.61rem;color:var(--or5);font-weight:700;margin-bottom:.45rem;letter-spacing:.09em;text-transform:uppercase">Na Nebula</div>', unsafe_allow_html=True)
+                for p in neb: render_post(p,ctx="srch_all",compact=True)
+            if web:
+                if neb: st.markdown('<hr>', unsafe_allow_html=True)
+                st.markdown('<div style="font-size:.61rem;color:var(--gr5);font-weight:700;margin-bottom:.45rem;letter-spacing:.09em;text-transform:uppercase">Bases Acadêmicas</div>', unsafe_allow_html=True)
+                for idx,a in enumerate(web): render_web_article(a,idx=idx,ctx="all_w")
+            if not neb and not web: st.info("Nenhum resultado.")
+        with t_neb:
+            for p in neb: render_post(p,ctx="srch_neb",compact=True)
+            if not neb: st.info("Nenhuma pesquisa na Nebula.")
+        with t_web:
+            for idx,a in enumerate(web): render_web_article(a,idx=idx,ctx="web_t")
+            if not web: st.info("Nenhum artigo online.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    query = st.text_input("Digite tema ou palavra-chave")
+# ════════════════════════════════
+# KNOWLEDGE
+# ════════════════════════════════
+def page_knowledge():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">🕸 Rede de Conexões</h1>', unsafe_allow_html=True)
+    email=st.session_state.current_user
+    users=st.session_state.users if isinstance(st.session_state.users,dict) else {}
+    def get_tags(ue):
+        ud=users.get(ue,{}); tags=set(area_to_tags(ud.get("area","")))
+        for p in st.session_state.feed_posts:
+            if p.get("author_email")==ue: tags.update(t.lower() for t in p.get("tags",[]))
+        return tags
+    rlist=list(users.keys()); rtags={ue:get_tags(ue) for ue in rlist}
+    edges=[]
+    for i in range(len(rlist)):
+        for j in range(i+1,len(rlist)):
+            e1,e2=rlist[i],rlist[j]; common=list(rtags[e1]&rtags[e2])
+            is_fol=e2 in st.session_state.followed or e1 in st.session_state.followed
+            if common or is_fol: edges.append((e1,e2,common[:5],len(common)+(2 if is_fol else 0)))
+    n=len(rlist); pos={}
+    for idx,ue in enumerate(rlist):
+        angle=2*3.14159*idx/max(n,1); r_d=0.36+0.05*((hash(ue)%5)/4)
+        pos[ue]={"x":0.5+r_d*np.cos(angle),"y":0.5+r_d*np.sin(angle),"z":0.5+0.12*((idx%4)/3-.35)}
+    fig=go.Figure()
+    for e1,e2,common,strength in edges:
+        p1=pos[e1]; p2=pos[e2]; alpha=min(0.55,0.10+strength*0.06)
+        fig.add_trace(go.Scatter3d(x=[p1["x"],p2["x"],None],y=[p1["y"],p2["y"],None],z=[p1["z"],p2["z"],None],
+            mode="lines",line=dict(color=f"rgba(249,115,22,{alpha:.2f})",width=min(4,1+strength)),hoverinfo="none",showlegend=False))
+    ncolors=["#f97316" if ue==email else ("#34d399" if ue in st.session_state.followed else "#f59e0b") for ue in rlist]
+    nsizes=[24 if ue==email else (18 if ue in st.session_state.followed else max(12,10+sum(1 for e1,e2,_,__ in edges if e1==ue or e2==ue))) for ue in rlist]
+    ntext=[users.get(ue,{}).get("name","?").split()[0] for ue in rlist]
+    nhover=[f"<b>{users.get(ue,{}).get('name','?')}</b><br>{users.get(ue,{}).get('area','')}<extra></extra>" for ue in rlist]
+    fig.add_trace(go.Scatter3d(x=[pos[ue]["x"] for ue in rlist],y=[pos[ue]["y"] for ue in rlist],z=[pos[ue]["z"] for ue in rlist],
+        mode="markers+text",marker=dict(size=nsizes,color=ncolors,opacity=.9,line=dict(color="rgba(249,115,22,.12)",width=1.5)),
+        text=ntext,textposition="top center",textfont=dict(color="#7a5c44",size=9,family="Outfit"),
+        hovertemplate=nhover,showlegend=False))
+    fig.update_layout(height=430,scene=dict(xaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),yaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),zaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),bgcolor="rgba(0,0,0,0)"),paper_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=0,t=0,b=0))
+    st.plotly_chart(fig,use_container_width=True)
+    c1,c2,c3,c4=st.columns(4)
+    for col,(v,l) in zip([c1,c2,c3,c4],[(len(rlist),"Pesquisadores"),(len(edges),"Conexões"),(len(st.session_state.followed),"Seguindo"),(len(st.session_state.feed_posts),"Pesquisas")]):
+        with col: st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+    tab_map,tab_mine,tab_all=st.tabs(["  🗺 Mapa  ","  🔗 Minhas Conexões  ","  👥 Todos  "])
+    with tab_map:
+        for e1,e2,common,strength in sorted(edges,key=lambda x:-x[3])[:20]:
+            n1=users.get(e1,{}); n2=users.get(e2,{})
+            ts=tags_html(common[:4]) if common else '<span style="color:var(--t3);font-size:.68rem">seguimento</span>'
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span style="font-size:.80rem;font-weight:700;font-family:Outfit,sans-serif;color:var(--or5)">{n1.get("name","?")}</span><span style="color:var(--t3)">↔</span><span style="font-size:.80rem;font-weight:700;font-family:Outfit,sans-serif;color:var(--or5)">{n2.get("name","?")}</span><div style="flex:1">{ts}</div><span style="font-size:.65rem;color:var(--gr5);font-weight:700">{strength}pt</span></div></div>', unsafe_allow_html=True)
+    with tab_mine:
+        my_conn=[(e1,e2,c,s) for e1,e2,c,s in edges if e1==email or e2==email]
+        if not my_conn: st.info("Siga pesquisadores e publique pesquisas.")
+        for e1,e2,common,strength in sorted(my_conn,key=lambda x:-x[3]):
+            other=e2 if e1==email else e1; od=users.get(other,{}); og=ugrad(other)
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">{avh(ini(od.get("name","?")),36,get_photo(other),og)}<div style="flex:1"><div style="font-weight:700;font-size:.84rem;font-family:Outfit,sans-serif">{od.get("name","?")}</div><div style="font-size:.68rem;color:var(--t3)">{od.get("area","")}</div></div>{tags_html(common[:3])}</div></div>', unsafe_allow_html=True)
+            cv,cm_b,_=st.columns([1,1,4])
+            with cv:
+                if st.button("👤 Perfil",key=f"kv_{other}",use_container_width=True): st.session_state.profile_view=other; st.rerun()
+            with cm_b:
+                if st.button("💬 Chat",key=f"kc_{other}",use_container_width=True):
+                    if other not in st.session_state.chat_messages: st.session_state.chat_messages[other]=[]
+                    st.session_state.active_chat=other; st.session_state.page="chat"; st.rerun()
+    with tab_all:
+        sq2=st.text_input("",placeholder="🔍 Buscar…",key="all_s",label_visibility="collapsed")
+        for ue,ud in users.items():
+            if ue==email: continue
+            rn=ud.get("name","?"); uarea=ud.get("area","")
+            if sq2 and sq2.lower() not in rn.lower() and sq2.lower() not in uarea.lower(): continue
+            is_fol=ue in st.session_state.followed; rg=ugrad(ue)
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{avh(ini(rn),36,get_photo(ue),rg)}<div style="flex:1"><div style="font-size:.84rem;font-weight:700;font-family:Outfit,sans-serif">{rn}</div><div style="font-size:.68rem;color:var(--t3)">{uarea}</div></div></div></div>', unsafe_allow_html=True)
+            ca2,cb2,cc2=st.columns(3)
+            with ca2:
+                if st.button("👤 Perfil",key=f"av_{ue}",use_container_width=True): st.session_state.profile_view=ue; st.rerun()
+            with cb2:
+                if st.button("✓ Seguindo" if is_fol else "+ Seguir",key=f"af_{ue}",use_container_width=True):
+                    if is_fol: st.session_state.followed.remove(ue); ud["followers"]=max(0,ud.get("followers",0)-1)
+                    else: st.session_state.followed.append(ue); ud["followers"]=ud.get("followers",0)+1
+                    save_db(); st.rerun()
+            with cc2:
+                if st.button("💬 Chat",key=f"ac_{ue}",use_container_width=True):
+                    if ue not in st.session_state.chat_messages: st.session_state.chat_messages[ue]=[]
+                    st.session_state.active_chat=ue; st.session_state.page="chat"; st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    if st.button("Buscar"):
-        results = search_arxiv(query)
+# ════════════════════════════════
+# FOLDERS
+# ════════════════════════════════
+def render_document_analysis(fname, analysis, research_area=""):
+    if not analysis: return
+    kws=analysis.get("keywords",[]); topics=analysis.get("topics",{})
+    authors=analysis.get("authors",[]); years=analysis.get("years",[])
+    refs=analysis.get("references",[]); refs_online=analysis.get("references_online",[])
+    strengths_a=analysis.get("strengths",[]); improvements=analysis.get("improvements",[])
+    rel=analysis.get("relevance_score",0); wq=analysis.get("writing_quality",0)
+    rt=analysis.get("reading_time",0); wc=analysis.get("word_count",0)
+    sc=analysis.get("sentence_complexity",0); cf=analysis.get("concept_frequency",{})
+    prog_color="#10b981" if rel>=70 else ("#f59e0b" if rel>=45 else "#ef4444")
+    wq_color="#10b981" if wq>=70 else ("#f59e0b" if wq>=45 else "#ef4444")
+    wq_label="Excelente" if wq>=80 else ("Boa" if wq>=60 else ("Regular" if wq>=40 else "Básica"))
+    st.markdown(f'''
+    <div class="abox">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:9px;margin-bottom:.55rem">
+        <div style="flex:1">
+          <div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.88rem;margin-bottom:.28rem">{fname}</div>
+          <div style="font-size:.78rem;color:var(--t2);line-height:1.62">{analysis.get("summary","")}</div>
+        </div>
+        <div style="display:flex;gap:.75rem;flex-shrink:0">
+          <div style="text-align:center"><div style="font-family:Outfit,sans-serif;font-size:1.2rem;font-weight:800;color:{prog_color}">{rel}%</div><div style="font-size:.57rem;color:var(--t3);text-transform:uppercase;letter-spacing:.07em">Relevância</div></div>
+          <div style="text-align:center"><div style="font-family:Outfit,sans-serif;font-size:1.2rem;font-weight:800;color:{wq_color}">{wq}%</div><div style="font-size:.57rem;color:var(--t3);text-transform:uppercase;letter-spacing:.07em">Qualidade</div></div>
+        </div>
+      </div>
+      {prog_bar(rel,prog_color)}
+      <div style="display:flex;gap:1.1rem;flex-wrap:wrap;margin-top:.45rem;font-size:.65rem;color:var(--t3)">
+        <span>📖 ~{rt} min</span><span>📝 {wc} palavras</span><span>🔑 {len(kws)} keywords</span>
+        <span>📚 {len(refs)} refs</span><span>✍️ <strong style="color:{wq_color}">{wq_label}</strong></span>
+        <span>📐 {sc:.1f} pal/frase</span>
+      </div>
+    </div>''', unsafe_allow_html=True)
+    tab_kw,tab_topics,tab_authors,tab_refs,tab_improve=st.tabs(["  🔑 Keywords  ","  🎯 Temas  ","  👤 Autores  ","  📚 Refs  ","  ✨ Melhorias  "])
+    with tab_kw:
+        if kws:
+            weights=[max(1,25-i) for i in range(len(kws))]
+            fig=go.Figure(go.Bar(x=weights[:20],y=kws[:20],orientation='h',
+                marker=dict(color=weights[:20],colorscale=[[0,"#0e0c0a"],[.4,"#ea580c"],[.7,"#f59e0b"],[1,"#34d399"]],line=dict(color="#0e0c0a",width=1)),
+                text=kws[:20],textposition='inside',textfont=dict(color='white',size=9)))
+            layout={**pc(),'height':max(310,len(kws[:20])*17),'yaxis':dict(showticklabels=False),'title':dict(text="TF-IDF Keywords",font=dict(color=var_t1(),family="Outfit",size=12))}
+            fig.update_layout(**layout)
+            st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
+            st.plotly_chart(fig,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            st.markdown(tags_html(kws[:25]), unsafe_allow_html=True)
+        else: st.info("Palavras-chave não extraídas.")
+    with tab_topics:
+        if topics:
+            fig_pie=go.Figure(go.Pie(labels=list(topics.keys()),values=list(topics.values()),hole=0.50,
+                marker=dict(colors=CHART_COLORS[:len(topics)],line=dict(color=["#0e0c0a"]*15,width=2)),
+                textfont=dict(color="white",size=9),hoverinfo="label+percent"))
+            fig_pie.update_layout(height=290,title=dict(text="Distribuição Temática",font=dict(color=var_t1(),family="Outfit",size=12)),paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",legend=dict(font=dict(color="#7a5c44",size=9)),margin=dict(l=0,r=0,t=38,b=0))
+            st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
+            st.plotly_chart(fig_pie,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            for i,(topic,score) in enumerate(list(topics.items())[:8]):
+                pct=min(100,score*20); color=CHART_COLORS[i%len(CHART_COLORS)]
+                st.markdown(f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:.38rem"><span style="font-size:.76rem;color:var(--t2);width:185px;flex-shrink:0">{topic}</span><div style="flex:1">{prog_bar(pct,color)}</div><span style="font-size:.68rem;color:var(--t3);width:26px;text-align:right">{score}</span></div>', unsafe_allow_html=True)
+        else: st.info("Análise temática não disponível.")
+    with tab_authors:
+        if authors:
+            for author in authors:
+                g_a=ugrad(author)
+                st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid var(--gb1)"><div style="width:26px;height:26px;border-radius:50%;background:{g_a};display:flex;align-items:center;justify-content:center;font-size:.63rem;font-weight:700;color:white;flex-shrink:0">{ini(author)}</div><span style="font-size:.80rem;color:var(--t1)">{author}</span></div>', unsafe_allow_html=True)
+        else: st.markdown('<div style="color:var(--t3);font-size:.77rem">Nenhum autor identificado.</div>', unsafe_allow_html=True)
+        if years:
+            yl=[y for y,_ in years[:8]]; yv=[c for _,c in years[:8]]
+            fig_y=go.Figure(go.Bar(x=yl,y=yv,marker=dict(color=yv,colorscale=[[0,"#0e0c0a"],[.5,"#ea580c"],[1,"#fbbf24"]]),text=yv,textposition="outside",textfont=dict(color="#7a5c44",size=9)))
+            fig_y.update_layout(height=185,title=dict(text="Anos Citados",font=dict(color=var_t1(),family="Outfit",size=11)),**pc())
+            st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
+            st.plotly_chart(fig_y,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+    with tab_refs:
+        if refs:
+            st.markdown(f'<div style="font-size:.61rem;color:var(--t3);text-transform:uppercase;letter-spacing:.09em;margin-bottom:.55rem;font-weight:600">{len(refs)} Referências</div>', unsafe_allow_html=True)
+            for r in refs[:12]: st.markdown(f'<div class="ref-item">· {r}</div>', unsafe_allow_html=True)
+        else: st.markdown('<div style="color:var(--t3);font-size:.77rem">Nenhuma referência estruturada.</div>', unsafe_allow_html=True)
+        if refs_online:
+            st.markdown('<div class="dtxt">Artigos Relacionados Online</div>', unsafe_allow_html=True)
+            for i,ref in enumerate(refs_online[:5]):
+                url_html=f'<a href="{ref["url"]}" target="_blank" style="color:var(--or5);text-decoration:none;font-size:.70rem">↗ Abrir</a>' if ref.get("url") else ""
+                st.markdown(f'<div class="scard"><div style="font-family:Outfit,sans-serif;font-size:.84rem;font-weight:700;margin-bottom:.28rem">{ref["title"]}</div><div style="color:var(--t3);font-size:.65rem;margin-bottom:.28rem">{ref["authors"]} · {ref["year"]}</div><div style="color:var(--t2);font-size:.76rem;line-height:1.58">{ref["abstract"][:175]}…</div><div style="margin-top:.3rem">{url_html}</div></div>', unsafe_allow_html=True)
+    with tab_improve:
+        wq_color2="#10b981" if wq>=70 else ("#f59e0b" if wq>=45 else "#ef4444")
+        st.markdown(f'<div class="pbox"><div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.83rem;margin-bottom:.65rem;color:var(--gr5)">📊 Qualidade de Escrita</div><div style="font-size:.74rem;color:var(--t2);margin-bottom:.7rem">Qualidade: <strong style="color:{wq_color2}">{wq}% — {wq_label}</strong> · Complexidade: <strong>{sc:.1f} pal/frase</strong></div>{prog_bar(wq,wq_color2)}</div>', unsafe_allow_html=True)
+        if strengths_a:
+            st.markdown('<div style="font-size:.61rem;color:var(--t3);text-transform:uppercase;letter-spacing:.09em;margin-bottom:.5rem;font-weight:600">✓ Pontos Fortes</div>', unsafe_allow_html=True)
+            for s in strengths_a: st.markdown(f'<div class="str-ok">✓ {s}</div>', unsafe_allow_html=True)
+        if improvements:
+            st.markdown('<div style="font-size:.61rem;color:var(--t3);text-transform:uppercase;letter-spacing:.09em;margin:.7rem 0 .5rem;font-weight:600">→ Sugestões</div>', unsafe_allow_html=True)
+            for imp in improvements: st.markdown(f'<div class="str-imp">→ {imp}</div>', unsafe_allow_html=True)
 
-        if not results:
-            st.warning("Nenhum resultado encontrado")
+def var_t1(): return "#f0e6d8"
+
+def page_folders():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">📁 Pastas de Pesquisa</h1>', unsafe_allow_html=True)
+    email=st.session_state.current_user; u=guser(); research_area=u.get("area","")
+    c1,c2,_=st.columns([2,1.2,1.5])
+    with c1: nf_name=st.text_input("Nome da pasta",placeholder="Ex: Genômica Comparativa",key="nf_n")
+    with c2: nf_desc=st.text_input("Descrição",placeholder="Breve descrição",key="nf_d")
+    st.markdown('<div class="btn-primary" style="display:inline-block">', unsafe_allow_html=True)
+    if st.button("📁 Criar pasta",key="btn_nf"):
+        if nf_name.strip():
+            if nf_name not in st.session_state.folders:
+                st.session_state.folders[nf_name]={"desc":nf_desc,"files":[],"notes":"","analyses":{}}
+                save_db(); st.success(f"Pasta '{nf_name}' criada!"); st.rerun()
+            else: st.warning("Pasta já existe.")
+        else: st.warning("Digite um nome.")
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+    if not st.session_state.folders:
+        st.markdown('<div class="card" style="text-align:center;padding:4rem"><div style="font-size:2.2rem;opacity:.2;margin-bottom:.8rem">📁</div><div style="color:var(--t3)">Nenhuma pasta criada</div></div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True); return
+    folder_cols=st.columns(3)
+    for idx,(fname,fdata) in enumerate(list(st.session_state.folders.items())):
+        if not isinstance(fdata,dict): fdata={"files":fdata,"desc":"","notes":"","analyses":{}}; st.session_state.folders[fname]=fdata
+        files=fdata.get("files",[]); analyses=fdata.get("analyses",{})
+        all_tags=list({t for an in analyses.values() for t in an.get("keywords",[])[:3]})
+        with folder_cols[idx%3]:
+            st.markdown(f'<div class="card" style="padding:1.1rem;text-align:center;margin-bottom:.55rem"><div style="font-size:1.8rem;opacity:.45;margin-bottom:6px">📁</div><div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.92rem">{fname}</div><div style="color:var(--t3);font-size:.66rem;margin-top:2px">{fdata.get("desc","")}</div><div style="margin-top:.38rem;font-size:.68rem;color:var(--or5)">{len(files)} arquivo(s) · {len(analyses)} analisado(s)</div><div style="margin-top:.35rem">{tags_html(all_tags[:3])}</div></div>', unsafe_allow_html=True)
+    for fname,fdata in list(st.session_state.folders.items()):
+        if not isinstance(fdata,dict): fdata={"files":fdata,"desc":"","notes":"","analyses":{}}; st.session_state.folders[fname]=fdata
+        files=fdata.get("files",[]); analyses=fdata.get("analyses",{})
+        with st.expander(f"📁 {fname} — {len(files)} arquivo(s)"):
+            up=st.file_uploader("",type=None,key=f"up_{fname}",label_visibility="collapsed",accept_multiple_files=True)
+            if up:
+                for uf in up:
+                    if uf.name not in files: files.append(uf.name)
+                    if fname not in st.session_state.folder_files_bytes: st.session_state.folder_files_bytes[fname]={}
+                    uf.seek(0); st.session_state.folder_files_bytes[fname][uf.name]=uf.read()
+                fdata["files"]=files; save_db(); st.success(f"{len(up)} arquivo(s) adicionado(s)!")
+            if files:
+                for f in files:
+                    ftype=get_ftype(f); has_an=f in analyses
+                    icon={"PDF":"📄","Word":"📝","Planilha":"📊","Dados":"📈","Código Python":"🐍","Notebook":"📓","Apresentação":"📽","Imagem":"🖼","Markdown":"📋"}.get(ftype,"📄")
+                    ab='<span class="badge-pub" style="font-size:.59rem;margin-left:5px">✓</span>' if has_an else ''
+                    st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.40rem 0;border-bottom:1px solid var(--gb1)"><span style="font-size:.95rem">{icon}</span><span style="font-size:.77rem;color:var(--t2);flex:1">{f}</span>{ab}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<p style="color:var(--t3);font-size:.73rem;text-align:center;padding:.45rem">Arraste arquivos — PDF, DOCX, XLSX, CSV…</p>', unsafe_allow_html=True)
+            st.markdown('<hr>', unsafe_allow_html=True)
+            ca_btn,cb_btn,_=st.columns([1.5,1.5,2])
+            with ca_btn:
+                st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+                if st.button("🔬 Analisar",key=f"analyze_{fname}",use_container_width=True):
+                    if files:
+                        pb=st.progress(0,"Iniciando análise…")
+                        folder_bytes=st.session_state.folder_files_bytes.get(fname,{})
+                        for fi,f in enumerate(files):
+                            pb.progress((fi+1)/len(files),f"Analisando: {f[:30]}…")
+                            fbytes=folder_bytes.get(f,b""); ftype=get_ftype(f)
+                            an=analyze_document_intelligent(f,fbytes,ftype,research_area)
+                            analyses[f]=an
+                        fdata["analyses"]=analyses
+                        all_kw=list({kw for an in analyses.values() for kw in an.get("keywords",[])[:5]})
+                        if all_kw:
+                            with st.spinner("Buscando referências online…"):
+                                refs_online=search_references_online(all_kw[:6],n=5)
+                                for an in analyses.values(): an["references_online"]=refs_online
+                        save_db(); pb.empty(); st.success("✓ Análise completa!"); st.rerun()
+                    else: st.warning("Adicione arquivos antes.")
+                st.markdown('</div>', unsafe_allow_html=True)
+            with cb_btn:
+                st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
+                if st.button("🗑 Excluir",key=f"df_{fname}",use_container_width=True):
+                    del st.session_state.folders[fname]
+                    if fname in st.session_state.folder_files_bytes: del st.session_state.folder_files_bytes[fname]
+                    save_db(); st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            if analyses:
+                st.markdown('<div class="dtxt">Análises Inteligentes</div>', unsafe_allow_html=True)
+                for f,an in analyses.items():
+                    with st.expander(f"🔬 {f}"):
+                        render_document_analysis(f,an,research_area)
+            st.markdown('<hr>', unsafe_allow_html=True)
+            note=st.text_area("Notas",value=fdata.get("notes",""),key=f"note_{fname}",height=65,placeholder="Anotações…")
+            if st.button("💾 Salvar nota",key=f"sn_{fname}"):
+                fdata["notes"]=note; save_db(); st.success("✓ Nota salva!")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ════════════════════════════════
+# ANALYTICS
+# ════════════════════════════════
+def page_analytics():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">📊 Painel de Pesquisa</h1>', unsafe_allow_html=True)
+    email=st.session_state.current_user; d=st.session_state.stats_data
+    tab_f,tab_p,tab_i,tab_pr=st.tabs(["  📁 Pastas  ","  📝 Publicações  ","  📈 Impacto  ","  🎯 Interesses  "])
+    with tab_f:
+        folders=st.session_state.folders
+        if not folders:
+            st.markdown('<div class="card" style="text-align:center;padding:3rem;color:var(--t3)">Crie pastas e analise documentos.</div>', unsafe_allow_html=True)
         else:
-            for r in results:
-                st.markdown(f"""
-                <div class="post-card">
-                    <div class="post-title">{r['title']}</div>
-                    <div class="post-desc">{r['summary']}</div>
-                    <a href="{r['link']}" target="_blank">Abrir artigo</a>
-                </div>
-                """, unsafe_allow_html=True)
+            all_analyses={f:an for fd in folders.values() if isinstance(fd,dict) for f,an in fd.get("analyses",{}).items()}
+            total_files=sum(len(fd.get("files",[]) if isinstance(fd,dict) else fd) for fd in folders.values())
+            all_kws=[kw for an in all_analyses.values() for kw in an.get("keywords",[])]
+            all_topics=defaultdict(int)
+            for an in all_analyses.values():
+                for t,s in an.get("topics",{}).items(): all_topics[t]+=s
+            c1,c2,c3,c4=st.columns(4)
+            for col,(v,l) in zip([c1,c2,c3,c4],[(len(folders),"Pastas"),(total_files,"Arquivos"),(len(all_analyses),"Analisados"),(len(set(all_kws[:100])),"Keywords")]):
+                with col: st.markdown(f'<div class="mbox"><div class="mval">{v}</div><div class="mlbl">{l}</div></div>', unsafe_allow_html=True)
+            if all_topics:
+                fig_t=go.Figure(go.Bar(x=list(all_topics.values())[:8],y=list(all_topics.keys())[:8],orientation='h',marker=dict(color=CHART_COLORS[:8]),text=[str(v) for v in list(all_topics.values())[:8]],textposition="outside",textfont=dict(color="#7a5c44",size=9)))
+                layout_t={**pc(),'height':270,'yaxis':dict(showgrid=False,color="#7a5c44",tickfont=dict(size=9)),'title':dict(text="Temas",font=dict(color=var_t1(),family="Outfit",size=12))}
+                fig_t.update_layout(**layout_t)
+                st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
+                st.plotly_chart(fig_t,use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+    with tab_p:
+        my_posts=[p for p in st.session_state.feed_posts if p.get("author_email")==email]
+        if not my_posts:
+            st.markdown('<div class="card" style="text-align:center;padding:2.5rem;color:var(--t3)">Publique pesquisas para ver métricas.</div>', unsafe_allow_html=True)
+        else:
+            c1,c2,c3=st.columns(3)
+            with c1: st.markdown(f'<div class="mbox"><div class="mval">{len(my_posts)}</div><div class="mlbl">Pesquisas</div></div>', unsafe_allow_html=True)
+            with c2: st.markdown(f'<div class="mbox"><div class="mval">{sum(p["likes"] for p in my_posts)}</div><div class="mlbl">Curtidas</div></div>', unsafe_allow_html=True)
+            with c3: st.markdown(f'<div class="mbox"><div class="mval">{sum(len(p.get("comments",[])) for p in my_posts)}</div><div class="mlbl">Comentários</div></div>', unsafe_allow_html=True)
+            titles_s=[p["title"][:16]+"…" for p in my_posts]
+            fig_eng=go.Figure()
+            fig_eng.add_trace(go.Bar(name="Curtidas",x=titles_s,y=[p["likes"] for p in my_posts],marker_color=CHART_COLORS[0]))
+            fig_eng.add_trace(go.Bar(name="Comentários",x=titles_s,y=[len(p.get("comments",[])) for p in my_posts],marker_color=CHART_COLORS[2]))
+            fig_eng.update_layout(barmode="group",title=dict(text="Engajamento",font=dict(color=var_t1(),family="Outfit",size=12)),height=250,**pc(),legend=dict(font=dict(color="#7a5c44")))
+            st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
+            st.plotly_chart(fig_eng,use_container_width=True)
+            st.markdown('</div>', unsafe_allow_html=True)
+            for p in sorted(my_posts,key=lambda x:x.get("date",""),reverse=True):
+                t_s=p["title"][:55]+("…" if len(p["title"])>55 else "")
+                st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Outfit,sans-serif;font-size:.88rem;font-weight:700">{t_s}</div>{badge(p["status"])}</div><div style="font-size:.70rem;color:var(--t3);margin-top:.38rem">{p.get("date","")} · {p["likes"]} curtidas · {len(p.get("comments",[]))} comentários · {p.get("views",0)} views</div><div style="margin-top:.38rem">{tags_html(p.get("tags",[])[:4])}</div></div>', unsafe_allow_html=True)
+    with tab_i:
+        c1,c2,c3=st.columns(3)
+        with c1: st.markdown(f'<div class="mbox"><div class="mval">{d.get("h_index",4)}</div><div class="mlbl">Índice H</div></div>', unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="mbox"><div class="mval">{d.get("fator_impacto",3.8):.1f}</div><div class="mlbl">Fator de Impacto</div></div>', unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="mbox"><div class="mval-green">{len(st.session_state.saved_articles)}</div><div class="mlbl">Artigos Salvos</div></div>', unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
+        new_h=st.number_input("Índice H",0,200,d.get("h_index",4),key="e_h")
+        new_fi=st.number_input("Fator de impacto",0.0,100.0,float(d.get("fator_impacto",3.8)),step=0.1,key="e_fi")
+        new_notes=st.text_area("Notas",value=d.get("notes",""),key="e_notes",height=78)
+        if st.button("💾 Salvar métricas",key="btn_save_m"): d.update({"h_index":new_h,"fator_impacto":new_fi,"notes":new_notes}); st.success("✓ Salvo!")
+    with tab_pr:
+        prefs=st.session_state.user_prefs.get(email,{})
+        if prefs:
+            top=sorted(prefs.items(),key=lambda x:-x[1])[:14]; mx=max(s for _,s in top) if top else 1
+            cats=[t for t,_ in top[:8]]; vals=[round(s/mx*100) for _,s in top[:8]]
+            if len(cats)>=3:
+                fig_r=go.Figure(go.Scatterpolar(r=vals+[vals[0]],theta=cats+[cats[0]],fill='toself',
+                    line=dict(color="#f97316"),fillcolor="rgba(249,115,22,.13)"))
+                fig_r.update_layout(height=275,polar=dict(bgcolor="rgba(0,0,0,0)",radialaxis=dict(visible=True,gridcolor="rgba(249,115,22,.07)",color="#7a5c44",tickfont=dict(size=8)),angularaxis=dict(gridcolor="rgba(249,115,22,.07)",color="#7a5c44",tickfont=dict(size=9))),paper_bgcolor="rgba(0,0,0,0)",margin=dict(l=40,r=40,t=18,b=18))
+                st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
+                st.plotly_chart(fig_r,use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+            c1,c2=st.columns(2)
+            for i,(tag,score) in enumerate(top):
+                pct=int(score/mx*100); color=CHART_COLORS[i%len(CHART_COLORS)]
+                with (c1 if i%2==0 else c2):
+                    st.markdown(f'<div style="display:flex;justify-content:space-between;font-size:.76rem;margin-bottom:2px"><span style="color:var(--t2)">{tag}</span><span style="color:var(--or5);font-weight:600">{pct}%</span></div>{prog_bar(pct,color)}', unsafe_allow_html=True)
+        else: st.info("Interaja com pesquisas para construir seu perfil.")
+    st.markdown('</div>', unsafe_allow_html=True)
 
+# ════════════════════════════════
+# IMAGE ANALYSIS
+# ════════════════════════════════
+def page_img_search():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.35rem">🔬 Análise Visual Científica</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--t3);font-size:.78rem;margin-bottom:1.1rem">Detecta padrões, estruturas e conecta com pesquisas similares</p>', unsafe_allow_html=True)
+    col_up,col_res=st.columns([1,1.9])
+    with col_up:
+        st.markdown('<div class="card" style="padding:1.1rem">', unsafe_allow_html=True)
+        img_file=st.file_uploader("📷 Carregar Imagem",type=["png","jpg","jpeg","webp","tiff"],key="img_up")
+        if img_file: st.image(img_file,use_container_width=True,caption="Imagem carregada")
+        st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+        run=st.button("🔬 Analisar",use_container_width=True,key="btn_run")
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('<div class="ai-warn" style="margin-top:.85rem"><div style="font-size:.67rem;color:var(--am5);font-weight:700;margin-bottom:2px">⚠️ Aviso</div><div style="font-size:.64rem;color:var(--t2);line-height:1.62">Análise por algoritmos computacionais. Não substitui especialistas.</div></div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+    with col_res:
+        if run and img_file:
+            img_file.seek(0)
+            with st.spinner("Analisando…"):
+                rep=analyze_image_advanced(img_file); st.session_state.img_result=rep
+            if rep:
+                conf_c="#10b981" if rep["confidence"]>80 else ("#f59e0b" if rep["confidence"]>60 else "#ef4444")
+                st.markdown(f'''
+                <div class="abox">
+                  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:9px;margin-bottom:.5rem">
+                    <div>
+                      <div style="font-size:.59rem;color:var(--t3);letter-spacing:.09em;text-transform:uppercase;margin-bottom:3px;font-weight:600">Categoria</div>
+                      <div style="font-family:Outfit,sans-serif;font-size:1.05rem;font-weight:700;margin-bottom:3px">{rep["category"]}</div>
+                      <div style="font-size:.77rem;color:var(--t2);margin-bottom:.38rem">{rep["context"]}</div>
+                    </div>
+                    <div style="background:rgba(0,0,0,.4);border:1px solid var(--gb1);border-radius:12px;padding:.55rem .9rem;text-align:center;flex-shrink:0">
+                      <div style="font-family:Outfit,sans-serif;font-size:1.45rem;font-weight:800;color:{conf_c}">{rep["confidence"]}%</div>
+                      <div style="font-size:.57rem;color:var(--t3);text-transform:uppercase;font-weight:600">confiança</div>
+                    </div>
+                  </div>
+                  <div style="font-size:.79rem;color:var(--t2);line-height:1.65;margin-bottom:.5rem">{rep["description"]}</div>
+                  <div style="display:flex;gap:1.4rem;flex-wrap:wrap;font-size:.65rem;color:var(--t3)">
+                    <span>Material: <strong style="color:var(--t2)">{rep["material"]}</strong></span>
+                    <span>Resolução: <strong style="color:var(--t2)">{rep["size"][0]}×{rep["size"][1]}</strong></span>
+                    <span>Brilho: <strong style="color:var(--t2)">{rep["brightness"]}</strong></span>
+                  </div>
+                </div>''', unsafe_allow_html=True)
+                c1,c2,c3=st.columns(3)
+                sym_lbl="Alta" if rep["symmetry"]>0.78 else ("Média" if rep["symmetry"]>0.52 else "Baixa")
+                with c1: st.markdown(f'<div class="mbox"><div style="font-family:Outfit,sans-serif;font-size:.95rem;font-weight:700;color:var(--or5)">{rep["texture"]["complexity"]}</div><div class="mlbl">Complexidade</div></div>', unsafe_allow_html=True)
+                with c2: st.markdown(f'<div class="mbox"><div style="font-family:Outfit,sans-serif;font-size:.95rem;font-weight:700;color:var(--gr5)">{sym_lbl}</div><div class="mlbl">Simetria</div></div>', unsafe_allow_html=True)
+                with c3: st.markdown(f'<div class="mbox"><div style="font-family:Outfit,sans-serif;font-size:.95rem;font-weight:700;color:var(--am5)">{rep["lines"]["direction"]}</div><div class="mlbl">Dir. Linhas</div></div>', unsafe_allow_html=True)
+                l=rep["lines"]; s_img=l["strengths"]; max_s=max(s_img.values())+0.01
+                st.markdown('<div class="pbox"><div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.82rem;margin-bottom:.65rem;color:var(--gr5)">📐 Análise de Linhas</div>', unsafe_allow_html=True)
+                for dir_name,val in s_img.items():
+                    pct=int(val/max_s*100); is_dom=dir_name==l["direction"]
+                    color="#34d399" if is_dom else "#f97316"
+                    st.markdown(f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:.35rem"><span style="font-size:.68rem;color:{"var(--gr5)" if is_dom else "var(--t3)"};width:88px;flex-shrink:0">{"★ " if is_dom else ""}{dir_name}</span><div style="flex:1">{prog_bar(pct,color)}</div><span style="font-size:.66rem;color:var(--t3);width:34px;text-align:right">{val:.1f}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="font-size:.68rem;color:var(--t3);margin-top:.45rem">Formas: <strong style="color:var(--gr5)">{" · ".join(rep["shapes"])}</strong></div></div>', unsafe_allow_html=True)
+                rv,gv,bv=rep["color"]["r"],rep["color"]["g"],rep["color"]["b"]
+                hex_c="#{:02x}{:02x}{:02x}".format(int(rv),int(gv),int(bv))
+                pal_html="".join(f'<div style="width:26px;height:26px;border-radius:6px;background:rgb{str(p)};border:1.5px solid rgba(255,255,255,.06)"></div>' for p in rep["palette"][:7])
+                temp_str="Quente" if rep["color"]["warm"] else ("Fria" if rep["color"]["cool"] else "Neutra")
+                st.markdown(f'<div class="abox"><div style="font-family:Outfit,sans-serif;font-weight:700;font-size:.82rem;margin-bottom:.72rem">🎨 Cor & Paleta</div><div style="display:flex;gap:10px;align-items:center;margin-bottom:.8rem"><div style="width:40px;height:40px;border-radius:10px;background:{hex_c};border:1.5px solid var(--gb1);flex-shrink:0"></div><div style="font-size:.77rem;color:var(--t2);line-height:1.72">RGB: <strong>({int(rv)},{int(gv)},{int(bv)})</strong> · {hex_c.upper()}<br>Dominante: <strong>{rep["color"]["dom"]}</strong> · {temp_str} · Sat: <strong>{rep["color"]["sat"]:.0f}%</strong></div></div><div style="display:flex;gap:4px;flex-wrap:wrap">{pal_html}</div></div>', unsafe_allow_html=True)
+                if rep.get("histograms"):
+                    h=rep["histograms"]; bins_x=list(range(0,256,8))[:32]
+                    fig_h=go.Figure()
+                    fig_h.add_trace(go.Scatter(x=bins_x,y=h["r"][:32],fill='tozeroy',name='R',line=dict(color='rgba(249,115,22,.8)',width=1.5),fillcolor='rgba(249,115,22,.10)'))
+                    fig_h.add_trace(go.Scatter(x=bins_x,y=h["g"][:32],fill='tozeroy',name='G',line=dict(color='rgba(52,211,153,.8)',width=1.5),fillcolor='rgba(52,211,153,.10)'))
+                    fig_h.add_trace(go.Scatter(x=bins_x,y=h["b"][:32],fill='tozeroy',name='B',line=dict(color='rgba(96,165,250,.8)',width=1.5),fillcolor='rgba(96,165,250,.10)'))
+                    fig_h.update_layout(height=172,title=dict(text="Histograma RGB",font=dict(color=var_t1(),family="Outfit",size=11)),**pc(),legend=dict(font=dict(color="#7a5c44",size=9)),margin=dict(l=10,r=10,t=32,b=8))
+                    st.markdown('<div class="chart-glass">', unsafe_allow_html=True)
+                    st.plotly_chart(fig_h,use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+        elif not img_file:
+            st.markdown('<div class="card" style="padding:4.5rem 2rem;text-align:center"><div style="font-size:2.8rem;opacity:.18;margin-bottom:1rem">🔬</div><div style="font-family:Outfit,sans-serif;font-size:1rem;color:var(--t2)">Carregue uma imagem científica</div><div style="font-size:.74rem;color:var(--t3);margin-top:.45rem;line-height:1.9">PNG · JPG · WEBP · TIFF<br>Microscopia · Cristalografia · Fluorescência</div></div>', unsafe_allow_html=True)
+    if st.session_state.get("img_result"):
+        rep=st.session_state.img_result; st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown('<h2 style="margin-bottom:.65rem">🔗 Pesquisas Relacionadas</h2>', unsafe_allow_html=True)
+        kw=(rep.get("kw","")+" "+rep.get("category","")).lower().split(); all_terms=list(set(kw))
+        t_neb,t_fol,t_web=st.tabs(["  🔬 Na Nebula  ","  📁 Nas Pastas  ","  🌐 Internet  "])
+        with t_neb:
+            neb_r=sorted([(sum(1 for t in all_terms if len(t)>2 and t in (p.get("title","")+" "+p.get("abstract","")+" "+" ".join(p.get("tags",[]))).lower()),p) for p in st.session_state.feed_posts],key=lambda x:-x[0])
+            neb_r=[p for s,p in neb_r if s>0]
+            if neb_r:
+                for p in neb_r[:4]: render_post(p,ctx="img_neb",compact=True)
+            else: st.markdown('<div style="color:var(--t3);padding:.9rem">Nenhuma pesquisa similar.</div>', unsafe_allow_html=True)
+        with t_fol:
+            fm=[]
+            for fn,fd in st.session_state.folders.items():
+                if not isinstance(fd,dict): continue
+                fkws=list({kw for an in fd.get("analyses",{}).values() for kw in an.get("keywords",[])})
+                sc=sum(1 for t in all_terms if len(t)>2 and any(t in ft for ft in fkws))
+                if sc>0: fm.append((sc,fn,fd))
+            fm.sort(key=lambda x:-x[0])
+            if fm:
+                for _,fn,fd in fm[:4]:
+                    an_kws=list({kw for an in fd.get("analyses",{}).values() for kw in an.get("keywords",[])[:4]})
+                    st.markdown(f'<div class="img-rc"><div style="font-family:Outfit,sans-serif;font-size:.89rem;font-weight:700;margin-bottom:.28rem">📁 {fn}</div><div style="color:var(--t3);font-size:.67rem;margin-bottom:.38rem">{len(fd.get("files",[]))} arquivos</div><div>{tags_html(an_kws[:6])}</div></div>', unsafe_allow_html=True)
+            else: st.markdown('<div style="color:var(--t3);padding:.9rem">Nenhum documento relacionado.</div>', unsafe_allow_html=True)
+        with t_web:
+            ck=f"img_{rep['kw'][:40]}"
+            if ck not in st.session_state.scholar_cache:
+                with st.spinner("Buscando artigos…"):
+                    st.session_state.scholar_cache[ck]=search_ss(f"{rep['category']} {rep['object_type']} {rep['material']}",4)
+            web_r=st.session_state.scholar_cache.get(ck,[])
+            if web_r:
+                for idx,a in enumerate(web_r): render_web_article(a,idx=idx+2000,ctx="img_web")
+            else: st.markdown('<div style="color:var(--t3);padding:.9rem">Sem resultados online.</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# ========================= ANÁLISE DE IMAGEM =========================
-def analyze_image(uploaded_file):
-    image = PILImage.open(uploaded_file)
-    arr = np.array(image)
+# ════════════════════════════════
+# CHAT
+# ════════════════════════════════
+def page_chat():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">💬 Mensagens</h1>', unsafe_allow_html=True)
+    col_c,col_m=st.columns([.85,2.8])
+    email=st.session_state.current_user
+    users=st.session_state.users if isinstance(st.session_state.users,dict) else {}
+    with col_c:
+        st.markdown('<div style="font-size:.61rem;font-weight:700;color:var(--t3);letter-spacing:.09em;text-transform:uppercase;margin-bottom:.75rem">Conversas</div>', unsafe_allow_html=True)
+        shown=set()
+        for ue in st.session_state.chat_contacts:
+            if ue==email or ue in shown: continue
+            shown.add(ue); ud=users.get(ue,{}); uname=ud.get("name","?"); uin=ini(uname)
+            uphoto=ud.get("photo_b64"); ug=ugrad(ue)
+            msgs=st.session_state.chat_messages.get(ue,[])
+            last=msgs[-1]["text"][:22]+"…" if msgs and len(msgs[-1]["text"])>22 else (msgs[-1]["text"] if msgs else "Iniciar")
+            active=st.session_state.active_chat==ue; online=is_online(ue)
+            dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
+            bg="rgba(249,115,22,.11)" if active else "rgba(14,12,10,.65)"; bdr="rgba(249,115,22,.28)" if active else "var(--gb1)"
+            st.markdown(f'<div style="background:{bg};border:1px solid {bdr};border-radius:12px;padding:8px 10px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:7px">{avh(uin,30,uphoto,ug)}<div style="overflow:hidden;flex:1"><div style="font-size:.78rem;font-weight:600;font-family:Outfit,sans-serif">{dot}{uname}</div><div style="font-size:.65rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>', unsafe_allow_html=True)
+            if st.button("💬",key=f"oc_{ue}",use_container_width=True): st.session_state.active_chat=ue; st.rerun()
+        st.markdown("<hr>", unsafe_allow_html=True)
+        nc=st.text_input("",placeholder="E-mail para adicionar…",key="new_ct",label_visibility="collapsed")
+        if st.button("+ Adicionar",key="btn_add_ct",use_container_width=True):
+            if nc in users and nc!=email:
+                if nc not in st.session_state.chat_contacts: st.session_state.chat_contacts.append(nc)
+                st.rerun()
+            elif nc: st.toast("Usuário não encontrado.")
+    with col_m:
+        if st.session_state.active_chat:
+            contact=st.session_state.active_chat; cd=users.get(contact,{}); cname=cd.get("name","?"); cin=ini(cname)
+            cphoto=cd.get("photo_b64"); cg=ugrad(contact)
+            msgs=st.session_state.chat_messages.get(contact,[]); online=is_online(contact)
+            dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
+            st.markdown(f'<div style="background:var(--glass);border:1px solid var(--gb1);border-radius:14px;padding:11px 15px;margin-bottom:.9rem;display:flex;align-items:center;gap:11px"><div style="flex-shrink:0">{avh(cin,38,cphoto,cg)}</div><div style="flex:1"><div style="font-weight:700;font-size:.90rem;font-family:Outfit,sans-serif">{dot}{cname}</div><div style="font-size:.66rem;color:var(--gr4)">🔒 AES-256 ativo</div></div></div>', unsafe_allow_html=True)
+            for msg in msgs:
+                is_me=msg["from"]=="me"; cls="bme" if is_me else "bthem"
+                st.markdown(f'<div style="display:flex;{"justify-content:flex-end" if is_me else ""}"><div class="{cls}">{msg["text"]}<div style="font-size:.58rem;color:rgba(255,255,255,.20);margin-top:2px;text-align:{"right" if is_me else "left"}">{msg["time"]}</div></div></div>', unsafe_allow_html=True)
+            st.markdown("<br>", unsafe_allow_html=True)
+            c_inp,c_btn=st.columns([5,1])
+            with c_inp: nm=st.text_input("",placeholder="Escreva uma mensagem…",key=f"mi_{contact}",label_visibility="collapsed")
+            with c_btn:
+                st.markdown("<div style='height:5px'></div>", unsafe_allow_html=True)
+                if st.button("→",key=f"ms_{contact}",use_container_width=True):
+                    if nm:
+                        now=datetime.now().strftime("%H:%M")
+                        st.session_state.chat_messages.setdefault(contact,[]).append({"from":"me","text":nm,"time":now}); st.rerun()
+        else:
+            st.markdown('<div class="card" style="text-align:center;padding:5.5rem"><div style="font-size:2.2rem;opacity:.18;margin-bottom:.9rem">💬</div><div style="font-family:Outfit,sans-serif;font-size:.98rem;color:var(--t2)">Selecione uma conversa</div><div style="font-size:.72rem;color:var(--t3);margin-top:.45rem">🔒 End-to-end criptografado</div></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    avg_color = arr.mean(axis=(0,1))
-    brightness = arr.mean()
-    contrast = arr.std()
-
-    return {
-        "avg_color": avg_color,
-        "brightness": brightness,
-        "contrast": contrast
-    }
-
-def page_image_analysis():
-    st.markdown("<h2 class='section-title'>Análise de Imagem Científica</h2>", unsafe_allow_html=True)
-
-    img = st.file_uploader("Envie uma imagem", type=["png","jpg","jpeg"])
-
-    if img:
-        st.image(img, width=300)
-
-        data = analyze_image(img)
-
-        st.write("### Resultados")
-        st.write(f"Cor média RGB: {data['avg_color']}")
-        st.write(f"Brilho médio: {data['brightness']:.2f}")
-        st.write(f"Contraste: {data['contrast']:.2f}")
-
-        # histograma
-        arr = np.array(PILImage.open(img))
-        fig = go.Figure()
-        fig.add_trace(go.Histogram(x=arr[:,:,0].flatten(), name='R'))
-        fig.add_trace(go.Histogram(x=arr[:,:,1].flatten(), name='G'))
-        fig.add_trace(go.Histogram(x=arr[:,:,2].flatten(), name='B'))
-        st.plotly_chart(fig, use_container_width=True)
-
-
-# ========================= GRAFO DE CONEXÕES =========================
-def build_graph():
-    users = list(st.session_state.users.keys())
-    edges = []
-
-    for u in users:
-        for v in users:
-            if u != v and random.random() > 0.7:
-                edges.append((u,v))
-
-    return users, edges
-
-
-def page_connections():
-    st.markdown("<h2 class='section-title'>Conexões Científicas</h2>", unsafe_allow_html=True)
-
-    users, edges = build_graph()
-
-    if not users:
-        st.info("Sem usuários suficientes para gerar grafo")
-        return
-
-    pos = {}
-    angle = 2 * math.pi / len(users)
-
-    for i,u in enumerate(users):
-        pos[u] = (math.cos(i*angle), math.sin(i*angle))
-
-    edge_x = []
-    edge_y = []
-
-    for u,v in edges:
-        x0,y0 = pos[u]
-        x1,y1 = pos[v]
-        edge_x += [x0,x1,None]
-        edge_y += [y0,y1,None]
-
-    node_x = []
-    node_y = []
-    texts = []
-
-    for u,(x,y) in pos.items():
-        node_x.append(x)
-        node_y.append(y)
-        texts.append(u)
-
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(x=edge_x, y=edge_y,
-                             line=dict(width=1),
-                             hoverinfo='none',
-                             mode='lines'))
-
-    fig.add_trace(go.Scatter(x=node_x, y=node_y,
-                             mode='markers+text',
-                             text=texts,
-                             textposition="top center",
-                             marker=dict(size=20)))
-
-    st.plotly_chart(fig, use_container_width=True)
-
-
-# ========================= INTEGRAR NOVAS PÁGINAS =========================
-def router_extra_pages():
-    if st.session_state.page == "Buscar":
-        page_search()
-    elif st.session_state.page == "Imagem":
-        page_image_analysis()
-    elif st.session_state.page == "Conexões":
-        page_connections()
-# ========================= OTIMIZAÇÃO DE PERFORMANCE =========================
-st.set_option('client.showErrorDetails', False)
-
-# cache leve para evitar recarregar tudo
-@st.cache_data
-def cached_users():
-    return st.session_state.users
-
-@st.cache_data
-def cached_posts():
-    return st.session_state.feed_posts
-
-
-# ========================= CARREGAMENTO INICIAL =========================
-def init_system():
-    db = load_db()
-
-    st.session_state.users = db.get("users", {})
-    st.session_state.feed_posts = db.get("feed_posts", [])
-    st.session_state.folders = db.get("folders", {})
-    st.session_state.user_prefs = db.get("user_prefs", {})
-    st.session_state.saved_articles = db.get("saved_articles", [])
-
-    if "current_user" not in st.session_state:
-        st.session_state.current_user = "guest"
-
-    if "page" not in st.session_state:
-        st.session_state.page = "Feed"
-
-
-# ========================= MENU PRINCIPAL =========================
-def navbar_full():
-    cols = st.columns(7)
-
-    menu = ["Feed", "Perfil", "Pastas", "Chat", "Conexões", "Buscar", "Imagem"]
-
-    for i, item in enumerate(menu):
-        if cols[i].button(item, use_container_width=True):
-            st.session_state.page = item
-
-
-# ========================= ROTEADOR FINAL =========================
-def router():
-    page = st.session_state.page
-
-    if page == "Feed":
-        page_feed()
-    elif page == "Perfil":
-        page_profile()
-    elif page == "Pastas":
-        page_folders()
-    elif page == "Chat":
-        page_chat()
-    elif page == "Conexões":
-        page_connections()
-    elif page == "Buscar":
-        page_search()
-    elif page == "Imagem":
-        page_image_analysis()
-    else:
-        page_feed()
-
-
-# ========================= FOOTER =========================
-def footer():
-    st.markdown("""
-    <hr>
-    <div style='text-align:center; opacity:0.6'>
-        🔬 Nebula Research Network • Plataforma científica social
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# ========================= APP PRINCIPAL =========================
+# ════════════════════════════════
+# ROUTER
+# ════════════════════════════════
 def main():
-    init_system()
+    inject_css()
+    if not st.session_state.logged_in:
+        p=st.session_state.page
+        if p=="verify_email": page_verify_email()
+        elif p=="2fa": page_2fa()
+        else: page_login()
+        return
+    render_topnav()
+    if st.session_state.profile_view:
+        page_profile(st.session_state.profile_view); return
+    {
+        "feed":page_feed,"search":page_search,"knowledge":page_knowledge,
+        "folders":page_folders,"analytics":page_analytics,"img_search":page_img_search,
+        "chat":page_chat,
+    }.get(st.session_state.page,page_feed)()
 
-    # navbar
-    navbar_full()
-
-    # conteúdo
-    router()
-
-    # rodapé
-    footer()
-
-    # salvar banco sempre que algo mudar
-    save_db()
-
-
-# ========================= EXECUÇÃO =========================
-if __name__ == "__main__":
-    main()
+main()
