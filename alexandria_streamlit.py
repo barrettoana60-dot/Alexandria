@@ -1,6 +1,34 @@
 import subprocess, sys, os, json, hashlib, random, string, re, io, base64, time
 from datetime import datetime
 from collections import defaultdict, Counter
+
+# --- Instalação de pacotes (se necessário) ---
+# Descomente e execute se algum pacote estiver faltando
+# def _pip(*pkgs):
+#     for p in pkgs:
+#         try: subprocess.check_call([sys.executable,"-m","pip","install",p,"-q"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+#         except: pass
+
+# try: import plotly.graph_objects as go
+# except: _pip("plotly"); import plotly.graph_objects as go
+# try: import numpy as np; from PIL import Image as PILImage
+# except: _pip("pillow","numpy"); import numpy as np; from PIL import Image as PILImage
+# try: import requests
+# except: _pip("requests"); import requests
+# try: import PyPDF2
+# except: _pip("PyPDF2")
+# try: import PyPDF2
+# except: PyPDF2 = None
+# try: import openpyxl
+# except: _pip("openpyxl")
+# try: import openpyxl
+# except: openpyxl = None
+# try: import pandas as pd
+# except: _pip("pandas"); import pandas as pd
+# try: import cv2
+# except: _pip("opencv-python"); import cv2
+
+# --- Importações Essenciais (assumindo que já estão instaladas) ---
 import plotly.graph_objects as go
 import numpy as np
 from PIL import Image as PILImage
@@ -245,6 +273,7 @@ Responda APENAS em JSON puro (sem markdown):
         )
         if resp.status_code == 200:
             text = resp.json()["content"][0]["text"].strip()
+            # CORREÇÃO: Fechar a string literal corretamente
             text = re.sub(r'^```json\s*', '', text)
             text = re.sub(r'\s*```
 
@@ -525,8 +554,9 @@ Responda APENAS em JSON puro (sem markdown):
         )
         if resp.status_code == 200:
             text = resp.json()["content"][0]["text"].strip()
+            # CORREÇÃO: Fechar a string literal corretamente
             text = re.sub(r'^```json\s*', '', text)
-            text = re.sub(r'\s*```INNERCHAT_CB_qez46ih7j#x27;, '', text)
+            text = re.sub(r'\s*```INNERCHAT_CB_adx13cptr#x27;, '', text)
             return json.loads(text), None
         return None, f"HTTP {resp.status_code}"
     except Exception as e:
@@ -1284,15 +1314,15 @@ def avh(initials,sz=40,grad=None):
 def tags_html(tags): return ' '.join(f'<span class="tag">{t}</span>' for t in(tags or []))
 
 def badge(s):
-    m={"Publicado":"badge-grn","Concluído":"badge-pur"}
+    m={"Em andamento":"badge-yel","Publicado":"badge-grn","Concluído":"badge-pur"}
     return f'<span class="{m.get(s,"badge-yel")}">{s}</span>'
 
 def pc_dark():
     return dict(plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#6B6F88",family="DM Sans",size=11),
+                font=dict(color="var(--t3)",family="DM Sans",size=11),
                 margin=dict(l=10,r=10,t=38,b=10),
-                xaxis=dict(showgrid=False,color="#6B6F88",tickfont=dict(size=10)),
-                yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",color="#6B6F88",tickfont=dict(size=10)))
+                xaxis=dict(showgrid=False,color="var(--t3)",tickfont=dict(size=10)),
+                yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",color="var(--t3)",tickfont=dict(size=10)))
 
 # ═══════════════════════════════════════════════
 #  AUTH
@@ -1331,6 +1361,7 @@ def page_login():
                 if s2:
                     if not all([nn,ne,na,np_,np2]): st.error("Preencha todos os campos.")
                     elif np_!=np2: st.error("Senhas não coincidem.")
+                    elif len(np_)<6: st.error("Senha deve ter no mínimo 6 caracteres.")
                     elif ne in st.session_state.users: st.error("E-mail já cadastrado.")
                     else:
                         st.session_state.users[ne]={"name":nn,"password":hp(np_),"bio":"","area":na,"followers":0,"following":0,"verified":True,"2fa_enabled":False}
@@ -1365,225 +1396,233 @@ def render_nav():
                 # Use :nth-of-type targeting the button within sidebar
                 active_styles += (
                     f'section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]'
-                    f' > [data-testid="stVerticalBlock"]:nth-child({i+2})' # Ajustado o nth-child
-                    f' .stButton>button{{'
-                    f'color:{c}!important;-webkit-text-fill-color:{c}!important;'
-                    f'background:var(--bg)!important;' # Fundo ativo mais escuro
-                    f'border-color:{c}40!important;'
-                    f'font-weight:700!important;}}'
+                    f' > [data-testid="stVerticalBlock"]:nth-of-type(2) > div > div > div:nth-child({i+1}) .stButton > button {{'
+                    f'  background: linear-gradient(135deg, {c}, {c}50)!important;'
+                    f'  border-color: {c}!important;'
+                    f'  color: var(--t0)!important;'
+                    f'  -webkit-text-fill-color: var(--t0)!important;'
+                    f'  box-shadow: 0 0 12px {c}30!important;'
+                    f'}}'
+                    f'section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]'
+                    f' > [data-testid="stVerticalBlock"]:nth-of-type(2) > div > div > div:nth-child({i+1}) .stButton > button:hover {{'
+                    f'  background: linear-gradient(135deg, {c}, {c}70)!important;'
+                    f'}}'
                 )
-
-        if active_styles:
-            st.markdown(f'<style>{active_styles}</style>', unsafe_allow_html=True)
+        st.markdown(f"<style>{active_styles}</style>", unsafe_allow_html=True)
 
         for key, label, col in NAV:
-            if st.button(label, key=f"sb_{key}", use_container_width=True):
-                st.session_state.profile_view = None
+            if st.button(label, key=f"nav_{key}"):
                 st.session_state.page = key
+                st.session_state.profile_view = None
                 st.rerun()
 
         st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown('<div class="sb-lbl">API Key</div>', unsafe_allow_html=True)
-        ak = st.text_input("", placeholder="sk-ant-...", type="password", key="sb_apikey",
-                           label_visibility="collapsed", value=st.session_state.anthropic_key)
-        if ak != st.session_state.anthropic_key:
-            st.session_state.anthropic_key = ak
-        if ak and ak.startswith("sk-"):
-            st.markdown('<div style="font-size:.55rem;color:var(--grn);padding:.1rem .2rem">● Claude Vision ativo</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div style="font-size:.55rem;color:var(--t4);padding:.1rem .2rem">● Insira chave para IA</div>', unsafe_allow_html=True)
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.2rem .1rem">{avh(ini_,32,g)}<div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:var(--t0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">{name}</div><div style="font-size:.58rem;color:var(--t3)">{u.get("area","")[:18]}</div></div></div>', unsafe_allow_html=True)
-        if st.button("👤 Meu Perfil", key="sb_myprofile", use_container_width=True):
-            st.session_state.profile_view = email
-            st.session_state.page = "feed" # Pode ser qualquer página, feed é um bom default
-            st.rerun()
+        st.markdown('<div class="sb-lbl">Sua Conta</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:center;gap:9px;padding:.2rem .3rem;margin-bottom:.8rem">{avh(ini_,34,g)}<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.9rem;color:var(--t0);line-height:1.3">{name}<br><span style="font-size:.6rem;color:var(--t3);font-weight:500">{u.get("area","")}</span></div></div>', unsafe_allow_html=True)
+
+        # API Key input in sidebar
+        st.markdown('<div class="sb-lbl">Configurações IA</div>', unsafe_allow_html=True)
+        st.session_state.anthropic_key = st.text_input("Anthropic API Key", type="password", key="anthropic_key_sidebar", placeholder="sk-ant-...", label_visibility="collapsed")
+        if st.session_state.anthropic_key and not st.session_state.anthropic_key.startswith("sk-"):
+            st.warning("Chave API inválida.")
+        elif st.session_state.anthropic_key:
+            st.success("API Key configurada!")
 
 # ═══════════════════════════════════════════════
 #  PROFILE
 # ═══════════════════════════════════════════════
 def page_profile(target_email):
-    tu=st.session_state.users.get(target_email,{}); email=st.session_state.current_user
-    if not tu: st.error("Perfil não encontrado."); return
-    tname=tu.get("name","?"); ti=ini(tname); is_me=(email==target_email)
-    is_fol=target_email in st.session_state.followed; g=ugrad(target_email)
-    user_posts=[p for p in st.session_state.feed_posts if p.get("author_email")==target_email]
-    liked_posts=[p for p in st.session_state.feed_posts if target_email in p.get("liked_by",[])]
-    total_likes=sum(p["likes"] for p in user_posts)
-    vb=f' <span class="badge-grn" style="font-size:.6rem">✓</span>' if tu.get("verified") else ""
-    st.markdown(f"""<div class="prof-hero">
-  <div class="prof-av" style="background:{g}">{ti}</div>
-  <div style="flex:1">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:.22rem">
-      <span style="font-family:Syne,sans-serif;font-weight:800;font-size:1.35rem;color:var(--t0)">{tname}</span>{vb}
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    email=st.session_state.current_user; u=guser()
+    target_user_data=st.session_state.users.get(target_email,{})
+    if not target_user_data: st.error("Usuário não encontrado."); return
+
+    t_name=target_user_data.get("name","?"); t_ini=ini(t_name); t_grad=ugrad(target_email)
+    t_bio=target_user_data.get("bio",""); t_area=target_user_data.get("area","")
+    t_followers=target_user_data.get("followers",0); t_following=target_user_data.get("following",0)
+    t_verified=target_user_data.get("verified",False)
+
+    is_me = (target_email == email)
+    is_following = target_email in st.session_state.followed
+
+    st.markdown(f'''
+    <div class="prof-hero">
+        {avh(t_ini,76,t_grad)}
+        <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <h1 style="margin:0;font-size:1.8rem!important">{t_name}</h1>
+                {f'<span style="color:var(--blu);font-size:.9rem" title="Verificado">✓</span>' if t_verified else ''}
+            </div>
+            <div style="font-size:.85rem;color:var(--grn);font-weight:600;margin-bottom:6px">{t_area}</div>
+            <div style="font-size:.78rem;color:var(--t2);line-height:1.6">{t_bio or "Sem biografia."}</div>
+            <div style="display:flex;gap:1.2rem;margin-top:.8rem">
+                <div style="font-size:.7rem;color:var(--t3)"><strong>{fmt_num(t_followers)}</strong> Seguidores</div>
+                <div style="font-size:.7rem;color:var(--t3)"><strong>{fmt_num(t_following)}</strong> Seguindo</div>
+            </div>
+        </div>
     </div>
-    <div style="color:var(--blu);font-size:.80rem;font-weight:600;margin-bottom:.38rem">{tu.get("area","")}</div>
-    <div style="color:var(--t2);font-size:.78rem;line-height:1.7;margin-bottom:.75rem">{tu.get("bio","Sem biografia.")}</div>
-    <div style="display:flex;gap:1.6rem;flex-wrap:wrap">
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{tu.get("followers",0)}</span><span style="color:var(--t3);font-size:.68rem"> seguidores</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{tu.get("following",0)}</span><span style="color:var(--t3);font-size:.68rem"> seguindo</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{len(user_posts)}</span><span style="color:var(--t3);font-size:.68rem"> pesquisas</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--yel)">{fmt_num(total_likes)}</span><span style="color:var(--t3);font-size:.68rem"> curtidas</span></div>
-    </div>
-  </div>
-</div>""", unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
+
     if not is_me:
-        c1,c2,c3,_=st.columns([1,1,1,2])
+        c1,c2,_=st.columns([1,1,3])
         with c1:
-            cls="btn-grn" if is_fol else "btn-yel"
-            st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
-            if st.button("✓ Seguindo" if is_fol else "+ Seguir", key="su_n", use_container_width=True):
-                if is_fol: st.session_state.followed.remove(target_email); tu["followers"]=max(0,tu.get("followers",0)-1)
-                else: st.session_state.followed.append(target_email); tu["followers"]=tu.get("followers",0)+1
+            if st.button("← Voltar", key="prof_back", use_container_width=True):
+                st.session_state.profile_view = None; st.rerun()
+        with c2:
+            btn_label = "✓ Seguindo" if is_following else "+ Seguir"
+            btn_style = "btn-grn" if is_following else "btn-yel"
+            st.markdown(f'<div class="{btn_style}">', unsafe_allow_html=True)
+            if st.button(btn_label, key="prof_follow", use_container_width=True):
+                if is_following:
+                    st.session_state.followed.remove(target_email)
+                    target_user_data["followers"] = max(0, target_user_data.get("followers",0)-1)
+                    st.toast(f"Deixou de seguir {t_name.split()[0]}")
+                else:
+                    st.session_state.followed.append(target_email)
+                    target_user_data["followers"] = target_user_data.get("followers",0)+1
+                    st.toast(f"Começou a seguir {t_name.split()[0]}!")
                 save_db(); st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
-        with c2:
-            if st.button("💬 Mensagem", key="pf_chat", use_container_width=True):
-                st.session_state.chat_messages.setdefault(target_email,[])
-                st.session_state.active_chat=target_email; st.session_state.page="chat"; st.rerun()
-        with c3:
-            if st.button("← Voltar",key="pf_back",use_container_width=True): st.session_state.profile_view=None; st.rerun()
-        tp,tl=st.tabs([f"  📝 Pesquisas ({len(user_posts)})  ",f"  ❤️ Curtidas ({len(liked_posts)})  "])
-        with tp:
-            for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="profile",show_author=False)
-            if not user_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa publicada.</div>', unsafe_allow_html=True)
-        with tl:
-            for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="prof_liked",compact=True)
-            if not liked_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa curtida.</div>', unsafe_allow_html=True)
-    else: # If it's my own profile
-        st.markdown("<hr>", unsafe_allow_html=True)
-        if st.button("✏️ Editar Perfil", key="edit_my_profile", use_container_width=True):
-            st.session_state.edit_profile_mode = True
-            st.rerun()
-        if st.session_state.get("edit_profile_mode", False):
-            st.markdown("<h2>Editar Perfil</h2>", unsafe_allow_html=True)
-            with st.form("edit_profile_form"):
-                new_name = st.text_input("Nome Completo", value=tu.get("name", ""), key="edit_name")
-                new_area = st.text_input("Área de Pesquisa", value=tu.get("area", ""), key="edit_area")
-                new_bio = st.text_area("Biografia", value=tu.get("bio", ""), key="edit_bio", height=100)
-                if st.form_submit_button("💾 Salvar Alterações", use_container_width=True):
-                    st.session_state.users[email]["name"] = new_name
-                    st.session_state.users[email]["area"] = new_area
-                    st.session_state.users[email]["bio"] = new_bio
-                    save_db()
-                    st.success("Perfil atualizado com sucesso!")
-                    st.session_state.edit_profile_mode = False
-                    st.rerun()
-            if st.button("Cancelar Edição", key="cancel_edit_profile", use_container_width=True):
-                st.session_state.edit_profile_mode = False
-                st.rerun()
-        else:
-            tp,tl=st.tabs([f"  📝 Minhas Pesquisas ({len(user_posts)})  ",f"  ❤️ Curtidas ({len(liked_posts)})  "])
-            with tp:
-                for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="profile",show_author=False)
-                if not user_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa publicada.</div>', unsafe_allow_html=True)
-            with tl:
-                for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="prof_liked",compact=True)
-                if not liked_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa curtida.</div>', unsafe_allow_html=True)
+    else:
+        if st.button("← Voltar ao Feed", key="prof_back_me", use_container_width=True):
+            st.session_state.profile_view = None; st.rerun()
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown('<h2>Publicações de ' + (t_name.split()[0] if not is_me else "Você") + '</h2>', unsafe_allow_html=True)
+
+    user_posts = [p for p in st.session_state.feed_posts if p.get("author_email") == target_email]
+    if not user_posts:
+        st.info("Nenhuma publicação encontrada.")
+    else:
+        for p in sorted(user_posts, key=lambda x: x.get("date", ""), reverse=True):
+            render_post(p, compact=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════
 #  FEED
 # ═══════════════════════════════════════════════
-def render_post(p,ctx="feed",show_author=True,compact=False):
-    uid=f"{ctx}_{p['id']}"
-    is_liked=st.session_state.current_user in p.get("liked_by",[])
-    is_saved=st.session_state.current_user in p.get("saved_by",[])
+def render_post(p, ctx="feed", compact=False):
+    uid = f"{ctx}_{p['id']}"
+    is_liked = st.session_state.current_user in p.get("liked_by", [])
+    is_saved = st.session_state.current_user in p.get("saved_by", [])
 
-    author_email=p.get("author_email","")
-    author_data=st.session_state.users.get(author_email,{})
-    author_name=author_data.get("name","Usuário Desconhecido")
-    author_initials=ini(author_name)
-    author_grad=ugrad(author_email)
-
+    # Renderizar post de forma compacta ou completa
     if compact:
-        st.markdown(f'<div class="scard">', unsafe_allow_html=True)
-        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.25rem;">', unsafe_allow_html=True)
-        if show_author:
-            st.markdown(f'<div style="cursor:pointer;" onclick="Streamlit.setComponentValue(\'profile_view\', \'{author_email}\')">{avh(author_initials,28,author_grad)}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div style="flex:1;"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:var(--t0);">{author_name}</div><div style="font-size:.62rem;color:var(--t3);">{author_data.get("area","")}</div></div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0);flex:1;">{p["title"]}</div>', unsafe_allow_html=True)
-        st.markdown(f'</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size:.68rem;color:var(--t3);margin-top:.35rem">{p.get("date","")} · {p["likes"]} curtidas · {len(p.get("comments",[]))} comentários</div>', unsafe_allow_html=True)
-        st.markdown(f'</div>', unsafe_allow_html=True)
+        st.markdown(f'''
+        <div class="scard">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:.25rem">
+                {avh(p["avatar"], 30, ugrad(p["author_email"]))}
+                <div style="flex:1">
+                    <div style="font-family:Syne,sans-serif;font-size:.82rem;font-weight:700;color:var(--t0)">{p["title"][:60]}{"..." if len(p["title"]) > 60 else ""}</div>
+                    <div style="font-size:.64rem;color:var(--t3)">{p["author"]} · {time_ago(p["date"])}</div>
+                </div>
+                {badge(p["status"])}
+            </div>
+            <div style="font-size:.72rem;color:var(--t2);line-height:1.6;margin-bottom:.5rem">
+                {p["abstract"][:120]}{"..." if len(p["abstract"]) > 120 else ""}
+            </div>
+            <div>{tags_html(p["tags"][:3])}</div>
+        </div>
+        ''', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("Ver Detalhes", key=f"view_{uid}", use_container_width=True):
+                st.session_state.page = "feed" # Stay on feed, but show full post
+                st.session_state.view_post_id = p["id"]
+                st.rerun()
+        with c2:
+            if st.button("👤 Perfil", key=f"prof_{uid}", use_container_width=True):
+                st.session_state.profile_view = p["author_email"]
+                st.rerun()
+        with c3:
+            if st.button("💬 Chat", key=f"chat_{uid}", use_container_width=True):
+                st.session_state.chat_messages.setdefault(p["author_email"], [])
+                st.session_state.active_chat = p["author_email"]
+                st.session_state.page = "chat"
+                st.rerun()
         return
 
-    st.markdown(f'<div class="post-card">', unsafe_allow_html=True)
-    st.markdown(f'<div style="display:flex;align-items:center;gap:12px;padding:1rem 1.2rem 0.8rem;">', unsafe_allow_html=True)
-    if show_author:
-        if st.button(f"view_profile_{author_email}_{uid}", key=f"view_profile_{author_email}_{uid}", help="Ver perfil", use_container_width=False):
-            st.session_state.profile_view = author_email
+    # Full post rendering
+    st.markdown(f'''
+    <div class="post-card">
+        <div style="display:flex;align-items:center;gap:12px;padding:1rem 1.2rem .8rem">
+            {avh(p["avatar"], 42, ugrad(p["author_email"]))}
+            <div style="flex:1">
+                <div style="font-family:Syne,sans-serif;font-size:.95rem;font-weight:700;color:var(--t0)">{p["author"]}</div>
+                <div style="font-size:.7rem;color:var(--t3)">{p["area"]} · {time_ago(p["date"])}</div>
+            </div>
+            {badge(p["status"])}
+        </div>
+        <div style="padding:0 1.2rem .8rem">
+            <h2 style="margin-bottom:.4rem;font-size:1.2rem!important">{p["title"]}</h2>
+            <p style="font-size:.82rem;color:var(--t1);line-height:1.7">{p["abstract"]}</p>
+            <div style="margin-top:.8rem">{tags_html(p["tags"])}</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:.8rem 1.2rem;border-top:1px solid var(--gb1)">
+            <div style="display:flex;gap:1.2rem;font-size:.7rem;color:var(--t3)">
+                <span>❤️ {p["likes"]}</span>
+                <span>💬 {len(p["comments"])}</span>
+                <span>👁️ {p["views"]}</span>
+            </div>
+            <div style="display:flex;gap:.5rem">
+                <button class="stButton" style="background:var(--bg3);border:1px solid var(--gb1);border-radius:8px;padding:4px 10px;font-size:.7rem;color:var(--t2)" key="like_{uid}">
+                    {f'❤️ Curtido' if is_liked else '♡ Curtir'}
+                </button>
+                <button class="stButton" style="background:var(--bg3);border:1px solid var(--gb1);border-radius:8px;padding:4px 10px;font-size:.7rem;color:var(--t2)" key="save_{uid}">
+                    {f'🔖 Salvo' if is_saved else '📌 Salvar'}
+                </button>
+            </div>
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
+
+    # Lógica para botões de like/save (fora do markdown para interatividade)
+    cols_interact = st.columns(2)
+    with cols_interact[0]:
+        if st.button(f'{"❤️ Curtido" if is_liked else "♡ Curtir"}', key=f"like_btn_{uid}", use_container_width=True):
+            if is_liked:
+                p["liked_by"].remove(st.session_state.current_user)
+                p["likes"] -= 1
+                st.toast("Curtida removida!")
+            else:
+                p["liked_by"].append(st.session_state.current_user)
+                p["likes"] += 1
+                st.toast("Curtido!")
+            save_db(); st.rerun()
+    with cols_interact[1]:
+        if st.button(f'{"🔖 Salvo" if is_saved else "📌 Salvar"}', key=f"save_btn_{uid}", use_container_width=True):
+            if is_saved:
+                p["saved_by"].remove(st.session_state.current_user)
+                st.toast("Removido dos salvos!")
+            else:
+                p["saved_by"].append(st.session_state.current_user)
+                st.toast("Salvo para depois!")
+            save_db(); st.rerun()
+
+    # Comentários
+    st.markdown(f'<div style="padding:0 1.2rem .8rem;margin-top:.5rem">', unsafe_allow_html=True)
+    st.markdown(f'<h3 style="font-size:.9rem;color:var(--t1);margin-bottom:.6rem">Comentários ({len(p["comments"])})</h3>', unsafe_allow_html=True)
+    for cmt in p["comments"]:
+        st.markdown(f'<div class="cmt"><div style="font-size:.75rem;font-weight:600;color:var(--t0);margin-bottom:3px">{cmt["user"]}</div><div style="font-size:.72rem;color:var(--t2);line-height:1.6">{cmt["text"]}</div></div>', unsafe_allow_html=True)
+
+    new_comment_text = st.text_input("Adicionar comentário", key=f"new_comment_{uid}", label_visibility="collapsed")
+    if st.button("Comentar", key=f"submit_comment_{uid}"):
+        if new_comment_text:
+            p["comments"].append({"user": guser().get("name", "Anônimo"), "text": new_comment_text})
+            save_db()
             st.rerun()
-        st.markdown(f'<div style="position:relative;left:-10px;top:2px;">{avh(author_initials,40,author_grad)}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="flex:1;"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.9rem;color:var(--t0);">{author_name}</div><div style="font-size:.7rem;color:var(--t3);">{author_data.get("area","")}</div></div>', unsafe_allow_html=True)
-    st.markdown(f'<div style="font-size:.65rem;color:var(--t3);">{time_ago(p["date"])}</div>', unsafe_allow_html=True)
-    st.markdown(f'</div>', unsafe_allow_html=True)
-
-    st.markdown(f'<div style="padding:0 1.2rem 1rem;">', unsafe_allow_html=True)
-    st.markdown(f'<h2 style="margin-bottom:.4rem;">{p["title"]}</h2>', unsafe_allow_html=True)
-    st.markdown(f'<p style="font-size:.82rem;color:var(--t2);line-height:1.7;">{p["abstract"]}</p>', unsafe_allow_html=True)
-    st.markdown(f'<div style="margin-top:.8rem;">{tags_html(p["tags"])}</div>', unsafe_allow_html=True)
-    st.markdown(f'</div>', unsafe_allow_html=True)
-
-    st.markdown(f'<div style="display:flex;align-items:center;justify-content:space-between;padding:.8rem 1.2rem;border-top:1px solid var(--gb1);">', unsafe_allow_html=True)
-    st.markdown(f'<div style="display:flex;gap:1rem;align-items:center;">', unsafe_allow_html=True)
-
-    # Like button
-    like_color = "var(--red)" if is_liked else "var(--t3)"
-    if st.button(f'❤️ {p["likes"]}', key=f"like_{uid}", help="Curtir/Descurtir", use_container_width=False):
-        if is_liked:
-            p["likes"] = max(0, p["likes"] - 1)
-            p["liked_by"].remove(st.session_state.current_user)
-            record(p["tags"], -0.5)
         else:
-            p["likes"] += 1
-            p["liked_by"].append(st.session_state.current_user)
-            record(p["tags"], 0.5)
-        save_db(); st.rerun()
-    st.markdown(f'<span style="color:{like_color};font-size:.8rem;font-weight:600;margin-left:-10px;"></span>', unsafe_allow_html=True)
-
-    # Comment button
-    if st.button(f'💬 {len(p.get("comments",[]))}', key=f"comment_{uid}", help="Comentar", use_container_width=False):
-        st.session_state[f"show_comments_{uid}"] = not st.session_state.get(f"show_comments_{uid}", False)
-    st.markdown(f'<span style="color:var(--t3);font-size:.8rem;font-weight:600;margin-left:-10px;"></span>', unsafe_allow_html=True)
-
-    # Save button
-    save_color = "var(--blu)" if is_saved else "var(--t3)"
-    if st.button(f'📌', key=f"save_{uid}", help="Salvar/Remover", use_container_width=False):
-        if is_saved:
-            p["saved_by"].remove(st.session_state.current_user)
-            st.toast("Pesquisa removida dos salvos!")
-        else:
-            p["saved_by"].append(st.session_state.current_user)
-            st.toast("Pesquisa salva!")
-        save_db(); st.rerun()
-    st.markdown(f'<span style="color:{save_color};font-size:.8rem;font-weight:600;margin-left:-10px;"></span>', unsafe_allow_html=True)
-
-    st.markdown(f'</div>', unsafe_allow_html=True)
-    st.markdown(f'</div>', unsafe_allow_html=True)
-
-    # Comments section
-    if st.session_state.get(f"show_comments_{uid}", False):
-        st.markdown(f'<div style="padding:0 1.2rem 1rem;">', unsafe_allow_html=True)
-        st.markdown(f'<div class="dtxt">Comentários</div>', unsafe_allow_html=True)
-        for cmt in p.get("comments",[]):
-            cmt_author_data = st.session_state.users.get(cmt.get("user_email", ""), {"name": cmt.get("user", "Anônimo")})
-            cmt_author_name = cmt_author_data.get("name", cmt.get("user", "Anônimo"))
-            st.markdown(f'<div class="cmt"><strong style="color:var(--blu);">{cmt_author_name}:</strong> {cmt["text"]}</div>', unsafe_allow_html=True)
-
-        new_comment_text = st.text_input("Adicionar comentário...", key=f"new_comment_{uid}", label_visibility="collapsed")
-        if st.button("Enviar Comentário", key=f"submit_comment_{uid}", use_container_width=True):
-            if new_comment_text:
-                p.setdefault("comments", []).append({"user": guser().get("name","Anônimo"), "user_email": st.session_state.current_user, "text": new_comment_text, "time": datetime.now().strftime("%H:%M")})
-                save_db(); st.rerun()
-        st.markdown(f'</div>', unsafe_allow_html=True)
-
+            st.warning("O comentário não pode estar vazio.")
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True) # Separador entre posts
 
 def page_feed():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">🏠 Feed de Pesquisas</h1>', unsafe_allow_html=True)
 
-    # Compose new post
-    if st.button("➕ Nova Pesquisa", key="btn_compose", use_container_width=True):
+    # Botão para abrir/fechar o formulário de composição
+    if st.button("✍️ Nova Pesquisa", key="toggle_compose", use_container_width=True):
         st.session_state.compose_open = not st.session_state.compose_open
 
     if st.session_state.compose_open:
@@ -1591,7 +1630,7 @@ def page_feed():
         st.markdown('<h2>Escrever Nova Pesquisa</h2>', unsafe_allow_html=True)
         with st.form("new_post_form"):
             post_title = st.text_input("Título da Pesquisa", key="post_title")
-            post_abstract = st.area_input("Resumo", key="post_abstract", height=150)
+            post_abstract = st.text_area("Resumo", key="post_abstract", height=150)
             post_tags_str = st.text_input("Tags (separadas por vírgula)", key="post_tags")
             post_status = st.selectbox("Status", ["Em andamento", "Publicado", "Concluído"], key="post_status")
 
@@ -1639,8 +1678,21 @@ def page_feed():
 
     # Main feed
     st.markdown('<div style="font-size:.59rem;color:var(--yel);font-weight:700;margin-bottom:.4rem;letter-spacing:.10em;text-transform:uppercase">Últimas Pesquisas</div>', unsafe_allow_html=True)
-    for p in sorted(st.session_state.feed_posts, key=lambda x: x.get("date", ""), reverse=True):
-        render_post(p)
+
+    # Check if a specific post should be viewed in full
+    if st.session_state.get("view_post_id"):
+        post_to_view = next((p for p in st.session_state.feed_posts if p["id"] == st.session_state.view_post_id), None)
+        if post_to_view:
+            render_post(post_to_view)
+            if st.button("← Voltar ao Feed", key="back_from_full_post"):
+                st.session_state.view_post_id = None
+                st.rerun()
+        else:
+            st.error("Publicação não encontrada.")
+            st.session_state.view_post_id = None # Reset if not found
+    else:
+        for p in sorted(st.session_state.feed_posts, key=lambda x: x.get("date", ""), reverse=True):
+            render_post(p)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════
@@ -1651,7 +1703,7 @@ def render_article(a,idx=0,ctx="web"):
     cite=f" · {a['citations']} cit." if a.get("citations") else ""
     uid=re.sub(r'[^a-zA-Z0-9]','',f"{ctx}_{idx}_{str(a.get('doi',''))[:10]}")[:32]
     is_saved=any(s.get('doi')==a.get('doi') for s in st.session_state.saved_articles)
-    ab=(a.get("abstract","") or "")[:250]+("…" if len(a.get("abstract",""))>250 else "")
+    ab=(a.get("abstract","") or "")[:250]+("..." if len(a.get("abstract",""))>250 else "")
     st.markdown(f'<div class="scard"><div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:.28rem"><div style="flex:1;font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0)">{a["title"]}</div><span style="font-size:.58rem;color:{sc};background:var(--bg3);border-radius:7px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{sn}</span></div><div style="color:var(--t3);font-size:.64rem;margin-bottom:.3rem">{a["authors"]} · <em>{a["source"]}</em> · {a["year"]}{cite}</div><div style="color:var(--t2);font-size:.76rem;line-height:1.62">{ab}</div></div>', unsafe_allow_html=True)
     ca,cb,cc=st.columns(3)
     with ca:
@@ -1671,11 +1723,11 @@ def page_search():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.3rem">🔍 Busca Acadêmica</h1>', unsafe_allow_html=True)
     c1,c2=st.columns([4,1])
-    with c1: q=st.text_input("",placeholder="CRISPR · quantum ML · dark matter…",key="sq",label_visibility="collapsed")
+    with c1: q=st.text_input("",placeholder="CRISPR · quantum ML · dark matter...",key="sq",label_visibility="collapsed")
     with c2:
         if st.button("🔍 Buscar", key="btn_s", use_container_width=True):
             if q:
-                with st.spinner("Buscando…"):
+                with st.spinner("Buscando..."):
                     nr=[p for p in st.session_state.feed_posts if q.lower() in p["title"].lower() or q.lower() in p["abstract"].lower()]
                     sr=search_ss(q,6); cr=search_cr(q,3)
                     st.session_state.search_results={"nebula":nr,"ss":sr,"cr":cr}; st.session_state.last_sq=q; record([q.lower()],.3)
@@ -1755,7 +1807,7 @@ def page_knowledge():
     with tm:
         for e1,e2,common,strength in sorted(edges,key=lambda x:-x[3])[:20]:
             n1=users.get(e1,{}); n2=users.get(e2,{}); ts=tags_html(common[:4]) if common else '<span style="color:var(--t3);font-size:.66rem">seguimento</span>'
-            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--blu)">{n1.get("name","?")}</span><span style="color:var(--t3)">↔</span><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--blu)">{n2.get("name","?")}</span><div style="flex:1">{ts}</div><span style="font-size:.63rem;color:var(--grn);font-weight:700">{strength}pt</span></div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--blu)}">{n1.get("name","?")}</span><span style="color:var(--t3)">↔</span><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--blu)}">{n2.get("name","?")}</span><div style="flex:1">{ts}</div><span style="font-size:.63rem;color:var(--grn);font-weight:700">{strength}pt</span></div></div>', unsafe_allow_html=True)
 
     with tai:
         # AI-POWERED CONNECTION SUGGESTIONS
@@ -1847,7 +1899,7 @@ def page_knowledge():
                     st.session_state.active_chat=oth; st.session_state.page="chat"; st.rerun()
 
     with tall:
-        sq2=st.text_input("",placeholder="🔍 Buscar…",key="all_s",label_visibility="collapsed")
+        sq2=st.text_input("",placeholder="🔍 Buscar...",key="all_s",label_visibility="collapsed")
         for ue,ud in users.items():
             if ue==email: continue
             rn=ud.get("name","?"); ua=ud.get("area","")
@@ -1905,14 +1957,14 @@ def page_folders():
                     ft=ftype(f); ha=f in analyses
                     icon={"PDF":"📄","Word":"📝","Planilha":"📊","Dados":"📈","Código":"🐍","Imagem":"🖼","Markdown":"📋"}.get(ft,"📄")
                     ab2=f'<span class="badge-grn" style="font-size:.57rem;margin-left:5px">✓</span>' if ha else ''
-                    st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid var(--gb1);"><span style="color:var(--blu);">{icon}</span><span style="font-size:.75rem;color:var(--t2);flex:1">{f}</span>{ab2}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid var(--gb1);"><span style="color:var(--blu)}">{icon}</span><span style="font-size:.75rem;color:var(--t2);flex:1">{f}</span>{ab2}</div>', unsafe_allow_html=True)
             ca2,cb2,_=st.columns([1.5,1.5,2])
             with ca2:
                 if st.button("🔬 Analisar", key=f"an_{fn}", use_container_width=True):
                     if files:
-                        pb=st.progress(0,"Iniciando…"); fb=st.session_state.folder_files_bytes.get(fn,{})
+                        pb=st.progress(0,"Iniciando..."); fb=st.session_state.folder_files_bytes.get(fn,{})
                         for fi,f in enumerate(files):
-                            pb.progress((fi+1)/len(files),f"Analisando: {f[:25]}…"); fbytes=fb.get(f,b""); ft2=ftype(f)
+                            pb.progress((fi+1)/len(files),f"Analisando: {f[:25]}..."); fbytes=fb.get(f,b""); ft2=ftype(f)
                             analyses[f]=analyze_doc(f,fbytes,ft2,ra)
                         fd["analyses"]=analyses; save_db(); pb.empty(); st.success("✓ Completo!"); st.rerun()
                     else: st.warning("Adicione arquivos.")
@@ -1968,7 +2020,7 @@ def page_analytics():
             with c2: st.markdown(f'<div class="mbox"><div class="mval-grn">{sum(p["likes"] for p in my_posts)}</div><div class="mlbl">Curtidas</div></div>', unsafe_allow_html=True)
             with c3: st.markdown(f'<div class="mbox"><div class="mval-blu">{sum(len(p.get("comments",[])) for p in my_posts)}</div><div class="mlbl">Comentários</div></div>', unsafe_allow_html=True)
             for p in sorted(my_posts,key=lambda x:x.get("date",""),reverse=True):
-                st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0)">{p["title"][:55]}</div>{badge(p["status"])}</div><div style="font-size:.68rem;color:var(--t3);margin-top:.35rem">{p.get("date","")} · {p["likes"]} curtidas · {len(p.get("comments",[]))} comentários</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0)}">{p["title"][:55]}</div>{badge(p["status"])}</div><div style="font-size:.68rem;color:var(--t3);margin-top:.35rem">{p.get("date","")} · {p["likes"]} curtidas · {len(p.get("comments",[]))} comentários</div></div>', unsafe_allow_html=True)
     with ti:
         c1,c2,c3=st.columns(3)
         with c1: st.markdown(f'<div class="mbox"><div class="mval-yel">{d.get("h_index",4)}</div><div class="mlbl">Índice H</div></div>', unsafe_allow_html=True)
@@ -2264,14 +2316,14 @@ def page_chat():
         for ue in st.session_state.chat_contacts:
             if ue==email or ue in shown: continue
             shown.add(ue); ud=users.get(ue,{}); un=ud.get("name","?"); ui=ini(un); ug=ugrad(ue)
-            msgs=st.session_state.chat_messages.get(ue,[]); last=msgs[-1]["text"][:22]+"…" if msgs and len(msgs[-1]["text"])>22 else(msgs[-1]["text"] if msgs else "Iniciar")
+            msgs=st.session_state.chat_messages.get(ue,[]); last=msgs[-1]["text"][:22]+"..." if msgs and len(msgs[-1]["text"])>22 else(msgs[-1]["text"] if msgs else "Iniciar")
             active=st.session_state.active_chat==ue; online=is_online(ue)
             dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
             bg=f"var(--bg3)" if active else f"var(--bg2)"; bdr=f"var(--blu2)" if active else f"var(--gb1)" # Cores ajustadas
             st.markdown(f'<div style="background:{bg};border:1px solid {bdr};border-radius:12px;padding:8px 10px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:7px">{avh(ui,30,ug)}<div style="overflow:hidden;flex:1"><div style="font-size:.76rem;font-weight:600;font-family:Syne,sans-serif;color:var(--t0)">{dot}{un}</div><div style="font-size:.63rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>', unsafe_allow_html=True)
             if st.button("→",key=f"oc_{ue}",use_container_width=True): st.session_state.active_chat=ue; st.rerun()
         st.markdown("<hr>", unsafe_allow_html=True)
-        nc2=st.text_input("",placeholder="E-mail…",key="new_ct",label_visibility="collapsed")
+        nc2=st.text_input("",placeholder="E-mail...",key="new_ct",label_visibility="collapsed")
         if st.button("+ Adicionar",key="btn_ac",use_container_width=True):
             if nc2 in users and nc2!=email:
                 if nc2 not in st.session_state.chat_contacts: st.session_state.chat_contacts.append(nc2)
@@ -2287,7 +2339,7 @@ def page_chat():
                 st.markdown(f'<div style="display:flex;{"justify-content:flex-end" if im else ""}"><div class="{cls}">{msg["text"]}<div style="font-size:.57rem;color:var(--t3);margin-top:2px;text-align:{"right" if im else "left"}">{msg["time"]}</div></div></div>', unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             ci2,cb2=st.columns([5,1])
-            with ci2: nm=st.text_input("",placeholder="Escreva uma mensagem…",key=f"mi_{contact}",label_visibility="collapsed")
+            with ci2: nm=st.text_input("",placeholder="Escreva uma mensagem...",key=f"mi_{contact}",label_visibility="collapsed")
             with cb2:
                 if st.button("→", key=f"ms_{contact}", use_container_width=True):
                     if nm: now=datetime.now().strftime("%H:%M"); st.session_state.chat_messages.setdefault(contact,[]).append({"from":"me","text":nm,"time":now}); st.rerun()
@@ -3102,15 +3154,15 @@ def avh(initials,sz=40,grad=None):
 def tags_html(tags): return ' '.join(f'<span class="tag">{t}</span>' for t in(tags or []))
 
 def badge(s):
-    m={"Publicado":"badge-grn","Concluído":"badge-pur"}
+    m={"Em andamento":"badge-yel","Publicado":"badge-grn","Concluído":"badge-pur"}
     return f'<span class="{m.get(s,"badge-yel")}">{s}</span>'
 
 def pc_dark():
     return dict(plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#6B6F88",family="DM Sans",size=11),
+                font=dict(color="var(--t3)",family="DM Sans",size=11),
                 margin=dict(l=10,r=10,t=38,b=10),
-                xaxis=dict(showgrid=False,color="#6B6F88",tickfont=dict(size=10)),
-                yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",color="#6B6F88",tickfont=dict(size=10)))
+                xaxis=dict(showgrid=False,color="var(--t3)",tickfont=dict(size=10)),
+                yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",color="var(--t3)",tickfont=dict(size=10)))
 
 # ═══════════════════════════════════════════════
 #  AUTH
@@ -3149,6 +3201,7 @@ def page_login():
                 if s2:
                     if not all([nn,ne,na,np_,np2]): st.error("Preencha todos os campos.")
                     elif np_!=np2: st.error("Senhas não coincidem.")
+                    elif len(np_)<6: st.error("Senha deve ter no mínimo 6 caracteres.")
                     elif ne in st.session_state.users: st.error("E-mail já cadastrado.")
                     else:
                         st.session_state.users[ne]={"name":nn,"password":hp(np_),"bio":"","area":na,"followers":0,"following":0,"verified":True,"2fa_enabled":False}
@@ -3183,225 +3236,233 @@ def render_nav():
                 # Use :nth-of-type targeting the button within sidebar
                 active_styles += (
                     f'section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]'
-                    f' > [data-testid="stVerticalBlock"]:nth-child({i+2})' # Ajustado o nth-child
-                    f' .stButton>button{{'
-                    f'color:{c}!important;-webkit-text-fill-color:{c}!important;'
-                    f'background:var(--bg)!important;' # Fundo ativo mais escuro
-                    f'border-color:{c}40!important;'
-                    f'font-weight:700!important;}}'
+                    f' > [data-testid="stVerticalBlock"]:nth-of-type(2) > div > div > div:nth-child({i+1}) .stButton > button {{'
+                    f'  background: linear-gradient(135deg, {c}, {c}50)!important;'
+                    f'  border-color: {c}!important;'
+                    f'  color: var(--t0)!important;'
+                    f'  -webkit-text-fill-color: var(--t0)!important;'
+                    f'  box-shadow: 0 0 12px {c}30!important;'
+                    f'}}'
+                    f'section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]'
+                    f' > [data-testid="stVerticalBlock"]:nth-of-type(2) > div > div > div:nth-child({i+1}) .stButton > button:hover {{'
+                    f'  background: linear-gradient(135deg, {c}, {c}70)!important;'
+                    f'}}'
                 )
-
-        if active_styles:
-            st.markdown(f'<style>{active_styles}</style>', unsafe_allow_html=True)
+        st.markdown(f"<style>{active_styles}</style>", unsafe_allow_html=True)
 
         for key, label, col in NAV:
-            if st.button(label, key=f"sb_{key}", use_container_width=True):
-                st.session_state.profile_view = None
+            if st.button(label, key=f"nav_{key}"):
                 st.session_state.page = key
+                st.session_state.profile_view = None
                 st.rerun()
 
         st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown('<div class="sb-lbl">API Key</div>', unsafe_allow_html=True)
-        ak = st.text_input("", placeholder="sk-ant-...", type="password", key="sb_apikey",
-                           label_visibility="collapsed", value=st.session_state.anthropic_key)
-        if ak != st.session_state.anthropic_key:
-            st.session_state.anthropic_key = ak
-        if ak and ak.startswith("sk-"):
-            st.markdown('<div style="font-size:.55rem;color:var(--grn);padding:.1rem .2rem">● Claude Vision ativo</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div style="font-size:.55rem;color:var(--t4);padding:.1rem .2rem">● Insira chave para IA</div>', unsafe_allow_html=True)
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.2rem .1rem">{avh(ini_,32,g)}<div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:var(--t0);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">{name}</div><div style="font-size:.58rem;color:var(--t3)">{u.get("area","")[:18]}</div></div></div>', unsafe_allow_html=True)
-        if st.button("👤 Meu Perfil", key="sb_myprofile", use_container_width=True):
-            st.session_state.profile_view = email
-            st.session_state.page = "feed" # Pode ser qualquer página, feed é um bom default
-            st.rerun()
+        st.markdown('<div class="sb-lbl">Sua Conta</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:center;gap:9px;padding:.2rem .3rem;margin-bottom:.8rem">{avh(ini_,34,g)}<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.9rem;color:var(--t0);line-height:1.3">{name}<br><span style="font-size:.6rem;color:var(--t3);font-weight:500">{u.get("area","")}</span></div></div>', unsafe_allow_html=True)
+
+        # API Key input in sidebar
+        st.markdown('<div class="sb-lbl">Configurações IA</div>', unsafe_allow_html=True)
+        st.session_state.anthropic_key = st.text_input("Anthropic API Key", type="password", key="anthropic_key_sidebar", placeholder="sk-ant-...", label_visibility="collapsed")
+        if st.session_state.anthropic_key and not st.session_state.anthropic_key.startswith("sk-"):
+            st.warning("Chave API inválida.")
+        elif st.session_state.anthropic_key:
+            st.success("API Key configurada!")
 
 # ═══════════════════════════════════════════════
 #  PROFILE
 # ═══════════════════════════════════════════════
 def page_profile(target_email):
-    tu=st.session_state.users.get(target_email,{}); email=st.session_state.current_user
-    if not tu: st.error("Perfil não encontrado."); return
-    tname=tu.get("name","?"); ti=ini(tname); is_me=(email==target_email)
-    is_fol=target_email in st.session_state.followed; g=ugrad(target_email)
-    user_posts=[p for p in st.session_state.feed_posts if p.get("author_email")==target_email]
-    liked_posts=[p for p in st.session_state.feed_posts if target_email in p.get("liked_by",[])]
-    total_likes=sum(p["likes"] for p in user_posts)
-    vb=f' <span class="badge-grn" style="font-size:.6rem">✓</span>' if tu.get("verified") else ""
-    st.markdown(f"""<div class="prof-hero">
-  <div class="prof-av" style="background:{g}">{ti}</div>
-  <div style="flex:1">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:.22rem">
-      <span style="font-family:Syne,sans-serif;font-weight:800;font-size:1.35rem;color:var(--t0)">{tname}</span>{vb}
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    email=st.session_state.current_user; u=guser()
+    target_user_data=st.session_state.users.get(target_email,{})
+    if not target_user_data: st.error("Usuário não encontrado."); return
+
+    t_name=target_user_data.get("name","?"); t_ini=ini(t_name); t_grad=ugrad(target_email)
+    t_bio=target_user_data.get("bio",""); t_area=target_user_data.get("area","")
+    t_followers=target_user_data.get("followers",0); t_following=target_user_data.get("following",0)
+    t_verified=target_user_data.get("verified",False)
+
+    is_me = (target_email == email)
+    is_following = target_email in st.session_state.followed
+
+    st.markdown(f'''
+    <div class="prof-hero">
+        {avh(t_ini,76,t_grad)}
+        <div style="flex:1">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                <h1 style="margin:0;font-size:1.8rem!important">{t_name}</h1>
+                {f'<span style="color:var(--blu);font-size:.9rem" title="Verificado">✓</span>' if t_verified else ''}
+            </div>
+            <div style="font-size:.85rem;color:var(--grn);font-weight:600;margin-bottom:6px">{t_area}</div>
+            <div style="font-size:.78rem;color:var(--t2);line-height:1.6">{t_bio or "Sem biografia."}</div>
+            <div style="display:flex;gap:1.2rem;margin-top:.8rem">
+                <div style="font-size:.7rem;color:var(--t3)"><strong>{fmt_num(t_followers)}</strong> Seguidores</div>
+                <div style="font-size:.7rem;color:var(--t3)"><strong>{fmt_num(t_following)}</strong> Seguindo</div>
+            </div>
+        </div>
     </div>
-    <div style="color:var(--blu);font-size:.80rem;font-weight:600;margin-bottom:.38rem">{tu.get("area","")}</div>
-    <div style="color:var(--t2);font-size:.78rem;line-height:1.7;margin-bottom:.75rem">{tu.get("bio","Sem biografia.")}</div>
-    <div style="display:flex;gap:1.6rem;flex-wrap:wrap">
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{tu.get("followers",0)}</span><span style="color:var(--t3);font-size:.68rem"> seguidores</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{tu.get("following",0)}</span><span style="color:var(--t3);font-size:.68rem"> seguindo</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{len(user_posts)}</span><span style="color:var(--t3);font-size:.68rem"> pesquisas</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--yel)">{fmt_num(total_likes)}</span><span style="color:var(--t3);font-size:.68rem"> curtidas</span></div>
-    </div>
-  </div>
-</div>""", unsafe_allow_html=True)
+    ''', unsafe_allow_html=True)
+
     if not is_me:
-        c1,c2,c3,_=st.columns([1,1,1,2])
+        c1,c2,_=st.columns([1,1,3])
         with c1:
-            cls="btn-grn" if is_fol else "btn-yel"
-            st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
-            if st.button("✓ Seguindo" if is_fol else "+ Seguir", key="su_n", use_container_width=True):
-                if is_fol: st.session_state.followed.remove(target_email); tu["followers"]=max(0,tu.get("followers",0)-1)
-                else: st.session_state.followed.append(target_email); tu["followers"]=tu.get("followers",0)+1
+            if st.button("← Voltar", key="prof_back", use_container_width=True):
+                st.session_state.profile_view = None; st.rerun()
+        with c2:
+            btn_label = "✓ Seguindo" if is_following else "+ Seguir"
+            btn_style = "btn-grn" if is_following else "btn-yel"
+            st.markdown(f'<div class="{btn_style}">', unsafe_allow_html=True)
+            if st.button(btn_label, key="prof_follow", use_container_width=True):
+                if is_following:
+                    st.session_state.followed.remove(target_email)
+                    target_user_data["followers"] = max(0, target_user_data.get("followers",0)-1)
+                    st.toast(f"Deixou de seguir {t_name.split()[0]}")
+                else:
+                    st.session_state.followed.append(target_email)
+                    target_user_data["followers"] = target_user_data.get("followers",0)+1
+                    st.toast(f"Começou a seguir {t_name.split()[0]}!")
                 save_db(); st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
-        with c2:
-            if st.button("💬 Mensagem", key="pf_chat", use_container_width=True):
-                st.session_state.chat_messages.setdefault(target_email,[])
-                st.session_state.active_chat=target_email; st.session_state.page="chat"; st.rerun()
-        with c3:
-            if st.button("← Voltar",key="pf_back",use_container_width=True): st.session_state.profile_view=None; st.rerun()
-        tp,tl=st.tabs([f"  📝 Pesquisas ({len(user_posts)})  ",f"  ❤️ Curtidas ({len(liked_posts)})  "])
-        with tp:
-            for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="profile",show_author=False)
-            if not user_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa publicada.</div>', unsafe_allow_html=True)
-        with tl:
-            for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="prof_liked",compact=True)
-            if not liked_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa curtida.</div>', unsafe_allow_html=True)
-    else: # If it's my own profile
-        st.markdown("<hr>", unsafe_allow_html=True)
-        if st.button("✏️ Editar Perfil", key="edit_my_profile", use_container_width=True):
-            st.session_state.edit_profile_mode = True
-            st.rerun()
-        if st.session_state.get("edit_profile_mode", False):
-            st.markdown("<h2>Editar Perfil</h2>", unsafe_allow_html=True)
-            with st.form("edit_profile_form"):
-                new_name = st.text_input("Nome Completo", value=tu.get("name", ""), key="edit_name")
-                new_area = st.text_input("Área de Pesquisa", value=tu.get("area", ""), key="edit_area")
-                new_bio = st.text_area("Biografia", value=tu.get("bio", ""), key="edit_bio", height=100)
-                if st.form_submit_button("💾 Salvar Alterações", use_container_width=True):
-                    st.session_state.users[email]["name"] = new_name
-                    st.session_state.users[email]["area"] = new_area
-                    st.session_state.users[email]["bio"] = new_bio
-                    save_db()
-                    st.success("Perfil atualizado com sucesso!")
-                    st.session_state.edit_profile_mode = False
-                    st.rerun()
-            if st.button("Cancelar Edição", key="cancel_edit_profile", use_container_width=True):
-                st.session_state.edit_profile_mode = False
-                st.rerun()
-        else:
-            tp,tl=st.tabs([f"  📝 Minhas Pesquisas ({len(user_posts)})  ",f"  ❤️ Curtidas ({len(liked_posts)})  "])
-            with tp:
-                for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="profile",show_author=False)
-                if not user_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa publicada.</div>', unsafe_allow_html=True)
-            with tl:
-                for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="prof_liked",compact=True)
-                if not liked_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa curtida.</div>', unsafe_allow_html=True)
+    else:
+        if st.button("← Voltar ao Feed", key="prof_back_me", use_container_width=True):
+            st.session_state.profile_view = None; st.rerun()
+
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown('<h2>Publicações de ' + (t_name.split()[0] if not is_me else "Você") + '</h2>', unsafe_allow_html=True)
+
+    user_posts = [p for p in st.session_state.feed_posts if p.get("author_email") == target_email]
+    if not user_posts:
+        st.info("Nenhuma publicação encontrada.")
+    else:
+        for p in sorted(user_posts, key=lambda x: x.get("date", ""), reverse=True):
+            render_post(p, compact=True)
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════
 #  FEED
 # ═══════════════════════════════════════════════
-def render_post(p,ctx="feed",show_author=True,compact=False):
-    uid=f"{ctx}_{p['id']}"
-    is_liked=st.session_state.current_user in p.get("liked_by",[])
-    is_saved=st.session_state.current_user in p.get("saved_by",[])
+def render_post(p, ctx="feed", compact=False):
+    uid = f"{ctx}_{p['id']}"
+    is_liked = st.session_state.current_user in p.get("liked_by", [])
+    is_saved = st.session_state.current_user in p.get("saved_by", [])
 
-    author_email=p.get("author_email","")
-    author_data=st.session_state.users.get(author_email,{})
-    author_name=author_data.get("name","Usuário Desconhecido")
-    author_initials=ini(author_name)
-    author_grad=ugrad(author_email)
-
+    # Renderizar post de forma compacta ou completa
     if compact:
-        st.markdown(f'<div class="scard">', unsafe_allow_html=True)
-        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.25rem;">', unsafe_allow_html=True)
-        if show_author:
-            st.markdown(f'<div style="cursor:pointer;" onclick="Streamlit.setComponentValue(\'profile_view\', \'{author_email}\')">{avh(author_initials,28,author_grad)}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div style="flex:1;"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:var(--t0);">{author_name}</div><div style="font-size:.62rem;color:var(--t3);">{author_data.get("area","")}</div></div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0);flex:1;">{p["title"]}</div>', unsafe_allow_html=True)
-        st.markdown(f'</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="font-size:.68rem;color:var(--t3);margin-top:.35rem">{p.get("date","")} · {p["likes"]} curtidas · {len(p.get("comments",[]))} comentários</div>', unsafe_allow_html=True)
-        st.markdown(f'</div>', unsafe_allow_html=True)
+        st.markdown(f'''
+        <div class="scard">
+            <div style="display:flex;align-items:center;gap:7px;margin-bottom:.25rem">
+                {avh(p["avatar"], 30, ugrad(p["author_email"]))}
+                <div style="flex:1">
+                    <div style="font-family:Syne,sans-serif;font-size:.82rem;font-weight:700;color:var(--t0)">{p["title"][:60]}{"..." if len(p["title"]) > 60 else ""}</div>
+                    <div style="font-size:.64rem;color:var(--t3)">{p["author"]} · {time_ago(p["date"])}</div>
+                </div>
+                {badge(p["status"])}
+            </div>
+            <div style="font-size:.72rem;color:var(--t2);line-height:1.6;margin-bottom:.5rem">
+                {p["abstract"][:120]}{"..." if len(p["abstract"]) > 120 else ""}
+            </div>
+            <div>{tags_html(p["tags"][:3])}</div>
+        </div>
+        ''', unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("Ver Detalhes", key=f"view_{uid}", use_container_width=True):
+                st.session_state.page = "feed" # Stay on feed, but show full post
+                st.session_state.view_post_id = p["id"]
+                st.rerun()
+        with c2:
+            if st.button("👤 Perfil", key=f"prof_{uid}", use_container_width=True):
+                st.session_state.profile_view = p["author_email"]
+                st.rerun()
+        with c3:
+            if st.button("💬 Chat", key=f"chat_{uid}", use_container_width=True):
+                st.session_state.chat_messages.setdefault(p["author_email"], [])
+                st.session_state.active_chat = p["author_email"]
+                st.session_state.page = "chat"
+                st.rerun()
         return
 
-    st.markdown(f'<div class="post-card">', unsafe_allow_html=True)
-    st.markdown(f'<div style="display:flex;align-items:center;gap:12px;padding:1rem 1.2rem 0.8rem;">', unsafe_allow_html=True)
-    if show_author:
-        if st.button(f"view_profile_{author_email}_{uid}", key=f"view_profile_{author_email}_{uid}", help="Ver perfil", use_container_width=False):
-            st.session_state.profile_view = author_email
+    # Full post rendering
+    st.markdown(f'''
+    <div class="post-card">
+        <div style="display:flex;align-items:center;gap:12px;padding:1rem 1.2rem .8rem">
+            {avh(p["avatar"], 42, ugrad(p["author_email"]))}
+            <div style="flex:1">
+                <div style="font-family:Syne,sans-serif;font-size:.95rem;font-weight:700;color:var(--t0)">{p["author"]}</div>
+                <div style="font-size:.7rem;color:var(--t3)">{p["area"]} · {time_ago(p["date"])}</div>
+            </div>
+            {badge(p["status"])}
+        </div>
+        <div style="padding:0 1.2rem .8rem">
+            <h2 style="margin-bottom:.4rem;font-size:1.2rem!important">{p["title"]}</h2>
+            <p style="font-size:.82rem;color:var(--t1);line-height:1.7">{p["abstract"]}</p>
+            <div style="margin-top:.8rem">{tags_html(p["tags"])}</div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:.8rem 1.2rem;border-top:1px solid var(--gb1)">
+            <div style="display:flex;gap:1.2rem;font-size:.7rem;color:var(--t3)">
+                <span>❤️ {p["likes"]}</span>
+                <span>💬 {len(p["comments"])}</span>
+                <span>👁️ {p["views"]}</span>
+            </div>
+            <div style="display:flex;gap:.5rem">
+                <button class="stButton" style="background:var(--bg3);border:1px solid var(--gb1);border-radius:8px;padding:4px 10px;font-size:.7rem;color:var(--t2)" key="like_{uid}">
+                    {f'❤️ Curtido' if is_liked else '♡ Curtir'}
+                </button>
+                <button class="stButton" style="background:var(--bg3);border:1px solid var(--gb1);border-radius:8px;padding:4px 10px;font-size:.7rem;color:var(--t2)" key="save_{uid}">
+                    {f'🔖 Salvo' if is_saved else '📌 Salvar'}
+                </button>
+            </div>
+        </div>
+    </div>
+    ''', unsafe_allow_html=True)
+
+    # Lógica para botões de like/save (fora do markdown para interatividade)
+    cols_interact = st.columns(2)
+    with cols_interact[0]:
+        if st.button(f'{"❤️ Curtido" if is_liked else "♡ Curtir"}', key=f"like_btn_{uid}", use_container_width=True):
+            if is_liked:
+                p["liked_by"].remove(st.session_state.current_user)
+                p["likes"] -= 1
+                st.toast("Curtida removida!")
+            else:
+                p["liked_by"].append(st.session_state.current_user)
+                p["likes"] += 1
+                st.toast("Curtido!")
+            save_db(); st.rerun()
+    with cols_interact[1]:
+        if st.button(f'{"🔖 Salvo" if is_saved else "📌 Salvar"}', key=f"save_btn_{uid}", use_container_width=True):
+            if is_saved:
+                p["saved_by"].remove(st.session_state.current_user)
+                st.toast("Removido dos salvos!")
+            else:
+                p["saved_by"].append(st.session_state.current_user)
+                st.toast("Salvo para depois!")
+            save_db(); st.rerun()
+
+    # Comentários
+    st.markdown(f'<div style="padding:0 1.2rem .8rem;margin-top:.5rem">', unsafe_allow_html=True)
+    st.markdown(f'<h3 style="font-size:.9rem;color:var(--t1);margin-bottom:.6rem">Comentários ({len(p["comments"])})</h3>', unsafe_allow_html=True)
+    for cmt in p["comments"]:
+        st.markdown(f'<div class="cmt"><div style="font-size:.75rem;font-weight:600;color:var(--t0);margin-bottom:3px">{cmt["user"]}</div><div style="font-size:.72rem;color:var(--t2);line-height:1.6">{cmt["text"]}</div></div>', unsafe_allow_html=True)
+
+    new_comment_text = st.text_input("Adicionar comentário", key=f"new_comment_{uid}", label_visibility="collapsed")
+    if st.button("Comentar", key=f"submit_comment_{uid}"):
+        if new_comment_text:
+            p["comments"].append({"user": guser().get("name", "Anônimo"), "text": new_comment_text})
+            save_db()
             st.rerun()
-        st.markdown(f'<div style="position:relative;left:-10px;top:2px;">{avh(author_initials,40,author_grad)}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div style="flex:1;"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.9rem;color:var(--t0);">{author_name}</div><div style="font-size:.7rem;color:var(--t3);">{author_data.get("area","")}</div></div>', unsafe_allow_html=True)
-    st.markdown(f'<div style="font-size:.65rem;color:var(--t3);">{time_ago(p["date"])}</div>', unsafe_allow_html=True)
-    st.markdown(f'</div>', unsafe_allow_html=True)
-
-    st.markdown(f'<div style="padding:0 1.2rem 1rem;">', unsafe_allow_html=True)
-    st.markdown(f'<h2 style="margin-bottom:.4rem;">{p["title"]}</h2>', unsafe_allow_html=True)
-    st.markdown(f'<p style="font-size:.82rem;color:var(--t2);line-height:1.7;">{p["abstract"]}</p>', unsafe_allow_html=True)
-    st.markdown(f'<div style="margin-top:.8rem;">{tags_html(p["tags"])}</div>', unsafe_allow_html=True)
-    st.markdown(f'</div>', unsafe_allow_html=True)
-
-    st.markdown(f'<div style="display:flex;align-items:center;justify-content:space-between;padding:.8rem 1.2rem;border-top:1px solid var(--gb1);">', unsafe_allow_html=True)
-    st.markdown(f'<div style="display:flex;gap:1rem;align-items:center;">', unsafe_allow_html=True)
-
-    # Like button
-    like_color = "var(--red)" if is_liked else "var(--t3)"
-    if st.button(f'❤️ {p["likes"]}', key=f"like_{uid}", help="Curtir/Descurtir", use_container_width=False):
-        if is_liked:
-            p["likes"] = max(0, p["likes"] - 1)
-            p["liked_by"].remove(st.session_state.current_user)
-            record(p["tags"], -0.5)
         else:
-            p["likes"] += 1
-            p["liked_by"].append(st.session_state.current_user)
-            record(p["tags"], 0.5)
-        save_db(); st.rerun()
-    st.markdown(f'<span style="color:{like_color};font-size:.8rem;font-weight:600;margin-left:-10px;"></span>', unsafe_allow_html=True)
-
-    # Comment button
-    if st.button(f'💬 {len(p.get("comments",[]))}', key=f"comment_{uid}", help="Comentar", use_container_width=False):
-        st.session_state[f"show_comments_{uid}"] = not st.session_state.get(f"show_comments_{uid}", False)
-    st.markdown(f'<span style="color:var(--t3);font-size:.8rem;font-weight:600;margin-left:-10px;"></span>', unsafe_allow_html=True)
-
-    # Save button
-    save_color = "var(--blu)" if is_saved else "var(--t3)"
-    if st.button(f'📌', key=f"save_{uid}", help="Salvar/Remover", use_container_width=False):
-        if is_saved:
-            p["saved_by"].remove(st.session_state.current_user)
-            st.toast("Pesquisa removida dos salvos!")
-        else:
-            p["saved_by"].append(st.session_state.current_user)
-            st.toast("Pesquisa salva!")
-        save_db(); st.rerun()
-    st.markdown(f'<span style="color:{save_color};font-size:.8rem;font-weight:600;margin-left:-10px;"></span>', unsafe_allow_html=True)
-
-    st.markdown(f'</div>', unsafe_allow_html=True)
-    st.markdown(f'</div>', unsafe_allow_html=True)
-
-    # Comments section
-    if st.session_state.get(f"show_comments_{uid}", False):
-        st.markdown(f'<div style="padding:0 1.2rem 1rem;">', unsafe_allow_html=True)
-        st.markdown(f'<div class="dtxt">Comentários</div>', unsafe_allow_html=True)
-        for cmt in p.get("comments",[]):
-            cmt_author_data = st.session_state.users.get(cmt.get("user_email", ""), {"name": cmt.get("user", "Anônimo")})
-            cmt_author_name = cmt_author_data.get("name", cmt.get("user", "Anônimo"))
-            st.markdown(f'<div class="cmt"><strong style="color:var(--blu);">{cmt_author_name}:</strong> {cmt["text"]}</div>', unsafe_allow_html=True)
-
-        new_comment_text = st.text_input("Adicionar comentário...", key=f"new_comment_{uid}", label_visibility="collapsed")
-        if st.button("Enviar Comentário", key=f"submit_comment_{uid}", use_container_width=True):
-            if new_comment_text:
-                p.setdefault("comments", []).append({"user": guser().get("name","Anônimo"), "user_email": st.session_state.current_user, "text": new_comment_text, "time": datetime.now().strftime("%H:%M")})
-                save_db(); st.rerun()
-        st.markdown(f'</div>', unsafe_allow_html=True)
-
+            st.warning("O comentário não pode estar vazio.")
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True) # Separador entre posts
 
 def page_feed():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">🏠 Feed de Pesquisas</h1>', unsafe_allow_html=True)
 
-    # Compose new post
-    if st.button("➕ Nova Pesquisa", key="btn_compose", use_container_width=True):
+    # Botão para abrir/fechar o formulário de composição
+    if st.button("✍️ Nova Pesquisa", key="toggle_compose", use_container_width=True):
         st.session_state.compose_open = not st.session_state.compose_open
 
     if st.session_state.compose_open:
@@ -3409,7 +3470,7 @@ def page_feed():
         st.markdown('<h2>Escrever Nova Pesquisa</h2>', unsafe_allow_html=True)
         with st.form("new_post_form"):
             post_title = st.text_input("Título da Pesquisa", key="post_title")
-            post_abstract = st.area_input("Resumo", key="post_abstract", height=150)
+            post_abstract = st.text_area("Resumo", key="post_abstract", height=150)
             post_tags_str = st.text_input("Tags (separadas por vírgula)", key="post_tags")
             post_status = st.selectbox("Status", ["Em andamento", "Publicado", "Concluído"], key="post_status")
 
@@ -3457,8 +3518,21 @@ def page_feed():
 
     # Main feed
     st.markdown('<div style="font-size:.59rem;color:var(--yel);font-weight:700;margin-bottom:.4rem;letter-spacing:.10em;text-transform:uppercase">Últimas Pesquisas</div>', unsafe_allow_html=True)
-    for p in sorted(st.session_state.feed_posts, key=lambda x: x.get("date", ""), reverse=True):
-        render_post(p)
+
+    # Check if a specific post should be viewed in full
+    if st.session_state.get("view_post_id"):
+        post_to_view = next((p for p in st.session_state.feed_posts if p["id"] == st.session_state.view_post_id), None)
+        if post_to_view:
+            render_post(post_to_view)
+            if st.button("← Voltar ao Feed", key="back_from_full_post"):
+                st.session_state.view_post_id = None
+                st.rerun()
+        else:
+            st.error("Publicação não encontrada.")
+            st.session_state.view_post_id = None # Reset if not found
+    else:
+        for p in sorted(st.session_state.feed_posts, key=lambda x: x.get("date", ""), reverse=True):
+            render_post(p)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════
@@ -3469,7 +3543,7 @@ def render_article(a,idx=0,ctx="web"):
     cite=f" · {a['citations']} cit." if a.get("citations") else ""
     uid=re.sub(r'[^a-zA-Z0-9]','',f"{ctx}_{idx}_{str(a.get('doi',''))[:10]}")[:32]
     is_saved=any(s.get('doi')==a.get('doi') for s in st.session_state.saved_articles)
-    ab=(a.get("abstract","") or "")[:250]+("…" if len(a.get("abstract",""))>250 else "")
+    ab=(a.get("abstract","") or "")[:250]+("..." if len(a.get("abstract",""))>250 else "")
     st.markdown(f'<div class="scard"><div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:.28rem"><div style="flex:1;font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0)">{a["title"]}</div><span style="font-size:.58rem;color:{sc};background:var(--bg3);border-radius:7px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{sn}</span></div><div style="color:var(--t3);font-size:.64rem;margin-bottom:.3rem">{a["authors"]} · <em>{a["source"]}</em> · {a["year"]}{cite}</div><div style="color:var(--t2);font-size:.76rem;line-height:1.62">{ab}</div></div>', unsafe_allow_html=True)
     ca,cb,cc=st.columns(3)
     with ca:
@@ -3489,11 +3563,11 @@ def page_search():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.3rem">🔍 Busca Acadêmica</h1>', unsafe_allow_html=True)
     c1,c2=st.columns([4,1])
-    with c1: q=st.text_input("",placeholder="CRISPR · quantum ML · dark matter…",key="sq",label_visibility="collapsed")
+    with c1: q=st.text_input("",placeholder="CRISPR · quantum ML · dark matter...",key="sq",label_visibility="collapsed")
     with c2:
         if st.button("🔍 Buscar", key="btn_s", use_container_width=True):
             if q:
-                with st.spinner("Buscando…"):
+                with st.spinner("Buscando..."):
                     nr=[p for p in st.session_state.feed_posts if q.lower() in p["title"].lower() or q.lower() in p["abstract"].lower()]
                     sr=search_ss(q,6); cr=search_cr(q,3)
                     st.session_state.search_results={"nebula":nr,"ss":sr,"cr":cr}; st.session_state.last_sq=q; record([q.lower()],.3)
@@ -3573,7 +3647,7 @@ def page_knowledge():
     with tm:
         for e1,e2,common,strength in sorted(edges,key=lambda x:-x[3])[:20]:
             n1=users.get(e1,{}); n2=users.get(e2,{}); ts=tags_html(common[:4]) if common else '<span style="color:var(--t3);font-size:.66rem">seguimento</span>'
-            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--blu)">{n1.get("name","?")}</span><span style="color:var(--t3)">↔</span><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--blu)">{n2.get("name","?")}</span><div style="flex:1">{ts}</div><span style="font-size:.63rem;color:var(--grn);font-weight:700">{strength}pt</span></div></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--blu)}">{n1.get("name","?")}</span><span style="color:var(--t3)">↔</span><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--blu)}">{n2.get("name","?")}</span><div style="flex:1">{ts}</div><span style="font-size:.63rem;color:var(--grn);font-weight:700">{strength}pt</span></div></div>', unsafe_allow_html=True)
 
     with tai:
         # AI-POWERED CONNECTION SUGGESTIONS
@@ -3665,7 +3739,7 @@ def page_knowledge():
                     st.session_state.active_chat=oth; st.session_state.page="chat"; st.rerun()
 
     with tall:
-        sq2=st.text_input("",placeholder="🔍 Buscar…",key="all_s",label_visibility="collapsed")
+        sq2=st.text_input("",placeholder="🔍 Buscar...",key="all_s",label_visibility="collapsed")
         for ue,ud in users.items():
             if ue==email: continue
             rn=ud.get("name","?"); ua=ud.get("area","")
@@ -3723,14 +3797,14 @@ def page_folders():
                     ft=ftype(f); ha=f in analyses
                     icon={"PDF":"📄","Word":"📝","Planilha":"📊","Dados":"📈","Código":"🐍","Imagem":"🖼","Markdown":"📋"}.get(ft,"📄")
                     ab2=f'<span class="badge-grn" style="font-size:.57rem;margin-left:5px">✓</span>' if ha else ''
-                    st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid var(--gb1);"><span style="color:var(--blu);">{icon}</span><span style="font-size:.75rem;color:var(--t2);flex:1">{f}</span>{ab2}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid var(--gb1);"><span style="color:var(--blu)}">{icon}</span><span style="font-size:.75rem;color:var(--t2);flex:1">{f}</span>{ab2}</div>', unsafe_allow_html=True)
             ca2,cb2,_=st.columns([1.5,1.5,2])
             with ca2:
                 if st.button("🔬 Analisar", key=f"an_{fn}", use_container_width=True):
                     if files:
-                        pb=st.progress(0,"Iniciando…"); fb=st.session_state.folder_files_bytes.get(fn,{})
+                        pb=st.progress(0,"Iniciando..."); fb=st.session_state.folder_files_bytes.get(fn,{})
                         for fi,f in enumerate(files):
-                            pb.progress((fi+1)/len(files),f"Analisando: {f[:25]}…"); fbytes=fb.get(f,b""); ft2=ftype(f)
+                            pb.progress((fi+1)/len(files),f"Analisando: {f[:25]}..."); fbytes=fb.get(f,b""); ft2=ftype(f)
                             analyses[f]=analyze_doc(f,fbytes,ft2,ra)
                         fd["analyses"]=analyses; save_db(); pb.empty(); st.success("✓ Completo!"); st.rerun()
                     else: st.warning("Adicione arquivos.")
@@ -3786,7 +3860,7 @@ def page_analytics():
             with c2: st.markdown(f'<div class="mbox"><div class="mval-grn">{sum(p["likes"] for p in my_posts)}</div><div class="mlbl">Curtidas</div></div>', unsafe_allow_html=True)
             with c3: st.markdown(f'<div class="mbox"><div class="mval-blu">{sum(len(p.get("comments",[])) for p in my_posts)}</div><div class="mlbl">Comentários</div></div>', unsafe_allow_html=True)
             for p in sorted(my_posts,key=lambda x:x.get("date",""),reverse=True):
-                st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0)">{p["title"][:55]}</div>{badge(p["status"])}</div><div style="font-size:.68rem;color:var(--t3);margin-top:.35rem">{p.get("date","")} · {p["likes"]} curtidas · {len(p.get("comments",[]))} comentários</div></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0)}">{p["title"][:55]}</div>{badge(p["status"])}</div><div style="font-size:.68rem;color:var(--t3);margin-top:.35rem">{p.get("date","")} · {p["likes"]} curtidas · {len(p.get("comments",[]))} comentários</div></div>', unsafe_allow_html=True)
     with ti:
         c1,c2,c3=st.columns(3)
         with c1: st.markdown(f'<div class="mbox"><div class="mval-yel">{d.get("h_index",4)}</div><div class="mlbl">Índice H</div></div>', unsafe_allow_html=True)
@@ -4082,14 +4156,14 @@ def page_chat():
         for ue in st.session_state.chat_contacts:
             if ue==email or ue in shown: continue
             shown.add(ue); ud=users.get(ue,{}); un=ud.get("name","?"); ui=ini(un); ug=ugrad(ue)
-            msgs=st.session_state.chat_messages.get(ue,[]); last=msgs[-1]["text"][:22]+"…" if msgs and len(msgs[-1]["text"])>22 else(msgs[-1]["text"] if msgs else "Iniciar")
+            msgs=st.session_state.chat_messages.get(ue,[]); last=msgs[-1]["text"][:22]+"..." if msgs and len(msgs[-1]["text"])>22 else(msgs[-1]["text"] if msgs else "Iniciar")
             active=st.session_state.active_chat==ue; online=is_online(ue)
             dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
             bg=f"var(--bg3)" if active else f"var(--bg2)"; bdr=f"var(--blu2)" if active else f"var(--gb1)" # Cores ajustadas
             st.markdown(f'<div style="background:{bg};border:1px solid {bdr};border-radius:12px;padding:8px 10px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:7px">{avh(ui,30,ug)}<div style="overflow:hidden;flex:1"><div style="font-size:.76rem;font-weight:600;font-family:Syne,sans-serif;color:var(--t0)">{dot}{un}</div><div style="font-size:.63rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>', unsafe_allow_html=True)
             if st.button("→",key=f"oc_{ue}",use_container_width=True): st.session_state.active_chat=ue; st.rerun()
         st.markdown("<hr>", unsafe_allow_html=True)
-        nc2=st.text_input("",placeholder="E-mail…",key="new_ct",label_visibility="collapsed")
+        nc2=st.text_input("",placeholder="E-mail...",key="new_ct",label_visibility="collapsed")
         if st.button("+ Adicionar",key="btn_ac",use_container_width=True):
             if nc2 in users and nc2!=email:
                 if nc2 not in st.session_state.chat_contacts: st.session_state.chat_contacts.append(nc2)
@@ -4105,7 +4179,7 @@ def page_chat():
                 st.markdown(f'<div style="display:flex;{"justify-content:flex-end" if im else ""}"><div class="{cls}">{msg["text"]}<div style="font-size:.57rem;color:var(--t3);margin-top:2px;text-align:{"right" if im else "left"}">{msg["time"]}</div></div></div>', unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             ci2,cb2=st.columns([5,1])
-            with ci2: nm=st.text_input("",placeholder="Escreva uma mensagem…",key=f"mi_{contact}",label_visibility="collapsed")
+            with ci2: nm=st.text_input("",placeholder="Escreva uma mensagem...",key=f"mi_{contact}",label_visibility="collapsed")
             with cb2:
                 if st.button("→", key=f"ms_{contact}", use_container_width=True):
                     if nm: now=datetime.now().strftime("%H:%M"); st.session_state.chat_messages.setdefault(contact,[]).append({"from":"me","text":nm,"time":now}); st.rerun()
