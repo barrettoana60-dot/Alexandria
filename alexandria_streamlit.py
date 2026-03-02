@@ -1,34 +1,6 @@
 import subprocess, sys, os, json, hashlib, random, string, re, io, base64, time
 from datetime import datetime
 from collections import defaultdict, Counter
-
-# --- Instalação de pacotes (se necessário) ---
-# Descomente e execute se algum pacote estiver faltando
-# def _pip(*pkgs):
-#     for p in pkgs:
-#         try: subprocess.check_call([sys.executable,"-m","pip","install",p,"-q"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-#         except: pass
-
-# try: import plotly.graph_objects as go
-# except: _pip("plotly"); import plotly.graph_objects as go
-# try: import numpy as np; from PIL import Image as PILImage
-# except: _pip("pillow","numpy"); import numpy as np; from PIL import Image as PILImage
-# try: import requests
-# except: _pip("requests"); import requests
-# try: import PyPDF2
-# except: _pip("PyPDF2")
-# try: import PyPDF2
-# except: PyPDF2 = None
-# try: import openpyxl
-# except: _pip("openpyxl")
-# try: import openpyxl
-# except: openpyxl = None
-# try: import pandas as pd
-# except: _pip("pandas"); import pandas as pd
-# try: import cv2
-# except: _pip("opencv-python"); import cv2
-
-# --- Importações Essenciais (assumindo que já estão instaladas) ---
 import plotly.graph_objects as go
 import numpy as np
 from PIL import Image as PILImage
