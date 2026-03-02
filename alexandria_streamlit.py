@@ -1475,7 +1475,8 @@ def page_img_search():
                     fig4.add_trace(go.Scatter(x=bx,y=h["r"][:32],fill='tozeroy',name='R',line=dict(color='rgba(255,59,92,.9)',width=1.5),fillcolor='rgba(255,59,92,.10)'))
                     fig4.add_trace(go.Scatter(x=bx,y=h["g"][:32],fill='tozeroy',name='G',line=dict(color='rgba(6,214,160,.9)',width=1.5),fillcolor='rgba(6,214,160,.10)'))
                     fig4.add_trace(go.Scatter(x=bx,y=h["b"][:32],fill='tozeroy',name='B',line=dict(color='rgba(76,201,240,.9)',width=1.5),fillcolor='rgba(76,201,240,.10)'))
-                    fig4.update_layout(height=165,**pc_dark(),title=dict(text="Histograma RGB",font=dict(color="#E8E9F0",family="Syne",size=10)),legend=dict(font=dict(color="#6B6F88",size=9)),margin=dict(l=10,r=10,t=30,b=8))
+                    layout4={**pc_dark()}; layout4.update({"height":165,"title":dict(text="Histograma RGB",font=dict(color="#E8E9F0",family="Syne",size=10)),"legend":dict(font=dict(color="#6B6F88",size=9)),"margin":dict(l=10,r=10,t=30,b=8)})
+                    fig4.update_layout(**layout4)
                     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True); st.plotly_chart(fig4,use_container_width=True); st.markdown('</div>', unsafe_allow_html=True)
         elif not img_file:
             st.markdown('<div class="glass" style="padding:4.5rem 2rem;text-align:center"><div style="font-size:2.8rem;opacity:.18;margin-bottom:1rem">🔬</div><div style="font-family:Syne,sans-serif;font-size:1rem;color:var(--t1)">Carregue uma imagem científica</div><div style="font-size:.72rem;color:var(--t3);margin-top:.4rem;line-height:1.9">PNG · JPG · WEBP · TIFF<br>Microscopia · Cristalografia · Fluorescência</div></div>', unsafe_allow_html=True)
