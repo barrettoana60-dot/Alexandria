@@ -854,32 +854,55 @@ def inject_css():
 html,body,.stApp{background:var(--bg)!important;color:var(--t1)!important;font-family:'DM Sans',-apple-system,sans-serif!important;}
 .stApp::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 60% 50% at -5% 0%,rgba(255,214,10,.07) 0%,transparent 60%),radial-gradient(ellipse 50% 40% at 105% 0%,rgba(76,201,240,.07) 0%,transparent 55%),radial-gradient(ellipse 40% 50% at 50% 110%,rgba(6,214,160,.06) 0%,transparent 60%);}
 .stApp::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background-image:linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px);background-size:60px 60px;}
-header[data-testid="stHeader"],#MainMenu,footer,.stDeployButton,[data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="collapsedControl"],[data-testid="stSidebarCollapseButton"]{display:none!important}
-section[data-testid="stSidebar"]{display:none!important}
-.block-container{padding-top:.5rem!important;padding-bottom:4rem!important;max-width:1440px!important;position:relative;z-index:1;padding-left:.75rem!important;padding-right:.75rem!important;}
-/* ── LEFT NAV COLUMN ── */
-.nav-col{background:rgba(10,11,22,.98);border-right:1px solid rgba(255,255,255,.09);min-height:100vh;padding:1.2rem .6rem 1rem;position:sticky;top:0;}
-.nav-logo{display:flex;align-items:center;gap:9px;margin-bottom:1.6rem;padding:.2rem .3rem;}
-.nav-logo-icon{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#FFD60A,#FF8C42);display:flex;align-items:center;justify-content:center;font-size:.9rem;flex-shrink:0;}
-.nav-logo-txt{font-family:'Syne',sans-serif;font-weight:900;font-size:1.2rem;letter-spacing:-.04em;background:linear-gradient(135deg,#FFD60A,#06D6A0);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.nav-label{font-size:.55rem;font-weight:700;color:#404460;letter-spacing:.14em;text-transform:uppercase;padding:0 .4rem;margin-bottom:.4rem;margin-top:.9rem;}
-.nav-hr{border:none;border-top:1px solid rgba(255,255,255,.07);margin:.7rem 0;}
-/* Nav buttons in left column — global override */
-.stButton>button{
-  background:rgba(255,255,255,.08)!important;
-  border:1px solid rgba(255,255,255,.12)!important;
-  border-radius:10px!important;
-  color:#C8CAD8!important;
-  -webkit-text-fill-color:#C8CAD8!important;
-  font-family:'DM Sans',sans-serif!important;
-  font-weight:500!important;font-size:.82rem!important;
-  padding:.46rem .75rem!important;
-  transition:background .1s,border-color .1s!important;
-  box-shadow:none!important;
+header[data-testid="stHeader"],#MainMenu,footer,.stDeployButton,[data-testid="stToolbar"],[data-testid="stDecoration"]{display:none!important}
+[data-testid="stSidebarCollapseButton"]{display:none!important}
+/* Force sidebar always open */
+section[data-testid="stSidebar"]{
+  display:block!important;
+  transform:translateX(0)!important;
+  visibility:visible!important;
+  background:rgba(8,9,18,.99)!important;
+  border-right:1px solid rgba(255,255,255,.1)!important;
+  width:210px!important;min-width:210px!important;max-width:210px!important;
+  padding:1.2rem .8rem 1rem!important;
 }
-.stButton>button:hover{background:rgba(255,255,255,.14)!important;border-color:rgba(255,255,255,.22)!important;color:#FFFFFF!important;-webkit-text-fill-color:#FFFFFF!important;}
-.stButton>button:active{transform:scale(.98)!important;}
-.stButton>button p,.stButton>button span,.stButton>button div{color:inherit!important;-webkit-text-fill-color:inherit!important;}
+section[data-testid="stSidebar"]>div{width:210px!important;padding:0!important;}
+[data-testid="collapsedControl"]{display:none!important}
+.block-container{padding-top:.3rem!important;padding-bottom:4rem!important;max-width:1380px!important;position:relative;z-index:1;padding-left:.8rem!important;padding-right:.8rem!important;}
+/* ALL buttons - visible, simple */
+.stButton>button{
+  background:rgba(255,255,255,.09)!important;
+  border:1px solid rgba(255,255,255,.14)!important;
+  border-radius:10px!important;
+  color:#D0D2E0!important;
+  -webkit-text-fill-color:#D0D2E0!important;
+  font-family:'DM Sans',sans-serif!important;
+  font-weight:500!important;font-size:.83rem!important;
+  padding:.46rem .8rem!important;
+  transition:background .1s!important;
+  box-shadow:none!important;
+  line-height:1.4!important;
+}
+.stButton>button:hover{
+  background:rgba(255,255,255,.16)!important;
+  color:#FFFFFF!important;-webkit-text-fill-color:#FFFFFF!important;
+}
+.stButton>button:active{transform:scale(.97)!important;}
+.stButton>button p,.stButton>button span{color:inherit!important;-webkit-text-fill-color:inherit!important;}
+/* Sidebar buttons: left-aligned, full-width */
+section[data-testid="stSidebar"] .stButton>button{
+  text-align:left!important;
+  justify-content:flex-start!important;
+  width:100%!important;
+  margin-bottom:.15rem!important;
+  padding:.5rem .85rem!important;
+  font-size:.85rem!important;
+}
+/* sb-logo and labels */
+.sb-logo{display:flex;align-items:center;gap:9px;margin-bottom:1.5rem;padding:.2rem .3rem;}
+.sb-logo-icon{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#FFD60A,#FF8C42);display:flex;align-items:center;justify-content:center;font-size:.9rem;flex-shrink:0;}
+.sb-logo-txt{font-family:'Syne',sans-serif;font-weight:900;font-size:1.2rem;letter-spacing:-.04em;background:linear-gradient(135deg,#FFD60A,#06D6A0);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.sb-lbl{font-size:.54rem;font-weight:700;color:#404460;letter-spacing:.14em;text-transform:uppercase;padding:0 .2rem;margin-bottom:.35rem;margin-top:.8rem;}
 .stTextInput input,.stTextArea textarea{background:rgba(255,255,255,.04)!important;border:1px solid var(--gb1)!important;border-radius:var(--r12)!important;color:var(--t1)!important;font-family:'DM Sans',sans-serif!important;font-size:.84rem!important;}
 .stTextInput input:focus,.stTextArea textarea:focus{border-color:rgba(255,214,10,.4)!important;box-shadow:0 0 0 3px rgba(255,214,10,.08)!important;}
 .stTextInput label,.stTextArea label,.stSelectbox label,.stFileUploader label,.stNumberInput label{color:var(--t3)!important;font-size:.60rem!important;letter-spacing:.10em!important;text-transform:uppercase!important;font-weight:600!important;}
@@ -939,47 +962,7 @@ label{color:var(--t2)!important;}
 .stCheckbox label,.stRadio label{color:var(--t1)!important;}
 .stRadio>div{display:flex!important;gap:4px!important;flex-wrap:wrap!important;}
 .stRadio>div>label{background:rgba(255,255,255,.04)!important;border:1px solid var(--gb1)!important;border-radius:50px!important;padding:.28rem .78rem!important;font-size:.74rem!important;cursor:pointer!important;color:var(--t2)!important;}
-/* ══ CRITICAL: Force all button text to be visible ══ */
-.stButton>button span,
-.stButton>button p,
-.stButton>button div,
-.stButton>button {
-  color: var(--t2) !important;
-  -webkit-text-fill-color: var(--t2) !important;
-  opacity: 1 !important;
-}
-.stButton>button:hover span,
-.stButton>button:hover {
-  color: var(--t0) !important;
-  -webkit-text-fill-color: var(--t0) !important;
-}
-/* Colored button text overrides */
-.btn-yel .stButton>button,
-.btn-yel .stButton>button span { color: var(--yel) !important; -webkit-text-fill-color: var(--yel) !important; }
-.btn-grn .stButton>button,
-.btn-grn .stButton>button span { color: var(--grn) !important; -webkit-text-fill-color: var(--grn) !important; }
-.btn-red .stButton>button,
-.btn-red .stButton>button span { color: var(--red) !important; -webkit-text-fill-color: var(--red) !important; }
-.btn-blu .stButton>button,
-.btn-blu .stButton>button span { color: var(--blu) !important; -webkit-text-fill-color: var(--blu) !important; }
-.btn-pur .stButton>button,
-.btn-pur .stButton>button span { color: var(--pur) !important; -webkit-text-fill-color: var(--pur) !important; }
-.snav-a.yel .stButton>button,
-.snav-a.yel .stButton>button span { color: var(--yel) !important; -webkit-text-fill-color: var(--yel) !important; }
-.snav-a.grn .stButton>button,
-.snav-a.grn .stButton>button span { color: var(--grn) !important; -webkit-text-fill-color: var(--grn) !important; }
-.snav-a.blu .stButton>button,
-.snav-a.blu .stButton>button span { color: var(--blu) !important; -webkit-text-fill-color: var(--blu) !important; }
-.snav-a.red .stButton>button,
-.snav-a.red .stButton>button span { color: var(--red) !important; -webkit-text-fill-color: var(--red) !important; }
-.snav-a.orn .stButton>button,
-.snav-a.orn .stButton>button span { color: var(--orn) !important; -webkit-text-fill-color: var(--orn) !important; }
-.snav-a.pur .stButton>button,
-.snav-a.pur .stButton>button span { color: var(--pur) !important; -webkit-text-fill-color: var(--pur) !important; }
-/* Ghost button */
-.btn-ghost .stButton>button,
-.btn-ghost .stButton>button span { color: var(--t4) !important; -webkit-text-fill-color: var(--t4) !important; }
-.btn-ghost .stButton>button:hover span { color: var(--t2) !important; -webkit-text-fill-color: var(--t2) !important; }
+/* colored accent buttons */
 input[type="number"]{background:rgba(255,255,255,.04)!important;border:1px solid var(--gb1)!important;border-radius:var(--r12)!important;color:var(--t1)!important;}
 /* AI Result card */
 .ai-card{background:linear-gradient(135deg,rgba(255,214,10,.06),rgba(6,214,160,.04));border:1px solid rgba(255,214,10,.18);border-radius:var(--r16);padding:1rem;margin-bottom:.6rem;}
@@ -1003,38 +986,6 @@ _COLORS = {
     "t2":  ("#A8ABBE", "rgba(255,255,255,.05)", "rgba(255,255,255,.12)"),
 }
 
-def sbtn(label, key, color="t2", left=False, active=False):
-    """Styled button — span anchor + CSS :has() without direct-child selector."""
-    clr, bg_n, bd_n = _COLORS.get(color, _COLORS["t2"])
-    if active:
-        # stronger highlight for active state
-        bg_n = "rgba(255,255,255,.18)"
-        bd_n = clr
-    align = "left" if left else "center"
-    anchor = f"_sb_{key}_"
-    # Use :has(span#X) without > so it works regardless of nesting depth
-    st.markdown(
-        f'<span id="{anchor}" style="display:none"></span>'
-        f'<style>'
-        # target the button in the NEXT sibling container
-        f'div:has(span#{anchor})+div .stButton>button,'
-        f'div:has(span#{anchor})+div .stButton>button p,'
-        f'div:has(span#{anchor})+div .stButton>button span{{'
-        f'color:{clr}!important;'
-        f'-webkit-text-fill-color:{clr}!important;'
-        f'background:{bg_n}!important;'
-        f'border:1px solid {bd_n}!important;'
-        f'text-align:{align}!important;'
-        f'justify-content:{"flex-start" if left else "center"}!important;'
-        f'font-weight:{"700" if active else "600"}!important;}}'
-        f'div:has(span#{anchor})+div .stButton>button:hover{{'
-        f'background:{bd_n}!important;'
-        f'border-color:{clr}!important;'
-        f'color:{clr}!important;-webkit-text-fill-color:{clr}!important;}}'
-        f'</style>',
-        unsafe_allow_html=True
-    )
-    return st.button(label, key=key, use_container_width=True)
 def avh(initials,sz=40,grad=None):
     fs=max(sz//3,9); bg=grad or "linear-gradient(135deg,#FFD60A,#FF8C42)"
     return f'<div style="width:{sz}px;height:{sz}px;border-radius:50%;background:{bg};display:flex;align-items:center;justify-content:center;font-family:Syne,sans-serif;font-weight:800;font-size:{fs}px;color:white;flex-shrink:0;border:1.5px solid rgba(255,255,255,.12)">{initials}</div>'
@@ -1102,33 +1053,60 @@ NAV=[("feed","🏠 Feed","yel"),("search","🔍 Busca","blu"),("knowledge","🕸
      ("folders","📁 Pastas","orn"),("analytics","📊 Análises","pur"),
      ("img_search","🔬 Visão IA","blu"),("chat","💬 Chat","grn"),("settings","⚙️ Config","red")]
 
-def render_nav(col):
-    """Renders the navigation into a given column — always visible."""
-    email=st.session_state.current_user; u=guser(); name=u.get("name","?"); ini_=ini(name)
-    g=ugrad(email); cur=st.session_state.page
-    with col:
-        st.markdown('<div class="nav-logo"><div class="nav-logo-icon">🔬</div><div class="nav-logo-txt">Nebula</div></div>', unsafe_allow_html=True)
-        st.markdown('<div class="nav-label">Navegação</div>', unsafe_allow_html=True)
-        for key,label,col_c in NAV:
-            is_a=(cur==key and not st.session_state.profile_view)
-            if sbtn(label, f"sb_{key}", color=col_c if is_a else "t2", left=True, active=is_a):
-                st.session_state.profile_view=None; st.session_state.page=key; st.rerun()
-        st.markdown('<div class="nav-hr"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="nav-label">API Key</div>', unsafe_allow_html=True)
-        ak=st.text_input("",placeholder="sk-ant-...",type="password",key="sb_apikey",
-                         label_visibility="collapsed",value=st.session_state.anthropic_key)
-        if ak!=st.session_state.anthropic_key:
-            st.session_state.anthropic_key=ak
+def render_nav():
+    """Simple sidebar nav — st.sidebar + plain st.button. Always works."""
+    email = st.session_state.current_user
+    u = guser(); name = u.get("name","?"); ini_ = ini(name)
+    g = ugrad(email); cur = st.session_state.page
+
+    with st.sidebar:
+        st.markdown('<div class="sb-logo"><div class="sb-logo-icon">🔬</div><div class="sb-logo-txt">Nebula</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="sb-lbl">Navegação</div>', unsafe_allow_html=True)
+
+        # Inject per-button active CSS — targets by nth-child, no :has() needed
+        active_styles = ""
+        for i, (key, label, col) in enumerate(NAV):
+            is_a = (cur == key and not st.session_state.profile_view)
+            if is_a:
+                colors = {"yel":"#FFD60A","grn":"#06D6A0","blu":"#4CC9F0",
+                          "red":"#FF3B5C","pur":"#B17DFF","orn":"#FF8C42"}
+                c = colors.get(col, "#FFD60A")
+                # Use :nth-of-type targeting the button within sidebar
+                active_styles += (
+                    f'section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]'
+                    f' > [data-testid="stVerticalBlock"]:nth-child({i+2})'
+                    f' .stButton>button{{'
+                    f'color:{c}!important;-webkit-text-fill-color:{c}!important;'
+                    f'background:rgba(255,255,255,.14)!important;'
+                    f'border-color:{c}40!important;'
+                    f'font-weight:700!important;}}'
+                )
+
+        if active_styles:
+            st.markdown(f'<style>{active_styles}</style>', unsafe_allow_html=True)
+
+        for key, label, col in NAV:
+            if st.button(label, key=f"sb_{key}", use_container_width=True):
+                st.session_state.profile_view = None
+                st.session_state.page = key
+                st.rerun()
+
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown('<div class="sb-lbl">API Key</div>', unsafe_allow_html=True)
+        ak = st.text_input("", placeholder="sk-ant-...", type="password", key="sb_apikey",
+                           label_visibility="collapsed", value=st.session_state.anthropic_key)
+        if ak != st.session_state.anthropic_key:
+            st.session_state.anthropic_key = ak
         if ak and ak.startswith("sk-"):
             st.markdown('<div style="font-size:.55rem;color:#06D6A0;padding:.1rem .2rem">● Claude Vision ativo</div>', unsafe_allow_html=True)
         else:
-            st.markdown('<div style="font-size:.55rem;color:#404460;padding:.1rem .2rem">● Insira chave para IA</div>', unsafe_allow_html=True)
-        st.markdown('<div class="nav-hr"></div>', unsafe_allow_html=True)
-        notif=len(st.session_state.notifications)
-        nb=f' 🔴' if notif else ''
-        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.25rem .1rem">{avh(ini_,32,g)}<div style="flex:1;min-width:0"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:#FFFFFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{name}{nb}</div><div style="font-size:.58rem;color:#6B6F88">{u.get("area","Pesquisador")[:18]}</div></div></div>', unsafe_allow_html=True)
-        if sbtn("👤 Meu Perfil", "sb_myprofile", color="t1", left=True):
-            st.session_state.profile_view=email; st.session_state.page="feed"; st.rerun()
+            st.markdown('<div style="font-size:.55rem;color:#555770;padding:.1rem .2rem">● Insira chave para IA</div>', unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.2rem .1rem">{avh(ini_,32,g)}<div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:#FFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">{name}</div><div style="font-size:.58rem;color:#6B6F88">{u.get("area","")[:18]}</div></div></div>', unsafe_allow_html=True)
+        if st.button("👤 Meu Perfil", key="sb_myprofile", use_container_width=True):
+            st.session_state.profile_view = email
+            st.session_state.page = "feed"
+            st.rerun()
 
 # ═══════════════════════════════════════════════
 #  PROFILE
@@ -1163,13 +1141,13 @@ def page_profile(target_email):
         with c1:
             cls="btn-grn" if is_fol else "btn-yel"
             st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
-            if sbtn("✓ Seguindo","su_n",color="yel"):
+            if st.button("✓ Seguindo", key="su_n", use_container_width=True):
                 if is_fol: st.session_state.followed.remove(target_email); tu["followers"]=max(0,tu.get("followers",0)-1)
                 else: st.session_state.followed.append(target_email); tu["followers"]=tu.get("followers",0)+1
                 save_db(); st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
         with c2:
-            if sbtn("💬 Mensagem","pf_chat",color="blu"):
+            if st.button("💬 Mensagem", key="pf_chat", use_container_width=True):
                 st.session_state.chat_messages.setdefault(target_email,[])
                 st.session_state.active_chat=target_email; st.session_state.page="chat"; st.rerun()
         with c3:
@@ -1190,10 +1168,10 @@ def page_profile(target_email):
             new_b=st.text_area("Bio",value=tu.get("bio",""),key="cfg_b",height=80)
             cs,co=st.columns(2)
             with cs:
-                if sbtn("💾 Salvar","btn_sp",color="yel"):
+                if st.button("💾 Salvar", key="btn_sp", use_container_width=True):
                     st.session_state.users[email].update({"name":new_n,"area":new_a,"bio":new_b}); save_db(); st.success("✓ Salvo!"); st.rerun()
             with co:
-                if sbtn("🚪 Sair","btn_out",color="red"):
+                if st.button("🚪 Sair", key="btn_out", use_container_width=True):
                     st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
         with tl:
             if user_posts:
@@ -1208,7 +1186,7 @@ def page_profile(target_email):
                 for idx,a in enumerate(saved_arts):
                     render_article(a,idx=idx+3000,ctx="saved")
                     uid2=re.sub(r'[^a-zA-Z0-9]','',f"rms_{idx}")[:20]
-                    if sbtn("🗑 Remover",f"rm_sa_{uid2}",color="red"):
+                    if st.button("🗑 Remover", key=f"rm_sa_{uid2}", use_container_width=True):
                         st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]
                         save_db(); st.rerun()
             else: st.markdown('<div class="glass" style="padding:2.5rem;text-align:center;color:var(--t3)">Nenhum artigo salvo.</div>', unsafe_allow_html=True)
@@ -1282,7 +1260,7 @@ def page_feed():
             with c2c: nst=st.selectbox("Status",["Em andamento","Publicado","Concluído"],key="np_st")
             cp,cc=st.columns([2,1])
             with cp:
-                if sbtn("🚀 Publicar","btn_pub",color="yel"):
+                if st.button("🚀 Publicar", key="btn_pub", use_container_width=True):
                     if not nt or not nab: st.warning("Título e resumo obrigatórios.")
                     else:
                         tags=[t.strip() for t in ntg.split(",") if t.strip()] if ntg else []
@@ -1295,7 +1273,7 @@ def page_feed():
             ac,bc=st.columns([.05,1],gap="small")
             with ac: st.markdown(f'<div style="padding-top:6px">{avh(uin,38,g)}</div>', unsafe_allow_html=True)
             with bc:
-                if sbtn(f"No que está pesquisando, {uname.split()[0]}?","oc",color="t2"):
+                if st.button(f"No que está pesquisando, {uname.split()[0]}?", key="oc", use_container_width=True):
                     st.session_state.compose_open=True; st.rerun()
         ff=st.radio("",["🌐 Todos","👥 Seguidos","🔖 Salvos","🔥 Populares"],horizontal=True,key="ff",label_visibility="collapsed")
         recs=get_recs(email,2)
@@ -1333,7 +1311,7 @@ def page_feed():
                     save_db(); st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
             with cv2:
-                if sbtn("👤 Ver",f"svr_{ue}",color="blu"): st.session_state.profile_view=ue; st.rerun()
+                if st.button("👤 Ver", key=f"svr_{ue}", use_container_width=True): st.session_state.profile_view=ue; st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('<div class="sc">', unsafe_allow_html=True)
         st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.80rem;margin-bottom:.75rem;color:var(--t0)">🔥 Em Alta</div>', unsafe_allow_html=True)
@@ -1372,7 +1350,7 @@ def page_search():
     c1,c2=st.columns([4,1])
     with c1: q=st.text_input("",placeholder="CRISPR · quantum ML · dark matter…",key="sq",label_visibility="collapsed")
     with c2:
-        if sbtn("🔍 Buscar","btn_s",color="yel"):
+        if st.button("🔍 Buscar", key="btn_s", use_container_width=True):
             if q:
                 with st.spinner("Buscando…"):
                     nr=[p for p in st.session_state.feed_posts if q.lower() in p["title"].lower() or q.lower() in p["abstract"].lower()]
@@ -1472,7 +1450,7 @@ def page_knowledge():
                     st.markdown(f'<div class="conn-ai"><div style="display:flex;align-items:center;gap:9px;margin-bottom:.5rem">{avh(ini(rn),34,rg)}<div style="flex:1"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.84rem;color:var(--t0)">{rn}</div><div style="font-size:.66rem;color:var(--t3)">{ud.get("area","")}</div></div><span class="badge-grn">{len(common_tags)} temas</span></div><div style="font-size:.73rem;color:var(--t2);margin-bottom:.45rem">Interesses em comum: {tags_html(list(common_tags)[:4])}</div></div>', unsafe_allow_html=True)
                     cf_b,cv_b=st.columns(2)
                     with cf_b:
-                        if sbtn(f"+ Seguir {rn.split()[0]}",f"ais_{ue}",color="grn"):
+                        if st.button(f"+ Seguir {rn.split()[0]}", key=f"ais_{ue}", use_container_width=True):
                             if ue not in st.session_state.followed: st.session_state.followed.append(ue); ud["followers"]=ud.get("followers",0)+1
                             save_db(); st.rerun()
                     with cv_b:
@@ -1526,7 +1504,7 @@ def page_knowledge():
                     with c_p:
                         if st.button("👤 Perfil",key=f"aic_p_{sue}",use_container_width=True): st.session_state.profile_view=sue; st.rerun()
                     with c_c:
-                        if sbtn("💬 Chat",f"aic_c_{sue}",color="blu"):
+                        if st.button("💬 Chat", key=f"aic_c_{sue}", use_container_width=True):
                             st.session_state.chat_messages.setdefault(sue,[]); st.session_state.active_chat=sue; st.session_state.page="chat"; st.rerun()
             else:
                 st.markdown('<div style="text-align:center;padding:2rem;color:var(--t3)">Clique em "Gerar Sugestões IA" para análise com Claude.</div>', unsafe_allow_html=True)
@@ -1539,9 +1517,9 @@ def page_knowledge():
             st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">{avh(ini(od.get("name","?")),34,og)}<div style="flex:1"><div style="font-weight:700;font-size:.82rem;font-family:Syne,sans-serif;color:var(--t0)">{od.get("name","?")}</div><div style="font-size:.66rem;color:var(--t3)">{od.get("area","")}</div></div>{tags_html(common[:3])}</div></div>', unsafe_allow_html=True)
             cv,cm2,_=st.columns([1,1,4])
             with cv:
-                if sbtn("👤 Ver",f"kv_{oth}",color="blu"): st.session_state.profile_view=oth; st.rerun()
+                if st.button("👤 Ver", key=f"kv_{oth}", use_container_width=True): st.session_state.profile_view=oth; st.rerun()
             with cm2:
-                if sbtn("💬",f"kc_{oth}",color="grn"):
+                if st.button("💬", key=f"kc_{oth}", use_container_width=True):
                     st.session_state.chat_messages.setdefault(oth,[])
                     st.session_state.active_chat=oth; st.session_state.page="chat"; st.rerun()
 
@@ -1555,7 +1533,7 @@ def page_knowledge():
             st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{avh(ini(rn),34,rg)}<div style="flex:1"><div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{rn}</div><div style="font-size:.66rem;color:var(--t3)">{ua}</div></div></div></div>', unsafe_allow_html=True)
             ca2,cb2,cc2=st.columns(3)
             with ca2:
-                if sbtn("👤 Perfil",f"av_{ue}",color="blu"): st.session_state.profile_view=ue; st.rerun()
+                if st.button("👤 Perfil", key=f"av_{ue}", use_container_width=True): st.session_state.profile_view=ue; st.rerun()
             with cb2:
                 cls="btn-grn" if is_fol else "btn-yel"
                 st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
@@ -1565,7 +1543,7 @@ def page_knowledge():
                     save_db(); st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
             with cc2:
-                if sbtn("💬 Chat",f"ac_{ue}",color="grn"):
+                if st.button("💬 Chat", key=f"ac_{ue}", use_container_width=True):
                     st.session_state.chat_messages.setdefault(ue,[]); st.session_state.active_chat=ue; st.session_state.page="chat"; st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1579,7 +1557,7 @@ def page_folders():
     c1,c2,_=st.columns([2,1.2,1.5])
     with c1: nfn=st.text_input("Nome da pasta",placeholder="Ex: Genômica Comparativa",key="nf_n")
     with c2: nfd=st.text_input("Descrição",key="nf_d")
-    if sbtn("📁 Criar","btn_nf",color="yel"):
+    if st.button("📁 Criar", key="btn_nf", use_container_width=True):
         if nfn.strip():
             if nfn not in st.session_state.folders: st.session_state.folders[nfn]={"desc":nfd,"files":[],"notes":"","analyses":{}}; save_db(); st.success(f"'{nfn}' criada!"); st.rerun()
             else: st.warning("Já existe.")
@@ -1607,7 +1585,7 @@ def page_folders():
                     st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>{icon}</span><span style="font-size:.75rem;color:var(--t2);flex:1">{f}</span>{ab2}</div>', unsafe_allow_html=True)
             ca2,cb2,_=st.columns([1.5,1.5,2])
             with ca2:
-                if sbtn("🔬 Analisar",f"an_{fn}",color="yel"):
+                if st.button("🔬 Analisar", key=f"an_{fn}", use_container_width=True):
                     if files:
                         pb=st.progress(0,"Iniciando…"); fb=st.session_state.folder_files_bytes.get(fn,{})
                         for fi,f in enumerate(files):
@@ -1616,7 +1594,7 @@ def page_folders():
                         fd["analyses"]=analyses; save_db(); pb.empty(); st.success("✓ Completo!"); st.rerun()
                     else: st.warning("Adicione arquivos.")
             with cb2:
-                if sbtn("🗑 Excluir",f"df_{fn}",color="red"):
+                if st.button("🗑 Excluir", key=f"df_{fn}", use_container_width=True):
                     del st.session_state.folders[fn]; save_db(); st.rerun()
             if analyses:
                 for f,an in analyses.items():
@@ -1711,9 +1689,9 @@ def page_img_search():
         img_bytes=None
         if img_file:
             img_bytes=img_file.read(); st.image(img_bytes,use_container_width=True)
-        run=sbtn("🔬 Analisar Imagem","btn_run",color="yel")
+        run=st.button("🔬 Analisar Imagem", key="btn_run", use_container_width=True)
         if img_bytes and has_api:
-            run_claude=sbtn("🤖 Claude Vision","btn_vision",color="pur")
+            run_claude=st.button("🤖 Claude Vision", key="btn_vision", use_container_width=True)
         else:
             run_claude=False
         st.markdown('<div class="pbox-yel" style="margin-top:.8rem"><div style="font-size:.62rem;color:var(--yel);font-weight:700;margin-bottom:2px">⚠️ Aviso IA</div><div style="font-size:.60rem;color:var(--t2);line-height:1.62">Análise computacional. Valide com especialistas da área.</div></div>', unsafe_allow_html=True)
@@ -1986,7 +1964,7 @@ def page_chat():
             ci2,cb2=st.columns([5,1])
             with ci2: nm=st.text_input("",placeholder="Escreva uma mensagem…",key=f"mi_{contact}",label_visibility="collapsed")
             with cb2:
-                if sbtn("→",f"ms_{contact}",color="yel"):
+                if st.button("→", key=f"ms_{contact}", use_container_width=True):
                     if nm: now=datetime.now().strftime("%H:%M"); st.session_state.chat_messages.setdefault(contact,[]).append({"from":"me","text":nm,"time":now}); st.rerun()
         else:
             st.markdown('<div class="glass" style="text-align:center;padding:5rem"><div style="font-size:2.2rem;opacity:.15;margin-bottom:.85rem">💬</div><div style="font-family:Syne,sans-serif;font-size:.96rem;color:var(--t1)">Selecione uma conversa</div><div style="font-size:.70rem;color:var(--t3);margin-top:.4rem">🔒 End-to-end criptografado</div></div>', unsafe_allow_html=True)
@@ -2019,7 +1997,7 @@ def page_settings():
     for nm,ds in [("🔒 AES-256","End-to-end"),("🔏 SHA-256","Hash senhas"),("🛡 TLS 1.3","Transmissão")]:
         st.markdown(f'<div class="pbox-grn"><div style="display:flex;align-items:center;gap:9px"><div style="width:24px;height:24px;border-radius:7px;background:rgba(6,214,160,.12);display:flex;align-items:center;justify-content:center;color:var(--grn);font-size:.72rem">✓</div><div><div style="font-weight:700;color:var(--grn);font-size:.78rem">{nm}</div><div style="font-size:.66rem;color:var(--t3)">{ds}</div></div></div></div>', unsafe_allow_html=True)
     st.markdown("<hr>", unsafe_allow_html=True)
-    if sbtn("🚪 Sair","logout",color="red"):
+    if st.button("🚪 Sair", key="logout", use_container_width=True):
         st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -2030,31 +2008,13 @@ def main():
     inject_css()
     if not st.session_state.logged_in:
         page_login(); return
-    # ── Always-visible layout: nav column + content column ──
-    nav_col, content_col = st.columns([1, 5], gap="small")
-    # Render the dark nav background
-    st.markdown("""
-    <style>
-    /* Style the nav column container */
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {
-      background:rgba(8,9,18,.97)!important;
-      border-right:1px solid rgba(255,255,255,.09)!important;
-      min-height:100vh!important;
-      padding:0 !important;
-    }
-    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child > div {
-      padding:.2rem .4rem !important;
-    }
-    </style>""", unsafe_allow_html=True)
-    render_nav(nav_col)
-    with content_col:
-        if st.session_state.profile_view:
-            page_profile(st.session_state.profile_view)
-        else:
-            {
-                "feed":page_feed,"search":page_search,"knowledge":page_knowledge,
-                "folders":page_folders,"analytics":page_analytics,"img_search":page_img_search,
-                "chat":page_chat,"settings":page_settings,
-            }.get(st.session_state.page,page_feed)()
+    render_nav()
+    if st.session_state.profile_view:
+        page_profile(st.session_state.profile_view); return
+    {
+        "feed": page_feed, "search": page_search, "knowledge": page_knowledge,
+        "folders": page_folders, "analytics": page_analytics, "img_search": page_img_search,
+        "chat": page_chat, "settings": page_settings,
+    }.get(st.session_state.page, page_feed)()
 
 main()
