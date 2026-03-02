@@ -24,33 +24,45 @@ except: openpyxl = None
 try: import pandas as pd
 except: _pip("pandas"); import pandas as pd
 
-# ML / Image Processing
+# ML / Image Processing — all optional, pure numpy fallbacks
+SKIMAGE_OK = False
+SKLEARN_OK = False
+SCIPY_OK = False
+
 try:
-    from skimage import filters, feature, exposure, measure, color as skcolor
-    from skimage.feature import graycomatrix, graycoprops, ORB, corner_harris, corner_peaks
+    from skimage import filters as sk_filters, feature as sk_feature
+    from skimage.feature import graycomatrix, graycoprops
     SKIMAGE_OK = True
-except:
-    _pip("scikit-image")
+except Exception:
     try:
-        from skimage import filters, feature, exposure, measure, color as skcolor
-        from skimage.feature import graycomatrix, graycoprops, ORB, corner_harris, corner_peaks
+        _pip("scikit-image")
+        from skimage import filters as sk_filters, feature as sk_feature
+        from skimage.feature import graycomatrix, graycoprops
         SKIMAGE_OK = True
-    except: SKIMAGE_OK = False
+    except Exception:
+        SKIMAGE_OK = False
 
 try:
     from sklearn.cluster import KMeans
-    from sklearn.preprocessing import StandardScaler
     SKLEARN_OK = True
-except:
-    _pip("scikit-learn")
+except Exception:
     try:
+        _pip("scikit-learn")
         from sklearn.cluster import KMeans
-        from sklearn.preprocessing import StandardScaler
         SKLEARN_OK = True
-    except: SKLEARN_OK = False
+    except Exception:
+        SKLEARN_OK = False
 
-try: from scipy import ndimage, stats
-except: _pip("scipy"); from scipy import ndimage, stats
+try:
+    from scipy import ndimage as sp_ndimage
+    SCIPY_OK = True
+except Exception:
+    try:
+        _pip("scipy")
+        from scipy import ndimage as sp_ndimage
+        SCIPY_OK = True
+    except Exception:
+        SCIPY_OK = False
 
 import streamlit as st
 
@@ -271,99 +283,170 @@ Responda APENAS em JSON puro (sem markdown):
 #  REAL ML IMAGE ANALYSIS PIPELINE
 # ════════════════════════════════════════════════
 def sobel_analysis(gray_arr):
-    """Multi-directional Sobel edge detection."""
-    from skimage import filters
-    sx = filters.sobel_h(gray_arr)
-    sy = filters.sobel_v(gray_arr)
-    magnitude = np.sqrt(sx**2 + sy**2)
-    direction = np.arctan2(sy, sx) * 180 / np.pi
-    # Sobel in diagonals
-    sx45 = ndimage.sobel(gray_arr, axis=0) + ndimage.sobel(gray_arr, axis=1)
-    return {
-        "magnitude": magnitude,
-        "horizontal": sx,
-        "vertical": sy,
-        "mean_edge": float(magnitude.mean()),
-        "max_edge": float(magnitude.max()),
-        "edge_density": float((magnitude > magnitude.mean()*1.5).mean()),
-        "dominant_direction": float(direction.mean()),
-        "edge_hist": np.histogram(magnitude, bins=16, range=(0, magnitude.max()+1e-5))[0].tolist()
-    }
+    """Multi-directional Sobel edge detection — numpy fallback if skimage unavailable."""
+    try:
+        if SKIMAGE_OK:
+            import skimage.filters as skf
+            sx = skf.sobel_h(gray_arr)
+            sy = skf.sobel_v(gray_arr)
+        else:
+            # Pure numpy Sobel
+            kx = np.array([[-1,0,1],[-2,0,2],[-1,0,1]], dtype=np.float32)/8.0
+            ky = kx.T
+            from numpy import pad as nppad
+            def conv2d(img, k):
+                ph,pw=k.shape[0]//2,k.shape[1]//2
+                padded=nppad(img,((ph,ph),(pw,pw)),mode='edge')
+                out=np.zeros_like(img)
+                for i in range(k.shape[0]):
+                    for j in range(k.shape[1]):
+                        out+=k[i,j]*padded[i:i+img.shape[0],j:j+img.shape[1]]
+                return out
+            sx=conv2d(gray_arr.astype(np.float32),kx)
+            sy=conv2d(gray_arr.astype(np.float32),ky)
+        magnitude = np.sqrt(sx**2 + sy**2)
+        direction = np.arctan2(sy, sx) * 180 / np.pi
+        # Diagonal via numpy gradient
+        try:
+            gx2 = np.gradient(gray_arr, axis=1)
+            gy2 = np.gradient(gray_arr, axis=0)
+        except Exception:
+            gx2, gy2 = sx, sy
+        return {
+            "magnitude": magnitude,
+            "horizontal": sx,
+            "vertical": sy,
+            "mean_edge": float(magnitude.mean()),
+            "max_edge": float(magnitude.max()),
+            "edge_density": float((magnitude > magnitude.mean()*1.5).mean()),
+            "dominant_direction": float(direction.mean()),
+            "edge_hist": np.histogram(magnitude, bins=16, range=(0, magnitude.max()+1e-5))[0].tolist()
+        }
+    except Exception as e:
+        # Ultra-safe fallback
+        gx = np.gradient(gray_arr.astype(np.float32), axis=1)
+        gy = np.gradient(gray_arr.astype(np.float32), axis=0)
+        mag = np.sqrt(gx**2+gy**2)
+        return {"magnitude":mag,"horizontal":gx,"vertical":gy,
+                "mean_edge":float(mag.mean()),"max_edge":float(mag.max()),
+                "edge_density":float((mag>mag.mean()*1.5).mean()),
+                "dominant_direction":0.0,
+                "edge_hist":np.histogram(mag,bins=16)[0].tolist()}
 
 def canny_analysis(gray_uint8):
-    """Canny multi-scale edge detection."""
-    from skimage import feature
-    edges_fine = feature.canny(gray_uint8/255.0, sigma=1.0)
-    edges_med  = feature.canny(gray_uint8/255.0, sigma=2.0)
-    edges_coarse = feature.canny(gray_uint8/255.0, sigma=3.5)
-    return {
-        "fine": edges_fine,
-        "medium": edges_med,
-        "coarse": edges_coarse,
-        "fine_density": float(edges_fine.mean()),
-        "medium_density": float(edges_med.mean()),
-        "coarse_density": float(edges_coarse.mean()),
-        "total_edges": int(edges_fine.sum()),
-        "structure_level": "micro" if edges_fine.mean()>0.1 else ("meso" if edges_med.mean()>0.05 else "macro")
-    }
+    """Canny multi-scale edge detection — numpy fallback."""
+    try:
+        if SKIMAGE_OK:
+            from skimage import feature as skf2
+            edges_fine   = skf2.canny(gray_uint8/255.0, sigma=1.0)
+            edges_med    = skf2.canny(gray_uint8/255.0, sigma=2.0)
+            edges_coarse = skf2.canny(gray_uint8/255.0, sigma=3.5)
+        else:
+            # Numpy gradient-based edge approximation
+            g = gray_uint8.astype(np.float32)/255.0
+            gx=np.gradient(g,axis=1); gy=np.gradient(g,axis=0); mag=np.sqrt(gx**2+gy**2)
+            t1,t2,t3=np.percentile(mag,85),np.percentile(mag,75),np.percentile(mag,65)
+            edges_fine=mag>t1; edges_med=mag>t2; edges_coarse=mag>t3
+        return {
+            "fine": edges_fine, "medium": edges_med, "coarse": edges_coarse,
+            "fine_density": float(edges_fine.mean()),
+            "medium_density": float(edges_med.mean()),
+            "coarse_density": float(edges_coarse.mean()),
+            "total_edges": int(edges_fine.sum()),
+            "structure_level": "micro" if edges_fine.mean()>0.1 else ("meso" if edges_med.mean()>0.05 else "macro")
+        }
+    except Exception:
+        g=gray_uint8.astype(np.float32)/255.0; gx=np.gradient(g,axis=1); gy=np.gradient(g,axis=0); mag=np.sqrt(gx**2+gy**2)
+        e=mag>mag.mean()
+        return {"fine":e,"medium":e,"coarse":e,"fine_density":float(e.mean()),
+                "medium_density":float(e.mean()),"coarse_density":float(e.mean()),
+                "total_edges":int(e.sum()),"structure_level":"meso"}
 
 def orb_keypoints(gray_uint8):
-    """ORB feature detection and description."""
+    """ORB feature detection — Harris fallback if ORB unavailable."""
     try:
-        from skimage.feature import ORB
-        detector = ORB(n_keypoints=200, fast_threshold=0.05)
-        detector.detect_and_extract(gray_uint8/255.0)
-        kp = detector.keypoints
-        scales = detector.scales if hasattr(detector, 'scales') else np.ones(len(kp))
-        orientations = detector.orientations if hasattr(detector, 'orientations') else np.zeros(len(kp))
-        # Cluster keypoints spatially
-        if len(kp) > 0 and SKLEARN_OK:
-            n_cl = min(5, len(kp))
-            kmk = KMeans(n_clusters=n_cl, random_state=42, n_init=5).fit(kp)
-            centers = kmk.cluster_centers_
+        if SKIMAGE_OK:
+            try:
+                from skimage.feature import ORB
+                detector = ORB(n_keypoints=200, fast_threshold=0.05)
+                detector.detect_and_extract(gray_uint8/255.0)
+                kp = detector.keypoints
+            except Exception:
+                from skimage.feature import corner_harris, corner_peaks
+                harris = corner_harris(gray_uint8/255.0)
+                kp = corner_peaks(harris, min_distance=8, threshold_rel=0.02)
         else:
-            centers = kp[:5] if len(kp)>=5 else kp
+            # Numpy: local maxima as keypoints
+            g = gray_uint8.astype(np.float32)
+            gx = np.gradient(g, axis=1); gy = np.gradient(g, axis=0)
+            mag = np.sqrt(gx**2+gy**2)
+            # Simple non-max suppression on 8x8 blocks
+            step=8; pts=[]
+            for i in range(0,mag.shape[0]-step,step):
+                for j in range(0,mag.shape[1]-step,step):
+                    block=mag[i:i+step,j:j+step]
+                    if block.max()>mag.mean()*1.8:
+                        yi,xj=np.unravel_index(block.argmax(),block.shape)
+                        pts.append([i+yi,j+xj])
+            kp=np.array(pts) if pts else np.zeros((0,2))
+
+        scales=np.ones(len(kp))
+        if len(kp)>0 and SKLEARN_OK:
+            n_cl=min(5,len(kp))
+            try:
+                kmk=KMeans(n_clusters=n_cl,random_state=42,n_init=5).fit(np.array(kp))
+                centers=kmk.cluster_centers_
+            except Exception:
+                centers=np.array(kp)[:5]
+        else:
+            centers=np.array(kp)[:5] if len(kp)>0 else np.zeros((0,2))
         return {
             "keypoints": kp,
             "n_keypoints": len(kp),
             "cluster_centers": centers.tolist() if len(centers)>0 else [],
-            "scales": scales.tolist() if hasattr(scales,'tolist') else list(scales),
-            "mean_scale": float(np.mean(scales)) if len(scales)>0 else 1.0,
-            "distribution": "uniforme" if np.std(kp[:,0])/(np.std(kp[:,1])+1e-5) < 1.5 else "concentrado"
+            "scales": scales.tolist(),
+            "mean_scale": 1.0,
+            "distribution": "uniforme" if len(kp)>5 and np.std(np.array(kp)[:,0])/(np.std(np.array(kp)[:,1])+1e-5)<1.5 else "concentrado"
         }
-    except Exception as e:
-        # Fallback: Harris corners
-        try:
-            from skimage.feature import corner_harris, corner_peaks
-            harris = corner_harris(gray_uint8/255.0)
-            peaks = corner_peaks(harris, min_distance=10, threshold_rel=0.02)
-            return {"keypoints": peaks, "n_keypoints": len(peaks), "cluster_centers": [],
-                    "scales": [1.0]*len(peaks), "mean_scale": 1.0, "distribution": "harris"}
-        except:
-            return {"keypoints": np.array([]), "n_keypoints": 0, "cluster_centers": [],
-                    "scales": [], "mean_scale": 1.0, "distribution": "n/a"}
+    except Exception:
+        return {"keypoints":np.zeros((0,2)),"n_keypoints":0,"cluster_centers":[],"scales":[],"mean_scale":1.0,"distribution":"n/a"}
 
 def glcm_texture(gray_uint8):
-    """Gray Level Co-occurrence Matrix texture features."""
+    """GLCM texture — pure numpy fallback if skimage unavailable."""
     try:
-        from skimage.feature import graycomatrix, graycoprops
-        # Quantize to 64 levels for speed
-        g64 = (gray_uint8 // 4).astype(np.uint8)
-        distances = [1, 3, 5]
-        angles = [0, np.pi/4, np.pi/2, 3*np.pi/4]
-        glcm = graycomatrix(g64, distances=distances, angles=angles,
-                            levels=64, symmetric=True, normed=True)
-        features = {}
-        for prop in ['contrast','dissimilarity','homogeneity','energy','correlation','ASM']:
-            v = graycoprops(glcm, prop)
-            features[prop] = float(v.mean())
-        features['contrast_std'] = float(graycoprops(glcm, 'contrast').std())
-        features['uniformity'] = features['energy']
-        features['entropy'] = float(-np.sum(glcm[glcm>0]*np.log2(glcm[glcm>0]+1e-12)))
-        features['texture_type'] = classify_texture(features)
+        if SKIMAGE_OK:
+            from skimage.feature import graycomatrix, graycoprops
+            g64 = (gray_uint8 // 4).astype(np.uint8)
+            distances=[1,3,5]; angles=[0,np.pi/4,np.pi/2,3*np.pi/4]
+            glcm=graycomatrix(g64,distances=distances,angles=angles,levels=64,symmetric=True,normed=True)
+            features={}
+            for prop in ['contrast','dissimilarity','homogeneity','energy','correlation','ASM']:
+                v=graycoprops(glcm,prop)
+                features[prop]=float(v.mean())
+            features['contrast_std']=float(graycoprops(glcm,'contrast').std())
+            features['uniformity']=features['energy']
+            features['entropy']=float(-np.sum(glcm[glcm>0]*np.log2(glcm[glcm>0]+1e-12)))
+        else:
+            # Numpy-based texture statistics
+            g=gray_uint8.astype(np.float32)/255.0
+            gx=np.gradient(g,axis=1); gy=np.gradient(g,axis=0)
+            contrast=float(np.sqrt(gx**2+gy**2).mean()*100)
+            homogeneity=float(1.0/(1.0+contrast/50.0))
+            # Local variance as energy proxy
+            from numpy.lib.stride_tricks import as_strided
+            energy=float(np.var(g))
+            correlation=float(np.corrcoef(gx.ravel(),gy.ravel())[0,1]) if len(gx.ravel())>1 else 0.5
+            hst=np.histogram(g,bins=64)[0]; hn=hst/hst.sum()+1e-12
+            entropy_v=float(-np.sum(hn*np.log2(hn)))
+            features={"contrast":round(contrast,4),"dissimilarity":round(contrast*0.5,4),
+                      "homogeneity":round(homogeneity,4),"energy":round(energy,4),
+                      "correlation":round(abs(correlation),4),"ASM":round(energy**2,4),
+                      "contrast_std":0.0,"uniformity":round(energy,4),"entropy":round(entropy_v,4)}
+        features['texture_type']=classify_texture(features)
         return features
     except Exception as e:
-        return {"error": str(e), "texture_type": "desconhecido"}
+        return {"homogeneity":0.5,"contrast":20.0,"energy":0.1,"correlation":0.7,"ASM":0.01,
+                "dissimilarity":10.0,"contrast_std":0.0,"uniformity":0.1,"entropy":4.0,"texture_type":"desconhecido","error":str(e)}
 
 def classify_texture(f):
     if f.get('homogeneity',0) > 0.7: return "homogênea"
@@ -589,29 +672,13 @@ def run_full_ml_pipeline(img_bytes):
             "warm": mr > mb+15, "cool": mb > mr+15
         }
 
-        # Run ML pipeline
+        # Run ML pipeline — all functions have internal fallbacks
         result["color"] = color_info
         result["size"] = orig_size
-
-        if SKIMAGE_OK:
-            result["sobel"] = sobel_analysis(gray/255.0)
-            result["canny"] = canny_analysis(gray_u8)
-            result["orb"] = orb_keypoints(gray_u8)
-            result["glcm"] = glcm_texture(gray_u8)
-        else:
-            # Fallback numpy-only
-            gx = np.gradient(gray, axis=1)
-            gy = np.gradient(gray, axis=0)
-            mag = np.sqrt(gx**2+gy**2)
-            result["sobel"] = {"mean_edge": float(mag.mean()), "max_edge": float(mag.max()),
-                               "edge_density": float((mag>mag.mean()*1.5).mean()),
-                               "horizontal": gx, "vertical": gy, "magnitude": mag,
-                               "edge_hist": np.histogram(mag,bins=16)[0].tolist()}
-            result["canny"] = {"fine_density":0.1, "medium_density":0.05, "coarse_density":0.03,
-                               "total_edges":int((mag>mag.mean()).sum()), "structure_level":"meso"}
-            result["orb"] = {"n_keypoints": 0, "cluster_centers": [], "distribution": "n/a"}
-            result["glcm"] = {"homogeneity":0.5,"contrast":20,"energy":0.1,"correlation":0.7,
-                              "entropy":float(entropy),"texture_type":"desconhecido"}
+        result["sobel"] = sobel_analysis(gray/255.0)
+        result["canny"] = canny_analysis(gray_u8)
+        result["orb"]   = orb_keypoints(gray_u8)
+        result["glcm"]  = glcm_texture(gray_u8)
 
         result["fft"] = fft_analysis(gray/255.0)
         result["kmeans_palette"], result["color_temps"] = kmeans_colors(arr.astype(np.uint8), k=7)
