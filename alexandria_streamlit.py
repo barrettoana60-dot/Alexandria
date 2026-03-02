@@ -862,22 +862,41 @@ section[data-testid="stSidebar"]>div{width:222px!important;padding:0!important;}
 .sb-logo-icon{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--yel),var(--orn));display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;box-shadow:0 0 16px rgba(255,214,10,.18);}
 .sb-logo-text{font-family:'Syne',sans-serif;font-weight:900;font-size:1.25rem;letter-spacing:-.04em;background:linear-gradient(135deg,var(--yel),var(--grn));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
 .sb-label{font-size:.57rem;font-weight:700;color:var(--t4);letter-spacing:.14em;text-transform:uppercase;padding:0 .5rem;margin-bottom:.45rem;margin-top:1rem;}
-/* ── GLOBAL BUTTONS: sem backdrop-filter (performance) ── */
+/* ── SIDEBAR BUTTONS — highly visible ── */
+section[data-testid="stSidebar"] .stButton>button{
+  background:rgba(255,255,255,.10)!important;
+  border:1px solid rgba(255,255,255,.15)!important;
+  border-radius:10px!important;
+  color:#E8E9F0!important;
+  -webkit-text-fill-color:#E8E9F0!important;
+  font-family:'DM Sans',sans-serif!important;
+  font-weight:500!important;font-size:.86rem!important;
+  padding:.52rem .85rem!important;
+  text-align:left!important;justify-content:flex-start!important;
+  width:100%!important;margin-bottom:.18rem!important;
+  transition:background .1s,border-color .1s!important;
+  box-shadow:none!important;
+}
+section[data-testid="stSidebar"] .stButton>button:hover{
+  background:rgba(255,255,255,.18)!important;
+  border-color:rgba(255,255,255,.28)!important;
+  color:#FFFFFF!important;-webkit-text-fill-color:#FFFFFF!important;
+}
+/* ── GLOBAL BUTTONS ── */
 .stButton>button{
-  background:rgba(255,255,255,.06)!important;
-  border:1px solid rgba(255,255,255,.11)!important;
+  background:rgba(255,255,255,.08)!important;
+  border:1px solid rgba(255,255,255,.14)!important;
   border-radius:12px!important;
-  color:#A8ABBE!important;
-  -webkit-text-fill-color:#A8ABBE!important;
+  color:#C8CAD8!important;
+  -webkit-text-fill-color:#C8CAD8!important;
   font-family:'DM Sans',sans-serif!important;
   font-weight:500!important;font-size:.80rem!important;
   padding:.44rem .88rem!important;
-  transition:background .12s,border-color .12s!important;
+  transition:background .1s,border-color .1s!important;
   box-shadow:none!important;
 }
-.stButton>button:hover{background:rgba(255,255,255,.10)!important;border-color:rgba(255,255,255,.18)!important;color:#E8E9F0!important;-webkit-text-fill-color:#E8E9F0!important;}
+.stButton>button:hover{background:rgba(255,255,255,.14)!important;border-color:rgba(255,255,255,.22)!important;color:#FFFFFF!important;-webkit-text-fill-color:#FFFFFF!important;}
 .stButton>button:active{transform:scale(.98)!important;}
-/* force text inside buttons always visible */
 .stButton>button p,.stButton>button span,.stButton>button div{
   color:inherit!important;-webkit-text-fill-color:inherit!important;
 }
@@ -1005,38 +1024,33 @@ _COLORS = {
 }
 
 def sbtn(label, key, color="t2", left=False, active=False):
-    """
-    Styled button using span-anchor + CSS :has() — the only method that
-    reliably works in Streamlit's shadow-DOM render tree.
-    active=True highlights with a stronger background.
-    """
+    """Styled button — span anchor + CSS :has() without direct-child selector."""
     clr, bg_n, bd_n = _COLORS.get(color, _COLORS["t2"])
     if active:
-        bg_n = bg_n.replace(".14", ".22").replace(".12", ".20").replace(".08", ".15").replace(".05", ".12")
-        bd_n = bd_n.replace(".4", ".6").replace(".35", ".55").replace(".18", ".3")
+        # stronger highlight for active state
+        bg_n = "rgba(255,255,255,.18)"
+        bd_n = clr
     align = "left" if left else "center"
-    anchor = f"_sbtn_{key}_"
+    anchor = f"_sb_{key}_"
+    # Use :has(span#X) without > so it works regardless of nesting depth
     st.markdown(
-        f'<span id="{anchor}"></span>'
+        f'<span id="{anchor}" style="display:none"></span>'
         f'<style>'
-        f'span#{anchor}{{display:none}}'
-        f'div:has(>span#{anchor})+div .stButton>button,'
-        f'div:has(>span#{anchor})+div .stButton>button p,'
-        f'div:has(>span#{anchor})+div .stButton>button span{{'
+        # target the button in the NEXT sibling container
+        f'div:has(span#{anchor})+div .stButton>button,'
+        f'div:has(span#{anchor})+div .stButton>button p,'
+        f'div:has(span#{anchor})+div .stButton>button span{{'
         f'color:{clr}!important;'
         f'-webkit-text-fill-color:{clr}!important;'
         f'background:{bg_n}!important;'
         f'border:1px solid {bd_n}!important;'
-        f'border-radius:12px!important;'
         f'text-align:{align}!important;'
         f'justify-content:{"flex-start" if left else "center"}!important;'
-        f'font-weight:600!important;'
-        f'transition:none!important;'
-        f'box-shadow:none!important;}}'
-        f'div:has(>span#{anchor})+div .stButton>button:hover,'
-        f'div:has(>span#{anchor})+div .stButton>button:hover p{{'
+        f'font-weight:{"700" if active else "600"}!important;}}'
+        f'div:has(span#{anchor})+div .stButton>button:hover{{'
         f'background:{bd_n}!important;'
-        f'border-color:{clr}!important;}}'
+        f'border-color:{clr}!important;'
+        f'color:{clr}!important;-webkit-text-fill-color:{clr}!important;}}'
         f'</style>',
         unsafe_allow_html=True
     )
