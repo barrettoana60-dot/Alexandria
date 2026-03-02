@@ -35,7 +35,6 @@ st.set_page_config(page_title="Nebula", page_icon="🔬", layout="wide", initial
 
 DB_FILE = "nebula_db.json"
 
-@st.cache_data(ttl=3600, show_spinner=False)
 def load_db():
     if os.path.exists(DB_FILE):
         try:
@@ -122,7 +121,7 @@ def get_db_manager():
             st.session_state.setdefault("chat_contacts",list(su.keys()))
             st.session_state.setdefault("chat_messages",{k:list(v) for k,v in ci.items()})
             st.session_state.setdefault("active_chat",None)
-            st.session_state.setdefault("followed",["carlos@nebula.ai","luana@nebula.ai"])
+            st.session_state.setdefault("followed",disk.get("followed",["carlos@nebula.ai","luana@nebula.ai"]))
             st.session_state.setdefault("notifications",["Carlos curtiu sua pesquisa","Nova conexão detectada"])
             st.session_state.setdefault("scholar_cache",{})
             st.session_state.setdefault("saved_articles",disk.get("saved_articles",[]))
@@ -135,7 +134,14 @@ def get_db_manager():
         def save(self):
             try:
                 with open(DB_FILE,"w",encoding="utf-8") as f:
-                    json.dump({"users":st.session_state.users,"feed_posts":st.session_state.feed_posts,"folders":st.session_state.folders,"user_prefs":{k:dict(v) for k,v in st.session_state.user_prefs.items()},"saved_articles":st.session_state.saved_articles},f,ensure_ascii=False,indent=2)
+                    json.dump({
+                        "users":st.session_state.users,
+                        "feed_posts":st.session_state.feed_posts,
+                        "folders":st.session_state.folders,
+                        "user_prefs":{k:dict(v) for k,v in st.session_state.user_prefs.items()},
+                        "saved_articles":st.session_state.saved_articles,
+                        "followed":st.session_state.followed,
+                    },f,ensure_ascii=False,indent=2)
             except: pass
     return DB()
 
@@ -510,62 +516,94 @@ section[data-testid="stSidebar"] > div{
 
 /* ══════════════ GLOBAL BUTTONS ══════════════ */
 .stButton>button{
-  background:var(--g1)!important;
-  backdrop-filter:blur(16px)!important;
-  border:1px solid var(--gb1)!important;border-radius:var(--r12)!important;
-  color:var(--t2)!important;font-family:'DM Sans',sans-serif!important;
+  background:rgba(255,255,255,.06)!important;
+  backdrop-filter:blur(20px) saturate(180%)!important;
+  -webkit-backdrop-filter:blur(20px) saturate(180%)!important;
+  border:1px solid rgba(255,255,255,.11)!important;
+  border-radius:var(--r12)!important;
+  color:var(--t2)!important;
+  font-family:'DM Sans',sans-serif!important;
   font-weight:500!important;font-size:.80rem!important;
-  padding:.42rem .88rem!important;
-  transition:all .16s cubic-bezier(.4,0,.2,1)!important;
-  box-shadow:0 1px 8px rgba(0,0,0,.25)!important;
+  padding:.44rem .88rem!important;
+  transition:background .14s,border-color .14s,color .14s,box-shadow .14s!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 2px 12px rgba(0,0,0,.2)!important;
+  letter-spacing:.01em!important;
 }
 .stButton>button:hover{
-  background:var(--g2)!important;border-color:var(--gb2)!important;
-  color:var(--t0)!important;transform:translateY(-1px)!important;
-  box-shadow:0 4px 18px rgba(0,0,0,.3)!important;
+  background:rgba(255,255,255,.10)!important;
+  border-color:rgba(255,255,255,.18)!important;
+  color:var(--t0)!important;
+  transform:translateY(-1px)!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.07) inset,0 4px 18px rgba(0,0,0,.3)!important;
 }
-.stButton>button:active{transform:scale(.97)!important;}
+.stButton>button:active{transform:translateY(0) scale(.98)!important;}
 
 /* Yellow CTA */
 .btn-yel .stButton>button{
-  background:linear-gradient(135deg,var(--yel),#FFAB00)!important;
-  border-color:rgba(255,255,255,.2)!important;color:#0A0800!important;
-  font-weight:700!important;
-  box-shadow:0 4px 20px var(--gy),inset 0 1px 0 rgba(255,255,255,.35)!important;
+  background:linear-gradient(135deg,rgba(255,214,10,.25),rgba(255,171,0,.18))!important;
+  border:1px solid rgba(255,214,10,.4)!important;
+  color:var(--yel)!important;font-weight:700!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 4px 20px rgba(255,214,10,.12)!important;
+  text-shadow:0 0 20px rgba(255,214,10,.3)!important;
 }
-.btn-yel .stButton>button:hover{background:linear-gradient(135deg,var(--yel2),var(--yel))!important;box-shadow:0 6px 28px rgba(255,214,10,.35)!important;}
+.btn-yel .stButton>button:hover{
+  background:linear-gradient(135deg,rgba(255,214,10,.35),rgba(255,171,0,.25))!important;
+  border-color:rgba(255,214,10,.6)!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.15) inset,0 6px 28px rgba(255,214,10,.2)!important;
+}
 
 /* Green */
 .btn-grn .stButton>button{
-  background:linear-gradient(135deg,var(--grn),#00B389)!important;
-  border-color:rgba(255,255,255,.15)!important;color:#001A12!important;
-  font-weight:700!important;
-  box-shadow:0 4px 20px var(--gg),inset 0 1px 0 rgba(255,255,255,.25)!important;
+  background:linear-gradient(135deg,rgba(6,214,160,.22),rgba(0,179,137,.15))!important;
+  border:1px solid rgba(6,214,160,.38)!important;
+  color:var(--grn)!important;font-weight:700!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.10) inset,0 4px 20px rgba(6,214,160,.10)!important;
 }
-.btn-grn .stButton>button:hover{box-shadow:0 6px 28px rgba(6,214,160,.35)!important;}
+.btn-grn .stButton>button:hover{
+  background:linear-gradient(135deg,rgba(6,214,160,.32),rgba(0,179,137,.22))!important;
+  border-color:rgba(6,214,160,.55)!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 6px 28px rgba(6,214,160,.18)!important;
+}
 
 /* Red */
 .btn-red .stButton>button{
-  background:rgba(255,59,92,.10)!important;border-color:rgba(255,59,92,.25)!important;
+  background:rgba(255,59,92,.12)!important;
+  border:1px solid rgba(255,59,92,.3)!important;
   color:var(--red)!important;font-weight:600!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.04) inset!important;
 }
-.btn-red .stButton>button:hover{background:rgba(255,59,92,.18)!important;border-color:rgba(255,59,92,.4)!important;}
+.btn-red .stButton>button:hover{
+  background:rgba(255,59,92,.20)!important;
+  border-color:rgba(255,59,92,.5)!important;
+  box-shadow:0 4px 18px rgba(255,59,92,.15)!important;
+}
 
 /* Blue */
 .btn-blu .stButton>button{
-  background:rgba(76,201,240,.10)!important;border-color:rgba(76,201,240,.22)!important;
+  background:rgba(76,201,240,.12)!important;
+  border:1px solid rgba(76,201,240,.28)!important;
   color:var(--blu)!important;font-weight:600!important;
 }
-.btn-blu .stButton>button:hover{background:rgba(76,201,240,.18)!important;}
+.btn-blu .stButton>button:hover{
+  background:rgba(76,201,240,.20)!important;
+  border-color:rgba(76,201,240,.45)!important;
+  box-shadow:0 4px 18px rgba(76,201,240,.12)!important;
+}
 
 /* Ghost compose */
 .btn-ghost .stButton>button{
-  background:rgba(255,255,255,.03)!important;border:1px solid var(--gb1)!important;
+  background:rgba(255,255,255,.03)!important;
+  border:1px solid rgba(255,255,255,.08)!important;
   border-radius:50px!important;color:var(--t4)!important;font-size:.88rem!important;
   text-align:left!important;padding:.72rem 1.4rem!important;
-  justify-content:flex-start!important;box-shadow:none!important;
+  justify-content:flex-start!important;
+  box-shadow:0 1px 0 rgba(255,255,255,.03) inset!important;
 }
-.btn-ghost .stButton>button:hover{background:var(--g1)!important;border-color:var(--gb2)!important;color:var(--t3)!important;transform:none!important;}
+.btn-ghost .stButton>button:hover{
+  background:rgba(255,255,255,.06)!important;
+  border-color:rgba(255,255,255,.12)!important;
+  color:var(--t2)!important;transform:none!important;
+}
 
 /* ══════════════ INPUTS ══════════════ */
 .stTextInput input,.stTextArea textarea{
@@ -585,39 +623,47 @@ section[data-testid="stSidebar"] > div{
 
 /* ══════════════ CARDS ══════════════ */
 .glass{
-  background:var(--g1);backdrop-filter:blur(28px) saturate(160%);
-  -webkit-backdrop-filter:blur(28px) saturate(160%);
-  border:1px solid var(--gb1);border-radius:var(--r20);
-  box-shadow:0 4px 32px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.06);
+  background:rgba(255,255,255,.055);
+  backdrop-filter:blur(32px) saturate(180%);
+  -webkit-backdrop-filter:blur(32px) saturate(180%);
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:var(--r20);
+  box-shadow:0 0 0 1px rgba(255,255,255,.04) inset,0 4px 32px rgba(0,0,0,.3);
   position:relative;overflow:hidden;
 }
 .glass::before{
   content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,.06),transparent);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);
   pointer-events:none;
 }
 .post-card{
-  background:var(--g1);border:1px solid var(--gb1);border-radius:var(--r20);
-  margin-bottom:.7rem;overflow:hidden;position:relative;
-  box-shadow:0 2px 20px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.05);
-  animation:fadeUp .2s cubic-bezier(.34,1.1,.64,1) both;
-  transition:border-color .15s,box-shadow .15s,transform .15s;
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:var(--r20);
+  margin-bottom:.65rem;overflow:hidden;position:relative;
+  box-shadow:0 0 0 1px rgba(255,255,255,.03) inset,0 2px 20px rgba(0,0,0,.25);
+  transition:border-color .14s,box-shadow .14s,transform .14s;
+  will-change:transform;
 }
-.post-card:hover{border-color:var(--gb2);box-shadow:0 8px 32px rgba(0,0,0,.4),0 0 0 1px rgba(255,255,255,.06);transform:translateY(-1px);}
-.post-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.04),transparent);pointer-events:none;}
+.post-card:hover{
+  border-color:rgba(255,255,255,.15);
+  box-shadow:0 0 0 1px rgba(255,255,255,.05) inset,0 8px 30px rgba(0,0,0,.35);
+  transform:translateY(-1px);
+}
+.post-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.05),transparent);pointer-events:none;}
 
-.sc{background:var(--g1);border:1px solid var(--gb1);border-radius:var(--r20);padding:.9rem 1rem;margin-bottom:.65rem;}
-.scard{background:var(--g1);border:1px solid var(--gb1);border-radius:var(--r16);padding:.8rem 1rem;margin-bottom:.45rem;transition:border-color .13s,transform .13s;}
-.scard:hover{border-color:var(--gb2);transform:translateY(-1px);}
-.mbox{background:var(--g1);border:1px solid var(--gb1);border-radius:var(--r16);padding:.9rem;text-align:center;}
-.abox{background:var(--g2);border:1px solid var(--gb2);border-radius:var(--r16);padding:1rem;margin-bottom:.65rem;}
-.pbox-grn{background:rgba(6,214,160,.06);border:1px solid rgba(6,214,160,.15);border-radius:var(--r12);padding:.85rem;margin-bottom:.6rem;}
-.pbox-yel{background:rgba(255,214,10,.06);border:1px solid rgba(255,214,10,.15);border-radius:var(--r12);padding:.85rem;margin-bottom:.6rem;}
-.chart-wrap{background:var(--g1);border:1px solid var(--gb1);border-radius:var(--r12);padding:.65rem;margin-bottom:.65rem;}
-.ref-item{background:rgba(255,255,255,.04);border:1px solid var(--gb1);border-radius:var(--r12);padding:.55rem .8rem;font-size:.75rem;color:var(--t2);line-height:1.6;margin-bottom:.3rem;}
+.sc{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:var(--r20);padding:.9rem 1rem;margin-bottom:.6rem;}
+.scard{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:var(--r16);padding:.8rem 1rem;margin-bottom:.42rem;transition:border-color .13s,transform .13s;will-change:transform;}
+.scard:hover{border-color:rgba(255,255,255,.14);transform:translateY(-1px);}
+.mbox{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:var(--r16);padding:.9rem;text-align:center;}
+.abox{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.10);border-radius:var(--r16);padding:1rem;margin-bottom:.6rem;}
+.pbox-grn{background:rgba(6,214,160,.07);border:1px solid rgba(6,214,160,.18);border-radius:var(--r12);padding:.85rem;margin-bottom:.55rem;}
+.pbox-yel{background:rgba(255,214,10,.07);border:1px solid rgba(255,214,10,.18);border-radius:var(--r12);padding:.85rem;margin-bottom:.55rem;}
+.chart-wrap{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:var(--r12);padding:.65rem;margin-bottom:.6rem;}
+.ref-item{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:var(--r12);padding:.5rem .8rem;font-size:.74rem;color:var(--t2);line-height:1.6;margin-bottom:.28rem;}
 
 /* Compose */
-.compose-box{background:var(--g1);border:1px solid var(--gb2);border-radius:var(--r20);padding:1.1rem 1.3rem;margin-bottom:.8rem;animation:fadeUp .15s ease both;}
+.compose-box{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.11);border-radius:var(--r20);padding:1.1rem 1.3rem;margin-bottom:.8rem;}
 
 /* ══════════════ METRICS ══════════════ */
 .mval-yel{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:900;background:linear-gradient(135deg,var(--yel),var(--orn));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
@@ -641,8 +687,8 @@ section[data-testid="stSidebar"] > div{
 .dot-off{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--t4);margin-right:4px;vertical-align:middle;}
 
 /* ══════════════ ANIMATIONS ══════════════ */
-@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
-.pw{animation:fadeUp .2s ease both;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.pw{animation:fadeUp .18s ease both;}
 
 /* ══════════════ CHAT ══════════════ */
 .bme{background:linear-gradient(135deg,rgba(255,214,10,.15),rgba(255,140,66,.1));border:1px solid rgba(255,214,10,.2);border-radius:18px 18px 4px 18px;padding:.55rem .88rem;max-width:70%;margin-left:auto;margin-bottom:5px;font-size:.82rem;line-height:1.6;}
@@ -699,6 +745,13 @@ def pc_dark():
                 margin=dict(l=10,r=10,t=38,b=10),
                 xaxis=dict(showgrid=False,color="#6B6F88",tickfont=dict(size=10)),
                 yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.04)",color="#6B6F88",tickfont=dict(size=10)))
+
+@st.cache_data(show_spinner=False)
+def get_utags(ue,area,posts_tuple):
+    tags=set(area_tags(area))
+    for pe in posts_tuple:
+        if pe[0]==ue: tags.update(t.lower() for t in pe[1])
+    return frozenset(tags)
 
 VIB=["#FFD60A","#06D6A0","#FF3B5C","#4CC9F0","#B17DFF","#FF8C42","#FF4E8A","#00C9A7","#FFAB00","#7BD3FF"]
 
@@ -882,7 +935,13 @@ def page_profile(target_email):
     else:
         # My profile tabs
         d=st.session_state.stats_data
-        tm,ta,ts=st.tabs(["  ✏️ Meus Dados  ",f"  ✨ Atividade  ","  🔐 Segurança  "])
+        saved_arts=st.session_state.saved_articles
+        tm,tl,ts2,ts=st.tabs([
+            "  ✏️ Meus Dados  ",
+            f"  📝 Publicações ({len(user_posts)})  ",
+            f"  ❤️ Curtidas ({len(liked_posts)})  ",
+            f"  🔖 Salvos ({len(saved_arts)})  ",
+        ])
         with tm:
             new_n=st.text_input("Nome completo",value=tu.get("name",""),key="cfg_n")
             new_a=st.text_input("Área de pesquisa",value=tu.get("area",""),key="cfg_a")
@@ -898,26 +957,46 @@ def page_profile(target_email):
                 if st.button("🚪 Sair",key="btn_out",use_container_width=True):
                     st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
-        with ta:
-            for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="myp",show_author=False)
-            if not user_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa ainda.</div>', unsafe_allow_html=True)
-            if st.session_state.saved_articles:
-                st.markdown('<div class="dtxt">Artigos Salvos</div>', unsafe_allow_html=True)
-                for idx,a in enumerate(st.session_state.saved_articles): render_article(a,idx=idx+3000,ctx="saved")
-        with ts:
+            st.markdown('<hr>', unsafe_allow_html=True)
             with st.form("cpf"):
-                op=st.text_input("Senha atual",type="password",key="op"); np_=st.text_input("Nova senha",type="password",key="np_"); np2=st.text_input("Confirmar",type="password",key="np2")
+                op=st.text_input("Senha atual",type="password",key="op")
+                np_=st.text_input("Nova senha",type="password",key="np_")
+                np2=st.text_input("Confirmar",type="password",key="np2")
                 if st.form_submit_button("🔑 Alterar Senha"):
                     if hp(op)!=tu.get("password",""): st.error("Senha atual incorreta.")
                     elif np_!=np2: st.error("Não coincidem.")
                     elif len(np_)<6: st.error("Mínimo 6 caracteres.")
                     else: st.session_state.users[email]["password"]=hp(np_); db.save(); st.success("✓ Alterada!")
             en=tu.get("2fa_enabled",False)
-            cls="btn-red" if en else "btn-grn"
-            st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
+            cls2="btn-red" if en else "btn-grn"
+            st.markdown(f'<div class="{cls2}">', unsafe_allow_html=True)
             if st.button("✕ Desativar 2FA" if en else "✓ Ativar 2FA",key="btn_2fa"):
                 st.session_state.users[email]["2fa_enabled"]=not en; db.save(); st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
+        with tl:
+            if user_posts:
+                for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True):
+                    render_post(p,ctx="myp",show_author=False)
+            else:
+                st.markdown('<div class="glass" style="padding:2.5rem;text-align:center;color:var(--t3)"><div style="font-size:1.8rem;opacity:.2;margin-bottom:.5rem">📝</div>Nenhuma pesquisa publicada ainda.</div>', unsafe_allow_html=True)
+        with ts2:
+            if liked_posts:
+                for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True):
+                    render_post(p,ctx="mylk",compact=True)
+            else:
+                st.markdown('<div class="glass" style="padding:2.5rem;text-align:center;color:var(--t3)"><div style="font-size:1.8rem;opacity:.2;margin-bottom:.5rem">❤️</div>Nenhuma curtida ainda.</div>', unsafe_allow_html=True)
+        with ts:
+            if saved_arts:
+                for idx,a in enumerate(saved_arts):
+                    render_article(a,idx=idx+3000,ctx="saved")
+                    uid2=re.sub(r'[^a-zA-Z0-9]','',f"rms_{a.get('doi','nd')}_{idx}")[:30]
+                    st.markdown('<div class="btn-red">', unsafe_allow_html=True)
+                    if st.button("🗑 Remover",key=f"rm_sa_{uid2}"):
+                        st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]
+                        db.save(); st.toast("Removido!"); st.rerun()
+                    st.markdown('</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="glass" style="padding:2.5rem;text-align:center;color:var(--t3)"><div style="font-size:1.8rem;opacity:.2;margin-bottom:.5rem">🔖</div>Nenhum artigo salvo ainda.<br><span style="font-size:.72rem">Use a busca acadêmica para salvar artigos.</span></div>', unsafe_allow_html=True)
 
 # ════════════ POST ════════════
 def render_post(post,ctx="feed",show_author=True,compact=False):
@@ -1122,13 +1201,9 @@ def page_knowledge():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
     st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">🕸 Rede de Conexões</h1>', unsafe_allow_html=True)
     email=st.session_state.current_user; users=st.session_state.users if isinstance(st.session_state.users,dict) else {}
-    @st.cache_data(show_spinner=False)
-    def get_utags(ue,au,ap):
-        ud=au.get(ue,{}); tags=set(area_tags(ud.get("area","")))
-        for p in ap:
-            if p.get("author_email")==ue: tags.update(t.lower() for t in p.get("tags",[]))
-        return tags
-    rlist=list(users.keys()); rtags={ue:get_utags(ue,users,st.session_state.feed_posts) for ue in rlist}
+    rlist=list(users.keys())
+    posts_tuple=tuple((p.get("author_email",""),p.get("tags",[])) for p in st.session_state.feed_posts)
+    rtags={ue:get_utags(ue,users.get(ue,{}).get("area",""),posts_tuple) for ue in rlist}
     edges=[]
     for i in range(len(rlist)):
         for j in range(i+1,len(rlist)):
