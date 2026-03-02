@@ -62,7 +62,7 @@ except Exception:
         from scipy import ndimage as sp_ndimage
         SCIPY_OK = True
     except Exception:
-        SCIPY_OK = False
+        SKIMAGE_OK = False
 
 import streamlit as st
 
@@ -343,7 +343,7 @@ except Exception:
         from scipy import ndimage as sp_ndimage
         SCIPY_OK = True
     except Exception:
-        SCIPY_OK = False
+        SKIMAGE_OK = False
 
 import streamlit as st
 
@@ -556,7 +556,7 @@ Responda APENAS em JSON puro (sem markdown):
             # Corrected regex to remove markdown code block delimiters
             # Using raw string with escaped backticks for robustness
             text = re.sub(r'^```json\s*', '', text, flags=re.DOTALL)
-            text = re.sub(r'\s*```INNERCHAT_CB_dj6odfcjt#x27;, '', text, flags=re.DOTALL)
+            text = re.sub(r'\s*```INNERCHAT_CB_6al611z57#x27;, '', text, flags=re.DOTALL) # Corrigido aqui!
             return json.loads(text), None
         return None, f"HTTP {resp.status_code}"
     except Exception as e:
@@ -1444,7 +1444,7 @@ def render_post(post, ctx="feed", compact=False):
     is_saved = email in post.get("saved_by", [])
 
     like_icon = "❤️" if is_liked else "🤍"
-    save_icon = "🔖" if is_saved else "    bookmark" # Using a placeholder for bookmark as     bookmark is not a single emoji
+    save_icon = "🔖" if is_saved else "bookmark" # Using a placeholder for bookmark as bookmark is not a single emoji
 
     card_class = "post-card" if not compact else "scard"
 
@@ -1499,8 +1499,8 @@ def render_post(post, ctx="feed", compact=False):
                 save_db(); st.rerun()
         with col_save:
             if st.button(save_icon, key=f"btn_save_{ctx}_{post['id']}", use_container_width=True):
-                if is_saved: post["saved_by"].remove(email); st.session_state.saved_articles=[a for a in st.session_state.saved_articles if a.get("id")!=post["id"]]
-                else: post["saved_by"].append(email); st.session_state.saved_articles.append(post); record(post["tags"],1.0)
+                if is_saved: st.session_state.saved_articles = [a for a in st.session_state.saved_articles if a.get("id")!=post["id"]]; post["saved_by"].remove(email)
+                else: st.session_state.saved_articles.append(post); post["saved_by"].append(email); record(post["tags"],1.0)
                 save_db(); st.rerun()
         with col_comment:
             new_comment = st.text_input("Adicionar comentário...", key=f"comment_input_{ctx}_{post['id']}", label_visibility="collapsed")
@@ -1513,14 +1513,14 @@ def render_post(post, ctx="feed", compact=False):
         if post.get("comments"):
             st.markdown('<div style="margin-top:.8rem;font-size:.65rem;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Comentários:</div>', unsafe_allow_html=True)
             for comment in post["comments"]:
-                st.markdown(f'<div class="cmt"><span style="font-weight:700;color:var(--t1);font-size:.75rem;">{comment["user"]}:</span> <span style="font-size:.75rem;color:var(--t2);">{comment["text"]}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="cmt"><span>{comment["user"]}:</span> <span>{comment["text"]}</span></div>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_article(article, idx, ctx="search"):
     email = st.session_state.current_user
     is_saved = any(a.get("url") == article.get("url") for a in st.session_state.saved_articles)
-    save_icon = "🔖" if is_saved else "    bookmark"
+    save_icon = "🔖" if is_saved else "bookmark"
 
     st.markdown(f'<div class="scard">', unsafe_allow_html=True)
     st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.4rem;">'
@@ -2226,7 +2226,7 @@ def page_img_search():
                     # Using raw string with escaped backticks for robustness
                     clean=ai_text.strip()
                     clean = re.sub(r'^```json\s*', '', clean, flags=re.DOTALL)
-                    clean = re.sub(r'\s*```INNERCHAT_CB_dj6odfcjt#x27;, '', clean, flags=re.DOTALL)
+                    clean = re.sub(r'\s*```INNERCHAT_CB_6al611z57#x27;, '', clean, flags=re.DOTALL) # Corrigido aqui!
                     ai_data=json.loads(clean)
                     tipo=ai_data.get("tipo","—"); origem=ai_data.get("origem","—"); desc=ai_data.get("descricao","—")
                     estruturas=ai_data.get("estruturas",[]); tecnica=ai_data.get("tecnica","—")
@@ -2406,7 +2406,7 @@ def main():
 
 main()
 
-#x27;, '', text, flags=re.DOTALL)
+#x27;, '', text, flags=re.DOTALL) # Corrigido aqui!
             return json.loads(text), None
         return None, f"HTTP {resp.status_code}"
     except Exception as e:
@@ -3294,7 +3294,7 @@ def render_post(post, ctx="feed", compact=False):
     is_saved = email in post.get("saved_by", [])
 
     like_icon = "❤️" if is_liked else "🤍"
-    save_icon = "🔖" if is_saved else "    bookmark" # Using a placeholder for bookmark as     bookmark is not a single emoji
+    save_icon = "🔖" if is_saved else "bookmark" # Using a placeholder for bookmark as bookmark is not a single emoji
 
     card_class = "post-card" if not compact else "scard"
 
@@ -3349,8 +3349,8 @@ def render_post(post, ctx="feed", compact=False):
                 save_db(); st.rerun()
         with col_save:
             if st.button(save_icon, key=f"btn_save_{ctx}_{post['id']}", use_container_width=True):
-                if is_saved: post["saved_by"].remove(email); st.session_state.saved_articles=[a for a in st.session_state.saved_articles if a.get("id")!=post["id"]]
-                else: post["saved_by"].append(email); st.session_state.saved_articles.append(post); record(post["tags"],1.0)
+                if is_saved: st.session_state.saved_articles = [a for a in st.session_state.saved_articles if a.get("id")!=post["id"]]; post["saved_by"].remove(email)
+                else: st.session_state.saved_articles.append(post); post["saved_by"].append(email); record(post["tags"],1.0)
                 save_db(); st.rerun()
         with col_comment:
             new_comment = st.text_input("Adicionar comentário...", key=f"comment_input_{ctx}_{post['id']}", label_visibility="collapsed")
@@ -3363,14 +3363,14 @@ def render_post(post, ctx="feed", compact=False):
         if post.get("comments"):
             st.markdown('<div style="margin-top:.8rem;font-size:.65rem;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Comentários:</div>', unsafe_allow_html=True)
             for comment in post["comments"]:
-                st.markdown(f'<div class="cmt"><span style="font-weight:700;color:var(--t1);font-size:.75rem;">{comment["user"]}:</span> <span style="font-size:.75rem;color:var(--t2);">{comment["text"]}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="cmt"><span>{comment["user"]}:</span> <span>{comment["text"]}</span></div>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_article(article, idx, ctx="search"):
     email = st.session_state.current_user
     is_saved = any(a.get("url") == article.get("url") for a in st.session_state.saved_articles)
-    save_icon = "🔖" if is_saved else "    bookmark"
+    save_icon = "🔖" if is_saved else "bookmark"
 
     st.markdown(f'<div class="scard">', unsafe_allow_html=True)
     st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.4rem;">'
@@ -4144,7 +4144,7 @@ except Exception:
         from scipy import ndimage as sp_ndimage
         SCIPY_OK = True
     except Exception:
-        SCIPY_OK = False
+        SKIMAGE_OK = False
 
 import streamlit as st
 
@@ -4357,7 +4357,7 @@ Responda APENAS em JSON puro (sem markdown):
             # Corrected regex to remove markdown code block delimiters
             # Using raw string with escaped backticks for robustness
             text = re.sub(r'^```json\s*', '', text, flags=re.DOTALL)
-            text = re.sub(r'\s*```INNERCHAT_CB_dj6odfcjt#x27;, '', text, flags=re.DOTALL)
+            text = re.sub(r'\s*```INNERCHAT_CB_6al611z57#x27;, '', text, flags=re.DOTALL) # Corrigido aqui!
             return json.loads(text), None
         return None, f"HTTP {resp.status_code}"
     except Exception as e:
@@ -5245,7 +5245,7 @@ def render_post(post, ctx="feed", compact=False):
     is_saved = email in post.get("saved_by", [])
 
     like_icon = "❤️" if is_liked else "🤍"
-    save_icon = "🔖" if is_saved else "    bookmark" # Using a placeholder for bookmark as     bookmark is not a single emoji
+    save_icon = "🔖" if is_saved else "bookmark" # Using a placeholder for bookmark as bookmark is not a single emoji
 
     card_class = "post-card" if not compact else "scard"
 
@@ -5300,8 +5300,8 @@ def render_post(post, ctx="feed", compact=False):
                 save_db(); st.rerun()
         with col_save:
             if st.button(save_icon, key=f"btn_save_{ctx}_{post['id']}", use_container_width=True):
-                if is_saved: post["saved_by"].remove(email); st.session_state.saved_articles=[a for a in st.session_state.saved_articles if a.get("id")!=post["id"]]
-                else: post["saved_by"].append(email); st.session_state.saved_articles.append(post); record(post["tags"],1.0)
+                if is_saved: st.session_state.saved_articles = [a for a in st.session_state.saved_articles if a.get("id")!=post["id"]]; post["saved_by"].remove(email)
+                else: st.session_state.saved_articles.append(post); post["saved_by"].append(email); record(post["tags"],1.0)
                 save_db(); st.rerun()
         with col_comment:
             new_comment = st.text_input("Adicionar comentário...", key=f"comment_input_{ctx}_{post['id']}", label_visibility="collapsed")
@@ -5314,14 +5314,14 @@ def render_post(post, ctx="feed", compact=False):
         if post.get("comments"):
             st.markdown('<div style="margin-top:.8rem;font-size:.65rem;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Comentários:</div>', unsafe_allow_html=True)
             for comment in post["comments"]:
-                st.markdown(f'<div class="cmt"><span style="font-weight:700;color:var(--t1);font-size:.75rem;">{comment["user"]}:</span> <span style="font-size:.75rem;color:var(--t2);">{comment["text"]}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="cmt"><span>{comment["user"]}:</span> <span>{comment["text"]}</span></div>', unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 def render_article(article, idx, ctx="search"):
     email = st.session_state.current_user
     is_saved = any(a.get("url") == article.get("url") for a in st.session_state.saved_articles)
-    save_icon = "🔖" if is_saved else "    bookmark"
+    save_icon = "🔖" if is_saved else "bookmark"
 
     st.markdown(f'<div class="scard">', unsafe_allow_html=True)
     st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.4rem;">'
@@ -6027,7 +6027,7 @@ def page_img_search():
                     # Using raw string with escaped backticks for robustness
                     clean=ai_text.strip()
                     clean = re.sub(r'^```json\s*', '', clean, flags=re.DOTALL)
-                    clean = re.sub(r'\s*```INNERCHAT_CB_dj6odfcjt#x27;, '', clean, flags=re.DOTALL)
+                    clean = re.sub(r'\s*```INNERCHAT_CB_6al611z57#x27;, '', clean, flags=re.DOTALL) # Corrigido aqui!
                     ai_data=json.loads(clean)
                     tipo=ai_data.get("tipo","—"); origem=ai_data.get("origem","—"); desc=ai_data.get("descricao","—")
                     estruturas=ai_data.get("estruturas",[]); tecnica=ai_data.get("tecnica","—")
@@ -6207,7 +6207,7 @@ def main():
 
 main()
 
-#x27;, '', clean, flags=re.DOTALL)
+#x27;, '', clean, flags=re.DOTALL) # Corrigido aqui!
                     ai_data=json.loads(clean)
                     tipo=ai_data.get("tipo","—"); origem=ai_data.get("origem","—"); desc=ai_data.get("descricao","—")
                     estruturas=ai_data.get("estruturas",[]); tecnica=ai_data.get("tecnica","—")
