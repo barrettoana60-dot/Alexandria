@@ -855,51 +855,31 @@ html,body,.stApp{background:var(--bg)!important;color:var(--t1)!important;font-f
 .stApp::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background:radial-gradient(ellipse 60% 50% at -5% 0%,rgba(255,214,10,.07) 0%,transparent 60%),radial-gradient(ellipse 50% 40% at 105% 0%,rgba(76,201,240,.07) 0%,transparent 55%),radial-gradient(ellipse 40% 50% at 50% 110%,rgba(6,214,160,.06) 0%,transparent 60%);}
 .stApp::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;background-image:linear-gradient(rgba(255,255,255,.012) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.012) 1px,transparent 1px);background-size:60px 60px;}
 header[data-testid="stHeader"],#MainMenu,footer,.stDeployButton,[data-testid="stToolbar"],[data-testid="stDecoration"],[data-testid="collapsedControl"],[data-testid="stSidebarCollapseButton"]{display:none!important}
-.block-container{padding-top:0!important;padding-bottom:4rem!important;max-width:1380px!important;position:relative;z-index:1;padding-left:.75rem!important;padding-right:.75rem!important;}
-section[data-testid="stSidebar"]{background:rgba(10,11,20,.97)!important;backdrop-filter:blur(40px)!important;border-right:1px solid rgba(255,255,255,.1)!important;box-shadow:2px 0 40px rgba(0,0,0,.6)!important;width:222px!important;min-width:222px!important;max-width:222px!important;padding:1.4rem .9rem 1rem!important;}
-section[data-testid="stSidebar"]>div{width:222px!important;padding:0!important;}
-.sb-logo{display:flex;align-items:center;gap:10px;margin-bottom:1.8rem;padding:.3rem .4rem;}
-.sb-logo-icon{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--yel),var(--orn));display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;box-shadow:0 0 16px rgba(255,214,10,.18);}
-.sb-logo-text{font-family:'Syne',sans-serif;font-weight:900;font-size:1.25rem;letter-spacing:-.04em;background:linear-gradient(135deg,var(--yel),var(--grn));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.sb-label{font-size:.57rem;font-weight:700;color:var(--t4);letter-spacing:.14em;text-transform:uppercase;padding:0 .5rem;margin-bottom:.45rem;margin-top:1rem;}
-/* ── SIDEBAR BUTTONS — highly visible ── */
-section[data-testid="stSidebar"] .stButton>button{
-  background:rgba(255,255,255,.10)!important;
-  border:1px solid rgba(255,255,255,.15)!important;
-  border-radius:10px!important;
-  color:#E8E9F0!important;
-  -webkit-text-fill-color:#E8E9F0!important;
-  font-family:'DM Sans',sans-serif!important;
-  font-weight:500!important;font-size:.86rem!important;
-  padding:.52rem .85rem!important;
-  text-align:left!important;justify-content:flex-start!important;
-  width:100%!important;margin-bottom:.18rem!important;
-  transition:background .1s,border-color .1s!important;
-  box-shadow:none!important;
-}
-section[data-testid="stSidebar"] .stButton>button:hover{
-  background:rgba(255,255,255,.18)!important;
-  border-color:rgba(255,255,255,.28)!important;
-  color:#FFFFFF!important;-webkit-text-fill-color:#FFFFFF!important;
-}
-/* ── GLOBAL BUTTONS ── */
+section[data-testid="stSidebar"]{display:none!important}
+.block-container{padding-top:.5rem!important;padding-bottom:4rem!important;max-width:1440px!important;position:relative;z-index:1;padding-left:.75rem!important;padding-right:.75rem!important;}
+/* ── LEFT NAV COLUMN ── */
+.nav-col{background:rgba(10,11,22,.98);border-right:1px solid rgba(255,255,255,.09);min-height:100vh;padding:1.2rem .6rem 1rem;position:sticky;top:0;}
+.nav-logo{display:flex;align-items:center;gap:9px;margin-bottom:1.6rem;padding:.2rem .3rem;}
+.nav-logo-icon{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#FFD60A,#FF8C42);display:flex;align-items:center;justify-content:center;font-size:.9rem;flex-shrink:0;}
+.nav-logo-txt{font-family:'Syne',sans-serif;font-weight:900;font-size:1.2rem;letter-spacing:-.04em;background:linear-gradient(135deg,#FFD60A,#06D6A0);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.nav-label{font-size:.55rem;font-weight:700;color:#404460;letter-spacing:.14em;text-transform:uppercase;padding:0 .4rem;margin-bottom:.4rem;margin-top:.9rem;}
+.nav-hr{border:none;border-top:1px solid rgba(255,255,255,.07);margin:.7rem 0;}
+/* Nav buttons in left column — global override */
 .stButton>button{
   background:rgba(255,255,255,.08)!important;
-  border:1px solid rgba(255,255,255,.14)!important;
-  border-radius:12px!important;
+  border:1px solid rgba(255,255,255,.12)!important;
+  border-radius:10px!important;
   color:#C8CAD8!important;
   -webkit-text-fill-color:#C8CAD8!important;
   font-family:'DM Sans',sans-serif!important;
-  font-weight:500!important;font-size:.80rem!important;
-  padding:.44rem .88rem!important;
+  font-weight:500!important;font-size:.82rem!important;
+  padding:.46rem .75rem!important;
   transition:background .1s,border-color .1s!important;
   box-shadow:none!important;
 }
 .stButton>button:hover{background:rgba(255,255,255,.14)!important;border-color:rgba(255,255,255,.22)!important;color:#FFFFFF!important;-webkit-text-fill-color:#FFFFFF!important;}
 .stButton>button:active{transform:scale(.98)!important;}
-.stButton>button p,.stButton>button span,.stButton>button div{
-  color:inherit!important;-webkit-text-fill-color:inherit!important;
-}
+.stButton>button p,.stButton>button span,.stButton>button div{color:inherit!important;-webkit-text-fill-color:inherit!important;}
 .stTextInput input,.stTextArea textarea{background:rgba(255,255,255,.04)!important;border:1px solid var(--gb1)!important;border-radius:var(--r12)!important;color:var(--t1)!important;font-family:'DM Sans',sans-serif!important;font-size:.84rem!important;}
 .stTextInput input:focus,.stTextArea textarea:focus{border-color:rgba(255,214,10,.4)!important;box-shadow:0 0 0 3px rgba(255,214,10,.08)!important;}
 .stTextInput label,.stTextArea label,.stSelectbox label,.stFileUploader label,.stNumberInput label{color:var(--t3)!important;font-size:.60rem!important;letter-spacing:.10em!important;text-transform:uppercase!important;font-weight:600!important;}
@@ -1122,30 +1102,31 @@ NAV=[("feed","🏠 Feed","yel"),("search","🔍 Busca","blu"),("knowledge","🕸
      ("folders","📁 Pastas","orn"),("analytics","📊 Análises","pur"),
      ("img_search","🔬 Visão IA","blu"),("chat","💬 Chat","grn"),("settings","⚙️ Config","red")]
 
-def render_sidebar():
+def render_nav(col):
+    """Renders the navigation into a given column — always visible."""
     email=st.session_state.current_user; u=guser(); name=u.get("name","?"); ini_=ini(name)
     g=ugrad(email); cur=st.session_state.page
-    with st.sidebar:
-        st.markdown('<div class="sb-logo"><div class="sb-logo-icon">🔬</div><div class="sb-logo-text">Nebula</div></div>', unsafe_allow_html=True)
-        st.markdown('<div class="sb-label">Navegação</div>', unsafe_allow_html=True)
-        for key,label,col in NAV:
+    with col:
+        st.markdown('<div class="nav-logo"><div class="nav-logo-icon">🔬</div><div class="nav-logo-txt">Nebula</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="nav-label">Navegação</div>', unsafe_allow_html=True)
+        for key,label,col_c in NAV:
             is_a=(cur==key and not st.session_state.profile_view)
-            if sbtn(label, f"sb_{key}", color=col if is_a else "t2", left=True, active=is_a):
+            if sbtn(label, f"sb_{key}", color=col_c if is_a else "t2", left=True, active=is_a):
                 st.session_state.profile_view=None; st.session_state.page=key; st.rerun()
-        st.markdown("<hr>", unsafe_allow_html=True)
-        st.markdown('<div class="sb-label">Anthropic API Key</div>', unsafe_allow_html=True)
+        st.markdown('<div class="nav-hr"></div>', unsafe_allow_html=True)
+        st.markdown('<div class="nav-label">API Key</div>', unsafe_allow_html=True)
         ak=st.text_input("",placeholder="sk-ant-...",type="password",key="sb_apikey",
                          label_visibility="collapsed",value=st.session_state.anthropic_key)
         if ak!=st.session_state.anthropic_key:
             st.session_state.anthropic_key=ak
         if ak and ak.startswith("sk-"):
-            st.markdown('<div style="font-size:.58rem;color:#06D6A0;padding:.18rem .5rem">● Claude Vision ativo</div>', unsafe_allow_html=True)
+            st.markdown('<div style="font-size:.55rem;color:#06D6A0;padding:.1rem .2rem">● Claude Vision ativo</div>', unsafe_allow_html=True)
         else:
-            st.markdown('<div style="font-size:.58rem;color:#404460;padding:.18rem .5rem">● Insira chave para IA</div>', unsafe_allow_html=True)
-        st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown('<div style="font-size:.55rem;color:#404460;padding:.1rem .2rem">● Insira chave para IA</div>', unsafe_allow_html=True)
+        st.markdown('<div class="nav-hr"></div>', unsafe_allow_html=True)
         notif=len(st.session_state.notifications)
-        nb_html=f'<div style="position:absolute;top:-3px;right:-3px;background:#FF3B5C;color:white;width:14px;height:14px;border-radius:50%;font-size:.45rem;display:flex;align-items:center;justify-content:center;font-weight:800">{notif}</div>' if notif else ""
-        st.markdown(f'<div style="display:flex;align-items:center;gap:10px;padding:.3rem .2rem"><div style="position:relative">{nb_html}{avh(ini_,34,g)}</div><div style="flex:1;min-width:0"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.82rem;color:#FFFFFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{name}</div><div style="font-size:.62rem;color:#6B6F88">{u.get("area","Pesquisador")[:20]}</div></div></div>', unsafe_allow_html=True)
+        nb=f' 🔴' if notif else ''
+        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.25rem .1rem">{avh(ini_,32,g)}<div style="flex:1;min-width:0"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:#FFFFFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{name}{nb}</div><div style="font-size:.58rem;color:#6B6F88">{u.get("area","Pesquisador")[:18]}</div></div></div>', unsafe_allow_html=True)
         if sbtn("👤 Meu Perfil", "sb_myprofile", color="t1", left=True):
             st.session_state.profile_view=email; st.session_state.page="feed"; st.rerun()
 
@@ -2049,13 +2030,31 @@ def main():
     inject_css()
     if not st.session_state.logged_in:
         page_login(); return
-    render_sidebar()
-    if st.session_state.profile_view:
-        page_profile(st.session_state.profile_view); return
-    {
-        "feed":page_feed,"search":page_search,"knowledge":page_knowledge,
-        "folders":page_folders,"analytics":page_analytics,"img_search":page_img_search,
-        "chat":page_chat,"settings":page_settings,
-    }.get(st.session_state.page,page_feed)()
+    # ── Always-visible layout: nav column + content column ──
+    nav_col, content_col = st.columns([1, 5], gap="small")
+    # Render the dark nav background
+    st.markdown("""
+    <style>
+    /* Style the nav column container */
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child {
+      background:rgba(8,9,18,.97)!important;
+      border-right:1px solid rgba(255,255,255,.09)!important;
+      min-height:100vh!important;
+      padding:0 !important;
+    }
+    [data-testid="stHorizontalBlock"] > [data-testid="stColumn"]:first-child > div {
+      padding:.2rem .4rem !important;
+    }
+    </style>""", unsafe_allow_html=True)
+    render_nav(nav_col)
+    with content_col:
+        if st.session_state.profile_view:
+            page_profile(st.session_state.profile_view)
+        else:
+            {
+                "feed":page_feed,"search":page_search,"knowledge":page_knowledge,
+                "folders":page_folders,"analytics":page_analytics,"img_search":page_img_search,
+                "chat":page_chat,"settings":page_settings,
+            }.get(st.session_state.page,page_feed)()
 
 main()
