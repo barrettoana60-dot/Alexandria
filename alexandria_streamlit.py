@@ -942,6 +942,47 @@ label{color:var(--t2)!important;}
 .stCheckbox label,.stRadio label{color:var(--t1)!important;}
 .stRadio>div{display:flex!important;gap:4px!important;flex-wrap:wrap!important;}
 .stRadio>div>label{background:rgba(255,255,255,.04)!important;border:1px solid var(--gb1)!important;border-radius:50px!important;padding:.28rem .78rem!important;font-size:.74rem!important;cursor:pointer!important;color:var(--t2)!important;}
+/* ══ CRITICAL: Force all button text to be visible ══ */
+.stButton>button span,
+.stButton>button p,
+.stButton>button div,
+.stButton>button {
+  color: var(--t2) !important;
+  -webkit-text-fill-color: var(--t2) !important;
+  opacity: 1 !important;
+}
+.stButton>button:hover span,
+.stButton>button:hover {
+  color: var(--t0) !important;
+  -webkit-text-fill-color: var(--t0) !important;
+}
+/* Colored button text overrides */
+.btn-yel .stButton>button,
+.btn-yel .stButton>button span { color: var(--yel) !important; -webkit-text-fill-color: var(--yel) !important; }
+.btn-grn .stButton>button,
+.btn-grn .stButton>button span { color: var(--grn) !important; -webkit-text-fill-color: var(--grn) !important; }
+.btn-red .stButton>button,
+.btn-red .stButton>button span { color: var(--red) !important; -webkit-text-fill-color: var(--red) !important; }
+.btn-blu .stButton>button,
+.btn-blu .stButton>button span { color: var(--blu) !important; -webkit-text-fill-color: var(--blu) !important; }
+.btn-pur .stButton>button,
+.btn-pur .stButton>button span { color: var(--pur) !important; -webkit-text-fill-color: var(--pur) !important; }
+.snav-a.yel .stButton>button,
+.snav-a.yel .stButton>button span { color: var(--yel) !important; -webkit-text-fill-color: var(--yel) !important; }
+.snav-a.grn .stButton>button,
+.snav-a.grn .stButton>button span { color: var(--grn) !important; -webkit-text-fill-color: var(--grn) !important; }
+.snav-a.blu .stButton>button,
+.snav-a.blu .stButton>button span { color: var(--blu) !important; -webkit-text-fill-color: var(--blu) !important; }
+.snav-a.red .stButton>button,
+.snav-a.red .stButton>button span { color: var(--red) !important; -webkit-text-fill-color: var(--red) !important; }
+.snav-a.orn .stButton>button,
+.snav-a.orn .stButton>button span { color: var(--orn) !important; -webkit-text-fill-color: var(--orn) !important; }
+.snav-a.pur .stButton>button,
+.snav-a.pur .stButton>button span { color: var(--pur) !important; -webkit-text-fill-color: var(--pur) !important; }
+/* Ghost button */
+.btn-ghost .stButton>button,
+.btn-ghost .stButton>button span { color: var(--t4) !important; -webkit-text-fill-color: var(--t4) !important; }
+.btn-ghost .stButton>button:hover span { color: var(--t2) !important; -webkit-text-fill-color: var(--t2) !important; }
 input[type="number"]{background:rgba(255,255,255,.04)!important;border:1px solid var(--gb1)!important;border-radius:var(--r12)!important;color:var(--t1)!important;}
 /* AI Result card */
 .ai-card{background:linear-gradient(135deg,rgba(255,214,10,.06),rgba(6,214,160,.04));border:1px solid rgba(255,214,10,.18);border-radius:var(--r16);padding:1rem;margin-bottom:.6rem;}
@@ -1264,7 +1305,7 @@ def page_feed():
             st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)">{avh(uin_r,30,rg)}<div style="flex:1;min-width:0"><div style="font-size:.76rem;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{dot}{rn}</div><div style="font-size:.60rem;color:var(--t3)">{ud.get("area","")[:20]}</div></div></div>', unsafe_allow_html=True)
             cf2,cv2=st.columns(2)
             with cf2:
-                cls="btn-grn" if is_fol else ""
+                cls="btn-grn" if is_fol else "btn-yel"
                 st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
                 if st.button("✓ Seg." if is_fol else "+ Seguir",key=f"sf_{ue}",use_container_width=True):
                     if is_fol: st.session_state.followed.remove(ue); ud["followers"]=max(0,ud.get("followers",0)-1)
@@ -1272,7 +1313,9 @@ def page_feed():
                     save_db(); st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
             with cv2:
-                if st.button("👤",key=f"svr_{ue}",use_container_width=True): st.session_state.profile_view=ue; st.rerun()
+                st.markdown('<div class="btn-blu">', unsafe_allow_html=True)
+                if st.button("👤 Ver",key=f"svr_{ue}",use_container_width=True): st.session_state.profile_view=ue; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('<div class="sc">', unsafe_allow_html=True)
         st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.80rem;margin-bottom:.75rem;color:var(--t0)">🔥 Em Alta</div>', unsafe_allow_html=True)
@@ -1484,11 +1527,15 @@ def page_knowledge():
             st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">{avh(ini(od.get("name","?")),34,og)}<div style="flex:1"><div style="font-weight:700;font-size:.82rem;font-family:Syne,sans-serif;color:var(--t0)">{od.get("name","?")}</div><div style="font-size:.66rem;color:var(--t3)">{od.get("area","")}</div></div>{tags_html(common[:3])}</div></div>', unsafe_allow_html=True)
             cv,cm2,_=st.columns([1,1,4])
             with cv:
-                if st.button("👤",key=f"kv_{oth}",use_container_width=True): st.session_state.profile_view=oth; st.rerun()
+                st.markdown('<div class="btn-blu">', unsafe_allow_html=True)
+                if st.button("👤 Ver",key=f"kv_{oth}",use_container_width=True): st.session_state.profile_view=oth; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
             with cm2:
+                st.markdown('<div class="btn-grn">', unsafe_allow_html=True)
                 if st.button("💬",key=f"kc_{oth}",use_container_width=True):
                     st.session_state.chat_messages.setdefault(oth,[])
                     st.session_state.active_chat=oth; st.session_state.page="chat"; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
     with tall:
         sq2=st.text_input("",placeholder="🔍 Buscar…",key="all_s",label_visibility="collapsed")
@@ -1500,7 +1547,9 @@ def page_knowledge():
             st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{avh(ini(rn),34,rg)}<div style="flex:1"><div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{rn}</div><div style="font-size:.66rem;color:var(--t3)">{ua}</div></div></div></div>', unsafe_allow_html=True)
             ca2,cb2,cc2=st.columns(3)
             with ca2:
-                if st.button("👤",key=f"av_{ue}",use_container_width=True): st.session_state.profile_view=ue; st.rerun()
+                st.markdown('<div class="btn-blu">', unsafe_allow_html=True)
+                if st.button("👤 Perfil",key=f"av_{ue}",use_container_width=True): st.session_state.profile_view=ue; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
             with cb2:
                 cls="btn-grn" if is_fol else "btn-yel"
                 st.markdown(f'<div class="{cls}">', unsafe_allow_html=True)
@@ -1510,8 +1559,10 @@ def page_knowledge():
                     save_db(); st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
             with cc2:
-                if st.button("💬",key=f"ac_{ue}",use_container_width=True):
+                st.markdown('<div class="btn-grn">', unsafe_allow_html=True)
+                if st.button("💬 Chat",key=f"ac_{ue}",use_container_width=True):
                     st.session_state.chat_messages.setdefault(ue,[]); st.session_state.active_chat=ue; st.session_state.page="chat"; st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════
