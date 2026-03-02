@@ -10,12 +10,13 @@ def _pip(*pkgs):
         except:
             pass
 
-# Instalações condicionais (já otimizadas)
+# Instalações condicionais
 try:
     import plotly.graph_objects as go
 except:
     _pip("plotly")
     import plotly.graph_objects as go
+
 try:
     import numpy as np
     from PIL import Image as PILImage
@@ -23,28 +24,30 @@ except:
     _pip("pillow", "numpy")
     import numpy as np
     from PIL import Image as PILImage
+
 try:
     import requests
 except:
     _pip("requests")
     import requests
-try:
-    import PyPDF2
-except:
-    _pip("PyPDF2")
-    import PyPDF2
-try:
-    import openpyxl
-except:
-    _pip("openpyxl")
-    import openpyxl
-try:
-    import pandas as pd
-except:
-    _pip("pandas")
-    import pandas as pd
 
-# ML / Image Processing — com fallbacks
+# PyPDF2: se falhar, fica como None (a função extract_pdf já trata)
+try:
+    import PyPDF2
+except:
+    PyPDF2 = None
+
+try:
+    import openpyxl
+except:
+    openpyxl = None
+
+try:
+    import pandas as pd
+except:
+    pd = None
+
+# ML / Image Processing — com fallbacks numpy
 SKIMAGE_OK = False
 SKLEARN_OK = False
 SCIPY_OK = False
@@ -86,10 +89,8 @@ except:
 
 import streamlit as st
 
-# Configuração da página
 st.set_page_config(page_title="Nebula", page_icon="🔬", layout="wide", initial_sidebar_state="expanded")
 
-# Banco de dados local
 DB_FILE = "nebula_db.json"
 
 def load_db():
@@ -157,7 +158,6 @@ GRAD_POOL = [
 def ugrad(e):
     return f"linear-gradient({GRAD_POOL[hash(e or '') % len(GRAD_POOL)]})"
 
-# Stopwords
 STOPWORDS = {"de", "a", "o", "que", "e", "do", "da", "em", "um", "para", "é", "com", "uma", "os", "no", "se",
              "na", "por", "mais", "as", "dos", "como", "mas", "foi", "ao", "ele", "das", "tem", "à", "seu",
              "sua", "ou", "ser", "quando", "muito", "há", "nos", "já", "está", "eu", "também", "só", "pelo",
@@ -167,7 +167,6 @@ STOPWORDS = {"de", "a", "o", "que", "e", "do", "da", "em", "um", "para", "é", "
              "we", "when", "your", "can", "said", "there", "use", "an", "each", "which", "she", "do", "how",
              "their", "if", "will", "up", "other", "about", "out", "many", "then", "them", "these", "so"}
 
-# Dados iniciais
 SEED_POSTS = [
     {"id": 1, "author": "Carlos Mendez", "author_email": "carlos@nebula.ai", "avatar": "CM", "area": "Neurociência",
      "title": "Efeitos da Privação de Sono na Plasticidade Sináptica",
@@ -227,7 +226,20 @@ CHAT_INIT = {
     "luana@nebula.ai": [{"from": "luana@nebula.ai", "text": "Podemos colaborar no próximo projeto?", "time": "ontem"}],
 }
 
-# Inicialização do estado
+def save_db():
+    try:
+        with open(DB_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "users": st.session_state.users,
+                "feed_posts": st.session_state.feed_posts,
+                "folders": st.session_state.folders,
+                "user_prefs": {k: dict(v) for k, v in st.session_state.user_prefs.items()},
+                "saved_articles": st.session_state.saved_articles,
+                "followed": st.session_state.followed,
+            }, f, ensure_ascii=False, indent=2)
+    except:
+        pass
+
 def init():
     if "initialized" in st.session_state:
         return
@@ -841,9 +853,11 @@ def run_full_ml_pipeline(img_bytes):
         result["error"] = str(e)
     return result
 
-# Funções para análise de documentos (já otimizadas)
+# Funções para análise de documentos (com cache)
 @st.cache_data(show_spinner=False)
 def extract_pdf(b):
+    if PyPDF2 is None:
+        return ""
     try:
         r = PyPDF2.PdfReader(io.BytesIO(b))
         t = ""
@@ -1256,20 +1270,6 @@ def page_login():
                         record(area_tags(na), 2.0)
                         st.session_state.page = "feed"
                         st.rerun()
-
-def save_db():
-    try:
-        with open(DB_FILE, "w", encoding="utf-8") as f:
-            json.dump({
-                "users": st.session_state.users,
-                "feed_posts": st.session_state.feed_posts,
-                "folders": st.session_state.folders,
-                "user_prefs": {k: dict(v) for k, v in st.session_state.user_prefs.items()},
-                "saved_articles": st.session_state.saved_articles,
-                "followed": st.session_state.followed,
-            }, f, ensure_ascii=False, indent=2)
-    except:
-        pass
 
 # Navegação
 NAV = [("feed", "🏠 Feed", "yel"), ("search", "🔍 Busca", "blu"), ("knowledge", "🕸 Conexões IA", "grn"),
