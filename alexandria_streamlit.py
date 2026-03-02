@@ -272,7 +272,8 @@ Responda APENAS em JSON puro (sem markdown):
         )
         if resp.status_code == 200:
             text = resp.json()["content"][0]["text"].strip()
-            text = re.sub(r'^```json\s*', '', text)
+            # Corrected regex to remove markdown code block delimiters
+            text = re.sub(r'^```json\s*', '', text, flags=re.DOTALL)
             text = re.sub(r'\s*```
 
 Python
@@ -551,8 +552,9 @@ Responda APENAS em JSON puro (sem markdown):
         )
         if resp.status_code == 200:
             text = resp.json()["content"][0]["text"].strip()
-            text = re.sub(r'^```json\s*', '', text)
-            text = re.sub(r'\s*```INNERCHAT_CB_6bzbq5zln#x27;, '', text)
+            # Corrected regex to remove markdown code block delimiters
+            text = re.sub(r'^```json\s*', '', text, flags=re.DOTALL)
+            text = re.sub(r'\s*```INNERCHAT_CB_yy9kkkxsg#x27;, '', text, flags=re.DOTALL)
             return json.loads(text), None
         return None, f"HTTP {resp.status_code}"
     except Exception as e:
@@ -2126,6 +2128,7 @@ def page_img_search():
                 st.error(f"Erro Claude Vision: {ai_err}")
             elif ai_text:
                 try:
+                    # Corrected regex to remove markdown code block delimiters
                     clean=ai_text.strip().replace("```json","").replace("```","").strip()
                     ai_data=json.loads(clean)
                     tipo=ai_data.get("tipo","—"); origem=ai_data.get("origem","—"); desc=ai_data.get("descricao","—")
@@ -2299,7 +2302,7 @@ def main():
 
 main()
 
-#x27;, '', text)
+#x27;, '', text, flags=re.DOTALL)
             return json.loads(text), None
         return None, f"HTTP {resp.status_code}"
     except Exception as e:
@@ -3873,6 +3876,7 @@ def page_img_search():
                 st.error(f"Erro Claude Vision: {ai_err}")
             elif ai_text:
                 try:
+                    # Corrected regex to remove markdown code block delimiters
                     clean=ai_text.strip().replace("```json","").replace("```","").strip()
                     ai_data=json.loads(clean)
                     tipo=ai_data.get("tipo","—"); origem=ai_data.get("origem","—"); desc=ai_data.get("descricao","—")
