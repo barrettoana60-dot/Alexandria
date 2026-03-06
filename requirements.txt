@@ -1,3 +1,11 @@
-streamlit>=1.32.0
-plotly>=5.20.0
-pillow>=10.0.0
+streamlit
+plotly
+numpy
+Pillow
+requests
+PyPDF2
+openpyxl
+pandas
+scikit-image
+scikit-learn
+scipy
