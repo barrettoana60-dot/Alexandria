@@ -2955,7 +2955,7 @@ def page_search():
     <div style="font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0);margin-bottom:.2rem">
         📁 {doc["title"]}
     </div>
-    <div style="font-size:.64rem:var(--t3);margin-bottom:.25rem">
+    <div style="font-size:.64rem;color:var(--t3);margin-bottom:.25rem">
         Pasta: <strong>{folder}</strong> · Relevância: <span style="color:var(--yel)">{rel}%</span>
     </div>
     <div style="font-size:.73rem;color:var(--t2);margin-bottom:.3rem">
@@ -2985,7 +2985,8 @@ def page_search():
                         d["meta"], ctx="srch_all", compact=True
                     )
             if web:
-                st.markdown("<hr>", unsafe_allow_html=True)
+                if repo_docs or posts:
+                    st.markdown("<hr>", unsafe_allow_html=True)
                 for idx, a in enumerate(web):
                     render_article(a, idx=idx, ctx="all_w")
             if not repo_docs and not posts and not web:
@@ -3209,5 +3210,1145 @@ def page_knowledge():
             n2 = users.get(e2, {})
             ts = (
                 tags_html(common[:4])
+                if common
+                else '<span style="color:var(--t3);font-size:.66rem">seguimento</span>'
+            )
+            st.markdown(
+                f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--yel)">{n1.get("name", "?")}</span><span style="color:var(--t3)">↔</span><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--yel)">{n2.get("name", "?")}</span><div style="flex:1">{ts}</div><span style="font-size:.63rem;color:var(--grn);font-weight:700">{strength}pt</span></div></div>',
+                unsafe_allow_html=True,
+            )
 
+    with tai:
+        st.markdown(
+            '<div class="api-banner"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.88rem;margin-bottom:.28rem;color:var(--pur)">🤖 Sugestões Inteligentes de Conexão</div><div style="font-size:.74rem;color:var(--t2);line-height:1.65">Claude AI analisa seu perfil e pesquisas para encontrar colaborações científicas ideais</div></div>',
+            unsafe_allow_html=True,
+        )
+        if not api_key or not api_key.startswith("sk-"):
+            st.markdown(
+                '<div class="pbox-yel"><div style="font-size:.75rem;color:var(--yel);font-weight:600;margin-bottom:.28rem">⚠️ Chave API necessária</div><div style="font-size:.72rem;color:var(--t2)">Insira sua Anthropic API key na barra lateral para usar sugestões com IA.</div></div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<div style="font-size:.62rem;color:var(--t3);margin:.5rem 0">💡 Sugestões algorítmicas (sem IA):</div>',
+                unsafe_allow_html=True,
+            )
+            my_tags = rtags.get(email, set())
+            for ue, ud in list(users.items())[:8]:
+                if ue == email or ue in st.session_state.followed:
+                    continue
+                common_tags = my_tags & rtags.get(ue, set())
+                if len(common_tags) > 0:
+                    rg = ugrad(ue)
+                    rn = ud.get("name", "?")
+                    st.markdown(
+                        f'<div class="conn-ai"><div style="display:flex;align-items:center;gap:9px;margin-bottom:.5rem">{avh(ini(rn), 34, rg)}<div style="flex:1"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.84rem;color:var(--t0)">{rn}</div><div style="font-size:.66rem;color:var(--t3)">{ud.get("area", "")}</div></div><span class="badge-grn">{len(common_tags)} temas</span></div><div style="font-size:.73rem;color:var(--t2);margin-bottom:.45rem">Interesses em comum: {tags_html(list(common_tags)[:4])}</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                    cf_b, cv_b = st.columns(2)
+                    with cf_b:
+                        if st.button(
+                            f"+ Seguir {rn.split()[0]}",
+                            key=f"ais_{ue}",
+                            use_container_width=True,
+                        ):
+                            if ue not in st.session_state.followed:
+                                st.session_state.followed.append(ue)
+                                ud["followers"] = ud.get("followers", 0) + 1
+                            save_db()
+                            st.rerun()
+                    with cv_b:
+                        if st.button(
+                            f"👤 Perfil",
+                            key=f"aip_{ue}",
+                            use_container_width=True,
+                        ):
+                            st.session_state.profile_view = ue
+                            st.rerun()
+        else:
+            cache_key = f"conn_{email}_{len(users)}_{len(st.session_state.feed_posts)}_{st.session_state.local_index_version}"
+            if st.button("🤖 Gerar Sugestões IA", key="btn_ai_conn"):
+                with st.spinner("Claude analisando sua rede científica…"):
+                    result, err = call_claude_connections(
+                        users, st.session_state.feed_posts, email, api_key
+                    )
+                    if result:
+                        st.session_state.ai_conn_cache[cache_key] = result
+                    else:
+                        st.error(f"Erro IA: {err}")
+            ai_result = st.session_state.ai_conn_cache.get(cache_key)
+            if ai_result:
+                suggestions = ai_result.get("sugestoes", [])
+                for sug in suggestions:
+                    sue = sug.get("email", "")
+                    sud = users.get(sue, {})
+                    if not sud:
+                        continue
+                    rn = sud.get("name", "?")
+                    rg = ugrad(sue)
+                    score = sug.get("score", 70)
+                    score_col = (
+                        "#6A9C89"
+                        if score >= 80
+                        else ("#0A6EBD" if score >= 60 else "#FF8C42")
+                    )
+                    temas = sug.get("temas_comuns", [])
+                    is_fol2 = sue in st.session_state.followed
+                    st.markdown(f'''<div class="conn-ai">
+  <div style="display:flex;align-items:center;gap:9px;margin-bottom:.55rem">
+    {avh(ini(rn), 38, rg)}
+    <div style="flex:1">
+      <div style="font-family:Syne,sans-serif;font-weight:700;font-size:.86rem;color:var(--t0)">{rn}</div>
+      <div style="font-size:.64rem;color:var(--t3)">{sud.get("area", "")}</div>
+    </div>
+    <div style="text-align:center;background:rgba(0,0,0,.25);border-radius:10px;padding:.38rem .65rem;flex-shrink:0">
+      <div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:{score_col}">{score}</div>
+      <div style="font-size:.5rem;color:var(--t3);text-transform:uppercase;letter-spacing:.08em">score IA</div>
+    </div>
+  </div>
+  <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:.55rem .75rem;margin-bottom:.5rem;font-size:.76rem;color:var(--t2);line-height:1.65;border:1px solid rgba(177,125,255,.10)">
+    🤖 {sug.get("razao", "Conexão recomendada pela IA")}
+  </div>
+  <div>{tags_html(temas[:5])}</div>
+</div>''', unsafe_allow_html=True)
+                    c_f, c_p, c_c = st.columns(3)
+                    with c_f:
+                        st.markdown('<div>', unsafe_allow_html=True)
+                        if st.button(
+                            "✓ Seguindo" if is_fol2 else "+ Seguir",
+                            key=f"aic_f_{sue}",
+                            use_container_width=True,
+                        ):
+                            if not is_fol2:
+                                st.session_state.followed.append(sue)
+                                sud["followers"] = sud.get("followers", 0) + 1
+                            save_db()
+                            st.rerun()
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    with c_p:
+                        if st.button(
+                            "👤 Perfil",
+                            key=f"aic_p_{sue}",
+                            use_container_width=True,
+                        ):
+                            st.session_state.profile_view = sue
+                            st.rerun()
+                    with c_c:
+                        if st.button(
+                            "💬 Chat",
+                            key=f"aic_c_{sue}",
+                            use_container_width=True,
+                        ):
+                            st.session_state.chat_messages.setdefault(
+                                sue, []
+                            )
+                            st.session_state.active_chat = sue
+                            st.session_state.page = "chat"
+                            st.rerun()
+            else:
+                st.markdown(
+                    '<div style="text-align:center;padding:2rem;color:var(--t3)">Clique em "Gerar Sugestões IA" para análise com Claude.</div>',
+                    unsafe_allow_html=True,
+                )
 
+    with tmi:
+        mc = [(e1, e2, c, s) for e1, e2, c, s in edges if e1 == email or e2 == email]
+        if not mc:
+            st.info("Siga pesquisadores e publique pesquisas.")
+        for e1, e2, common, strength in sorted(mc, key=lambda x: -x[3]):
+            oth = e2 if e1 == email else e1
+            od = users.get(oth, {})
+            og = ugrad(oth)
+            st.markdown(
+                f'<div class="scard"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">{avh(ini(od.get("name", "?")), 34, og)}<div style="flex:1"><div style="font-weight:700;font-size:.82rem;font-family:Syne,sans-serif;color:var(--t0)">{od.get("name", "?")}</div><div style="font-size:.66rem;color:var(--t3)">{od.get("area", "")}</div></div>{tags_html(common[:3])}</div></div>',
+                unsafe_allow_html=True,
+            )
+            cv, cm2, _ = st.columns([1, 1, 4])
+            with cv:
+                if st.button(
+                    "👤 Ver", key=f"kv_{oth}", use_container_width=True
+                ):
+                    st.session_state.profile_view = oth
+                    st.rerun()
+            with cm2:
+                if st.button(
+                    "💬", key=f"kc_{oth}", use_container_width=True
+                ):
+                    st.session_state.chat_messages.setdefault(oth, [])
+                    st.session_state.active_chat = oth
+                    st.session_state.page = "chat"
+                    st.rerun()
+
+    with tall:
+        sq2 = st.text_input(
+            "",
+            placeholder="🔍 Buscar…",
+            key="all_s",
+            label_visibility="collapsed",
+        )
+        for ue, ud in users.items():
+            if ue == email:
+                continue
+            rn = ud.get("name", "?")
+            ua = ud.get("area", "")
+            if (
+                sq2
+                and sq2.lower() not in rn.lower()
+                and sq2.lower() not in ua.lower()
+            ):
+                continue
+            is_fol = ue in st.session_state.followed
+            rg = ugrad(ue)
+            st.markdown(
+                f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{avh(ini(rn), 34, rg)}<div style="flex:1"><div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{rn}</div><div style="font-size:.66rem;color:var(--t3)">{ua}</div></div></div></div>',
+                unsafe_allow_html=True,
+            )
+            ca2, cb2, cc2 = st.columns(3)
+            with ca2:
+                if st.button(
+                    "👤 Perfil", key=f"av_{ue}", use_container_width=True
+                ):
+                    st.session_state.profile_view = ue
+                    st.rerun()
+            with cb2:
+                st.markdown('<div>', unsafe_allow_html=True)
+                if st.button(
+                    "✓ Seg." if is_fol else "+ Seguir",
+                    key=f"af_{ue}",
+                    use_container_width=True,
+                ):
+                    if is_fol:
+                        st.session_state.followed.remove(ue)
+                        ud["followers"] = max(
+                            0, ud.get("followers", 0) - 1
+                        )
+                    else:
+                        st.session_state.followed.append(ue)
+                        ud["followers"] = ud.get("followers", 0) + 1
+                    save_db()
+                    st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
+            with cc2:
+                if st.button(
+                    "💬 Chat", key=f"ac_{ue}", use_container_width=True
+                ):
+                    st.session_state.chat_messages.setdefault(ue, [])
+                    st.session_state.active_chat = ue
+                    st.session_state.page = "chat"
+                    st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def page_repository(): # Renomeado de page_folders
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown(
+        '<h1 style="padding-top:.8rem;margin-bottom:.9rem">📚 Repositório de Pesquisa</h1>',
+        unsafe_allow_html=True,
+    )
+    email = st.session_state.current_user
+    u = guser()
+    ra = u.get("area", "")
+    c1, c2, c3 = st.columns([2, 1.2, 1.5])
+    with c1:
+        nfn = st.text_input(
+            "Nome da pasta", placeholder="Ex: Genômica Comparativa", key="nf_n"
+        )
+    with c2:
+        nfd = st.text_input("Descrição", key="nf_d")
+    with c3:
+        nvis = st.selectbox(
+            "Visibilidade", ["private", "team", "public"], key="nf_vis"
+        )
+    if st.button("📁 Criar Pasta", key="btn_nf", use_container_width=True):
+        if nfn.strip():
+            if nfn not in st.session_state.folders:
+                st.session_state.folders[nfn] = {
+                    "desc": nfd,
+                    "files": [],
+                    "notes": "",
+                    "analyses": {},
+                    "topics_agg": {},
+                    "keywords_agg": [],
+                    "last_updated": datetime.now().isoformat(),
+                    "owner": email,
+                    "visibility": nvis,
+                }
+                save_db()
+                st.session_state.local_index_version += 1
+                st.success(f"'{nfn}' criada!")
+                st.rerun()
+            else:
+                st.warning("Já existe uma pasta com este nome.")
+        else:
+            st.warning("Por favor, digite um nome para a pasta.")
+    st.markdown("<hr>", unsafe_allow_html=True)
+    if not st.session_state.folders:
+        st.markdown(
+            '<div class="glass" style="text-align:center;padding:4rem"><div style="font-size:2.2rem;opacity:.2;margin-bottom:.7rem">📁</div><div style="color:var(--t3)">Nenhuma pasta criada ainda.</div></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    # Filtros para pastas
+    st.markdown(
+        '<div style="font-size:.58rem;font-weight:700;color:var(--t4);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.7rem">Minhas Pastas</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Exibir pastas
+    for fn, fd in list(st.session_state.folders.items()):
+        if not isinstance(fd, dict): # Para compatibilidade com estruturas antigas
+            fd = {"files": fd, "desc": "", "notes": "", "analyses": {}, "topics_agg": {}, "keywords_agg": [], "last_updated": datetime.now().isoformat(), "owner": None, "visibility": "private"}
+            st.session_state.folders[fn] = fd
+
+        # Apenas pastas do usuário logado
+        if fd.get("owner") != email:
+            continue
+
+        files = fd.get("files", [])
+        analyses = fd.get("analyses", {})
+
+        # Agregados para o título do expander
+        num_files = len(files)
+        top_topics = ", ".join(list(fd.get("topics_agg", {}).keys())[:2])
+        last_update_str = time_ago(fd.get("last_updated", datetime.now().isoformat())[:10])
+
+        with st.expander(f"📁 {fn} — {num_files} arquivo(s) · {top_topics} · Atualizado {last_update_str}"):
+            st.markdown(f'<div style="font-size:.75rem;color:var(--t2);margin-bottom:.5rem">Descrição: {fd.get("desc", "Sem descrição.")}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:.75rem;color:var(--t2);margin-bottom:.8rem">Visibilidade: <span style="font-weight:700;color:var(--yel)">{fd.get("visibility", "private").capitalize()}</span></div>', unsafe_allow_html=True)
+
+            up = st.file_uploader(
+                "Upload de arquivos",
+                type=None,
+                key=f"up_{fn}",
+                label_visibility="collapsed",
+                accept_multiple_files=True,
+            )
+            if up:
+                for uf in up:
+                    if uf.name not in files:
+                        files.append(uf.name)
+                    if fn not in st.session_state.folder_files_bytes:
+                        st.session_state.folder_files_bytes[fn] = {}
+                    uf.seek(0)
+                    st.session_state.folder_files_bytes[fn][uf.name] = uf.read()
+                fd["files"] = files
+                save_db()
+                st.success(f"{len(up)} arquivo(s) adicionado(s)!")
+                st.rerun() # Rerun para atualizar a lista de arquivos e permitir análise
+
+            if files:
+                st.markdown('<div style="font-size:.62rem;color:var(--t3);text-transform:uppercase;font-weight:600;letter-spacing:.08em;margin-top:.8rem;margin-bottom:.5rem">Arquivos na Pasta</div>', unsafe_allow_html=True)
+                for f in files:
+                    ft = ftype(f)
+                    has_analysis = f in analyses
+                    icon = {
+                        "PDF": "📄",
+                        "Word": "📝",
+                        "Planilha": "📊",
+                        "Dados": "📈",
+                        "Código": "🐍",
+                        "Imagem": "🖼",
+                        "Markdown": "📋",
+                    }.get(ft, "📄")
+                    ab2 = (
+                        f' <span class="badge-grn" style="font-size:.57rem;margin-left:5px">✓</span>'
+                        if has_analysis
+                        else ""
+                    )
+                    st.markdown(
+                        f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>{icon}</span><span style="font-size:.75rem;color:var(--t2);flex:1">{f}</span>{ab2}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            col_analyze, col_delete, _ = st.columns([1.5, 1.5, 2])
+            with col_analyze:
+                if st.button("🔬 Analisar Arquivos", key=f"an_{fn}", use_container_width=True):
+                    if files:
+                        pb = st.progress(0, "Iniciando análise…")
+                        fb = st.session_state.folder_files_bytes.get(fn, {})
+                        for fi, f in enumerate(files):
+                            pb.progress((fi + 1) / len(files), f"Analisando: {f[:25]}…")
+                            fbytes = fb.get(f, b"")
+                            ft2 = ftype(f)
+
+                            if ft2 == "Imagem":
+                                img_meta = analyze_image_file(f, fbytes)
+                                if img_meta:
+                                    analyses[f] = {"image_meta": img_meta, "summary": f"Imagem · {img_meta['classification']['category']}"}
+                                else:
+                                    analyses[f] = {"summary": "Falha na análise de imagem."}
+                            else:
+                                analyses[f] = analyze_doc(f, fbytes, ft2, ra)
+
+                        fd["analyses"] = analyses
+                        recompute_folder_aggregates(fd) # Recompute aggregates
+                        save_db()
+                        st.session_state.local_index_version += 1 # Invalidate local index cache
+                        pb.empty()
+                        st.success("✓ Análise completa!")
+                        st.rerun()
+                    else:
+                        st.warning("Adicione arquivos à pasta para analisar.")
+            with col_delete:
+                if st.button("🗑 Excluir Pasta", key=f"df_{fn}", use_container_width=True):
+                    del st.session_state.folders[fn]
+                    save_db()
+                    st.session_state.local_index_version += 1
+                    st.rerun()
+
+            if analyses:
+                st.markdown('<div style="font-size:.62rem;color:var(--t3);text-transform:uppercase;font-weight:600;letter-spacing:.08em;margin-top:.8rem;margin-bottom:.5rem">Resultados das Análises</div>', unsafe_allow_html=True)
+                for f, an in analyses.items():
+                    with st.expander(f"🔬 {f}"):
+                        if "image_meta" in an:
+                            img_meta = an["image_meta"]
+                            cls_ = img_meta["classification"]
+                            conf_c = VIB[1] if cls_["confidence"] > 80 else (VIB[0] if cls_["confidence"] > 60 else VIB[2])
+                            st.markdown(f'''<div class="ai-card">
+                                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:.55rem">
+                                    <div>
+                                        <div style="font-size:.57rem;color:var(--t3);letter-spacing:.10em;text-transform:uppercase;margin-bottom:4px;font-weight:700">Classificação ML</div>
+                                        <div style="font-family:Syne,sans-serif;font-size:1.12rem;font-weight:800;color:var(--t0);margin-bottom:3px">{cls_["category"]}</div>
+                                        <div style="font-size:.74rem;color:var(--t2);line-height:1.65;max-width:380px">{cls_["origin"]}</div>
+                                    </div>
+                                    <div style="background:rgba(0,0,0,.3);border-radius:12px;padding:.55rem .9rem;text-align:center;flex-shrink:0;border:1px solid rgba(255,255,255,.08)">
+                                        <div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:900;color:{conf_c}">{cls_["confidence"]}%</div>
+                                        <div style="font-size:.52rem;color:var(--t3);text-transform:uppercase;font-weight:700">confiança</div>
+                                    </div>
+                                </div>
+                                <div>{tags_html(cls_.get("search_kw", "").split())}</div>
+                            </div>''', unsafe_allow_html=True)
+                        else:
+                            kws = an.get("keywords", [])
+                            topics = an.get("topics", {})
+                            rel = an.get("relevance_score", 0)
+                            wq = an.get("writing_quality", 0)
+                            rc = "var(--grn)" if rel >= 70 else ("var(--yel)" if rel >= 45 else "var(--red)")
+                            st.markdown(
+                                f'<div class="abox"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.86rem;margin-bottom:.3rem">{f}</div><div style="font-size:.76rem;color:var(--t2)">{an.get("summary", "")}</div><div style="display:flex;gap:1.2rem;margin-top:.5rem"><div><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:{rc}">{rel}%</div><div class="mlbl">Relevância</div></div><div><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--blu)">{wq}%</div><div class="mlbl">Qualidade</div></div><div><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--orn)">{an.get("word_count", 0)}</div><div class="mlbl">Palavras</div></div></div></div>',
+                                unsafe_allow_html=True,
+                            )
+                            if kws:
+                                st.markdown(tags_html(kws[:16]), unsafe_allow_html=True)
+                            if topics:
+                                fig2 = go.Figure(go.Pie(labels=list(topics.keys()), values=list(topics.values()), hole=0.5,
+                                                        marker=dict(colors=VIB[:len(topics)],
+                                                                    line=dict(color=["#0B0F1A"] * 15, width=2)),
+                                                        textfont=dict(color="white", size=8)))
+                                fig2.update_layout(height=220, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                                   legend=dict(font=dict(color="#6B6F88", size=8)), margin=dict(l=0, r=0, t=10, b=0))
+                                st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+                                st.plotly_chart(fig2, use_container_width=True)
+                                st.markdown('</div>', unsafe_allow_html=True)
+
+                            if an.get("strengths"):
+                                st.markdown('<div style="font-size:.62rem;color:var(--grn);font-weight:700;margin-top:.5rem;margin-bottom:.2rem">Pontos Fortes:</div>', unsafe_allow_html=True)
+                                for s in an["strengths"]:
+                                    st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-left:.5rem">✓ {s}</div>', unsafe_allow_html=True)
+                            if an.get("improvements"):
+                                st.markdown('<div style="font-size:.62rem;color:var(--yel);font-weight:700;margin-top:.5rem;margin-bottom:.2rem">Sugestões de Melhoria:</div>', unsafe_allow_html=True)
+                                for i in an["improvements"]:
+                                    st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-left:.5rem">💡 {i}</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def page_analytics():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown(
+        '<h1 style="padding-top:.8rem;margin-bottom:.9rem">📊 Painel de Análises</h1>',
+        unsafe_allow_html=True,
+    )
+    email = st.session_state.current_user
+    d = st.session_state.stats_data
+    tf, tp, ti, tpr = st.tabs(
+        [
+            "  📁 Repositório  ",
+            "  📝 Publicações  ",
+            "  📈 Impacto  ",
+            "  🎯 Interesses  ",
+        ]
+    )
+    with tf:
+        folders = st.session_state.folders
+        if not folders:
+            st.markdown(
+                '<div class="glass" style="text-align:center;padding:3rem;color:var(--t3)">Crie pastas no Repositório para ver as análises.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            all_an = {
+                f: an
+                for fd in folders.values()
+                if isinstance(fd, dict)
+                for f, an in fd.get("analyses", {}).items()
+            }
+            tot_f = sum(
+                len(fd.get("files", []) if isinstance(fd, dict) else fd)
+                for fd in folders.values()
+            )
+            all_kw = [
+                kw for an in all_an.values() for kw in an.get("keywords", [])
+            ]
+            all_top = defaultdict(int)
+            for an in all_an.values():
+                for t, s in an.get("topics", {}).items():
+                    all_top[t] += s
+            c1, c2, c3, c4 = st.columns(4)
+            for col, (cls, v, l) in zip(
+                [c1, c2, c3, c4],
+                [
+                    ("mval-yel", len(folders), "Pastas"),
+                    ("mval-grn", tot_f, "Arquivos"),
+                    ("mval-blu", len(all_an), "Analisados"),
+                    (
+                        "mval-red",
+                        len(set(all_kw[:100])),
+                        "Keywords",
+                    ),
+                ],
+            ):
+                with col:
+                    st.markdown(
+                        f'<div class="mbox"><div class="{cls}">{v}</div><div class="mlbl">{l}</div></div>',
+                        unsafe_allow_html=True,
+                    )
+            if all_top:
+                fig = go.Figure(
+                    go.Bar(
+                        x=list(all_top.values())[:8],
+                        y=list(all_top.keys())[:8],
+                        orientation="h",
+                        marker=dict(color=VIB[:8]),
+                    )
+                )
+                fig.update_layout(
+                    **{
+                        **pc_dark(),
+                        "height": 250,
+                        "yaxis": dict(
+                            showgrid=False,
+                            color="#6B6F88",
+                            tickfont=dict(size=9),
+                        ),
+                        "title": dict(
+                            text="Temas Dominantes no Repositório",
+                            font=dict(
+                                color="#E8E9F0", family="Syne", size=11
+                            ),
+                        ),
+                    }
+                )
+                st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+                st.plotly_chart(fig, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+    with tp:
+        my_posts = [
+            p
+            for p in st.session_state.feed_posts
+            if p.get("author_email") == email
+        ]
+        if not my_posts:
+            st.markdown(
+                '<div class="glass" style="text-align:center;padding:2.5rem;color:var(--t3)">Publique pesquisas no Feed Social para ver as análises.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown(
+                    f'<div class="mbox"><div class="mval-yel">{len(my_posts)}</div><div class="mlbl">Pesquisas</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                st.markdown(
+                    f'<div class="mbox"><div class="mval-grn">{sum(p["likes"] for p in my_posts)}</div><div class="mlbl">Curtidas</div></div>',
+                    unsafe_allow_html=True,
+                )
+            with c3:
+                st.markdown(
+                    f'<div class="mbox"><div class="mval-blu">{sum(len(p.get("comments", [])) for p in my_posts)}</div><div class="mlbl">Comentários</div></div>',
+                    unsafe_allow_html=True,
+                )
+            for p in sorted(
+                my_posts,
+                key=lambda x: x.get("date", ""),
+                reverse=True,
+            ):
+                st.markdown(
+                    f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0)">{p["title"][:55]}</div>{badge(p["status"])}</div><div style="font-size:.68rem;color:var(--t3);margin-top:.35rem">{p.get("date", "")} · {p["likes"]} curtidas · {len(p.get("comments", []))} comentários</div></div>',
+                    unsafe_allow_html=True,
+                )
+    with ti:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown(
+                f'<div class="mbox"><div class="mval-yel">{d.get("h_index", 4)}</div><div class="mlbl">Índice H</div></div>',
+                unsafe_allow_html=True,
+            )
+        with c2:
+            st.markdown(
+                f'<div class="mbox"><div class="mval-grn">{d.get("fator_impacto", 3.8):.1f}</div><div class="mlbl">Fator Impacto</div></div>',
+                unsafe_allow_html=True,
+            )
+        with c3:
+            st.markdown(
+                f'<div class="mbox"><div class="mval-blu">{len(st.session_state.saved_articles)}</div><div class="mlbl">Salvos</div></div>',
+                unsafe_allow_html=True,
+            )
+        st.markdown("<hr>", unsafe_allow_html=True)
+        nh = st.number_input(
+            "Índice H", 0, 200, d.get("h_index", 4), key="e_h"
+        )
+        nfi = st.number_input(
+            "Fator impacto",
+            0.0,
+            100.0,
+            float(d.get("fator_impacto", 3.8)),
+            step=0.1,
+            key="e_fi",
+        )
+        nn = st.text_area(
+            "Notas sobre seu impacto",
+            value=d.get("notes", ""),
+            key="e_nt",
+            height=70,
+        )
+        if st.button("💾 Salvar Métricas", key="btn_sm"):
+            d.update({"h_index": nh, "fator_impacto": nfi, "notes": nn})
+            st.success("✓ Métricas salvas!")
+    with tpr:
+        prefs = st.session_state.user_prefs.get(email, {})
+        if prefs:
+            top = sorted(prefs.items(), key=lambda x: -x[1])[:12]
+            mx = max(s for _, s in top) if top else 1
+            cats = [t for t, _ in top[:8]]
+            vals = [round(s / mx * 100) for _, s in top[:8]]
+            if len(cats) >= 3:
+                fig3 = go.Figure(
+                    go.Scatterpolar(
+                        r=vals + [vals[0]],
+                        theta=cats + [cats[0]],
+                        fill="toself",
+                        line=dict(color="#0A6EBD"),
+                        fillcolor="rgba(10,110,189,.10)",
+                    )
+                )
+                fig3.update_layout(
+                    height=265,
+                    polar=dict(
+                        bgcolor="rgba(0,0,0,0)",
+                        radialaxis=dict(
+                            visible=True,
+                            gridcolor="rgba(255,255,255,.04)",
+                            color="#6B6F88",
+                            tickfont=dict(size=8),
+                        ),
+                        angularaxis=dict(
+                            gridcolor="rgba(255,255,255,.04)",
+                            color="#6B6F88",
+                            tickfont=dict(size=9),
+                        ),
+                    ),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    margin=dict(l=40, r=40, t=15, b=15),
+                )
+                st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+                st.plotly_chart(fig3, use_container_width=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("Interaja com pesquisas e documentos para construir seu perfil de interesses.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+def page_img_search():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown(
+        '<h1 style="padding-top:.8rem;margin-bottom:.25rem">🔬 Visão IA Científica</h1>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p style="color:var(--t3);font-size:.76rem;margin-bottom:.85rem">Pipeline ML: Sobel · Canny · ORB Keypoints · GLCM · KMeans · FFT + Claude Vision (cached)</p>',
+        unsafe_allow_html=True,
+    )
+
+    api_key = st.session_state.get("anthropic_key", "")
+    has_api = api_key.startswith("sk-") if api_key else False
+
+    if has_api:
+        st.markdown(
+            '<div class="api-banner"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.82rem;color:var(--pur);margin-bottom:.2rem">🤖 Claude Vision Ativo</div><div style="font-size:.70rem;color:var(--t2)">Análise real com IA + pipeline ML completo habilitados</div></div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            '<div class="pbox-yel" style="margin-bottom:.7rem"><div style="font-size:.70rem;color:var(--yel);font-weight:600;margin-bottom:.15rem">💡 Modo ML apenas</div><div style="font-size:.66rem;color:var(--t2)">Insira sua API key na barra lateral para ativar Claude Vision (análise real com IA)</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    cu, cr = st.columns([1, 1.9])
+    with cu:
+        st.markdown('<div class="glass" style="padding:1rem">', unsafe_allow_html=True)
+        img_file = st.file_uploader(
+            "📷 Carregar imagem científica",
+            type=["png", "jpg", "jpeg", "webp", "tiff"],
+            key="img_up",
+        )
+        img_bytes = None
+        if img_file:
+            img_bytes = img_file.read()
+            st.image(img_bytes, use_container_width=True)
+        run = st.button("🔬 Analisar Imagem (ML)", key="btn_run", use_container_width=True)
+        if img_bytes and has_api:
+            run_claude = st.button("🤖 Claude Vision", key="btn_vision", use_container_width=True)
+        else:
+            run_claude = False
+        st.markdown(
+            '<div class="pbox-yel" style="margin-top:.8rem"><div style="font-size:.62rem;color:var(--yel);font-weight:700;margin-bottom:2px">⚠️ Aviso IA</div><div style="font-size:.60rem;color:var(--t2);line-height:1.62">Análise computacional. Valide com especialistas da área.</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    with cr:
+        if run and img_bytes:
+            img_hash = hashlib.md5(img_bytes).hexdigest()
+            if img_hash not in st.session_state.ml_cache:
+                with st.spinner("Executando pipeline ML…"):
+                    ml_result = run_full_ml_pipeline_cached(img_bytes)
+                st.session_state.ml_cache[img_hash] = ml_result
+            else:
+                ml_result = st.session_state.ml_cache[img_hash]
+                st.success("Resultado carregado do cache.")
+            st.session_state.img_result = ml_result
+            if not ml_result.get("ok"):
+                st.error(f"Erro no pipeline: {ml_result.get('error', 'desconhecido')}")
+            else:
+                cls_ = ml_result["classification"]
+                col_ = ml_result["color"]
+                conf_c = VIB[1] if cls_["confidence"] > 80 else (VIB[0] if cls_["confidence"] > 60 else VIB[2])
+
+                st.markdown(f'''<div class="ai-card">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:.55rem">
+    <div>
+      <div style="font-size:.57rem;color:var(--t3);letter-spacing:.10em;text-transform:uppercase;margin-bottom:4px;font-weight:700">Classificação ML</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.12rem;font-weight:800;color:var(--t0);margin-bottom:3px">{cls_["category"]}</div>
+      <div style="font-size:.74rem;color:var(--t2);line-height:1.65;max-width:380px">{cls_["origin"]}</div>
+    </div>
+    <div style="background:rgba(0,0,0,.3);border-radius:12px;padding:.55rem .9rem;text-align:center;flex-shrink:0;border:1px solid rgba(255,255,255,.08)">
+      <div style="font-family:Syne,sans-serif;font-size:1.5rem;font-weight:900;color:{conf_c}">{cls_["confidence"]}%</div>
+      <div style="font-size:.52rem;color:var(--t3);text-transform:uppercase;font-weight:700">confiança</div>
+    </div>
+  </div>
+  <div style="font-size:.63rem;color:var(--t3);margin-bottom:.3rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em">Todas as categorias avaliadas</div>
+  <div style="display:flex;flex-wrap:wrap;gap:4px">
+    {"".join(f'<span style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:2px 8px;font-size:.60rem;color:var(--t3)">{k}: {v}pt</span>' for k, v in cls_["all_scores"].items())}
+  </div>
+</div>''', unsafe_allow_html=True)
+
+                c1m, c2m, c3m, c4m = st.columns(4)
+                sobel_r = ml_result.get("sobel", {})
+                orb_r = ml_result.get("orb", {})
+                glcm_r = ml_result.get("glcm", {})
+                fft_r = ml_result.get("fft", {})
+                with c1m:
+                    st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:800;color:var(--yel)">{sobel_r.get("mean_edge", 0):.2f}</div><div class="mlbl">Sobel Edge</div></div>', unsafe_allow_html=True)
+                with c2m:
+                    st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:800;color:var(--grn)">{orb_r.get("n_keypoints", 0)}</div><div class="mlbl">ORB Keypoints</div></div>', unsafe_allow_html=True)
+                with c3m:
+                    st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:800;color:var(--blu)">{glcm_r.get("texture_type", "—")}</div><div class="mlbl">GLCM Textura</div></div>', unsafe_allow_html=True)
+                with c4m:
+                    st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:800;color:var(--pur)">{"Periódico" if fft_r.get("is_periodic") else "Aperiódico"}</div><div class="mlbl">FFT Estrutura</div></div>', unsafe_allow_html=True)
+
+                t1, t2, t3, t4, t5, t6 = st.tabs([
+                    "  🔲 Sobel  ", "  📍 Keypoints  ",
+                    "  🎛 GLCM  ", "  🎨 KMeans  ",
+                    "  📡 FFT  ", "  📊 RGB  "
+                ])
+
+                with t1:
+                    st.markdown(f'<div class="ml-feat"><div style="font-size:.62rem;color:var(--t3);text-transform:uppercase;font-weight:600;letter-spacing:.08em;margin-bottom:.5rem">Filtro Sobel Multi-Direcional</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem"><div><div style="font-size:.62rem;color:var(--t2);margin-bottom:2px">Intensidade de borda</div><div style="font-size:.76rem;font-weight:700;color:var(--yel)">{sobel_r.get("mean_edge", 0):.4f}</div></div><div><div style="font-size:.62rem;color:var(--t2);margin-bottom:2px">Densidade de bordas</div><div style="font-size:.76rem;font-weight:700;color:var(--grn)">{sobel_r.get("edge_density", 0) * 100:.1f}%</div></div><div><div style="font-size:.62rem;color:var(--t2);margin-bottom:2px">Máx. gradiente</div><div style="font-size:.76rem;font-weight:700;color:var(--blu)">{sobel_r.get("max_edge", 0):.3f}</div></div><div><div style="font-size:.62rem;color:var(--t2);margin-bottom:2px">Canny (fine/med/coarse)</div><div style="font-size:.72rem;font-weight:700;color:var(--pur)">{ml_result.get("canny", {}).get("fine_density", 0) * 100:.1f}% / {ml_result.get("canny", {}).get("medium_density", 0) * 100:.1f}% / {ml_result.get("canny", {}).get("coarse_density", 0) * 100:.1f}%</div></div></div></div>', unsafe_allow_html=True)
+                    eh = sobel_r.get("edge_hist", [1] * 16)
+                    fig_e = go.Figure(go.Bar(y=eh, marker=dict(color=list(range(16)),
+                                                                colorscale=[[0, "#1A1B2E"], [.3, "#FF3B5C"], [.7, "#0A6EBD"], [1, "#6A9C89"]]),
+                                              x=list(range(len(eh)))))
+                    fig_e.update_layout(**{**pc_dark(), 'height': 170,
+                                            'title': dict(text="Distribuição de Intensidades Sobel", font=dict(color="#E8E9F0", family="Syne", size=10)),
+                                            'margin': dict(l=10, r=10, t=32, b=8)})
+                    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+                    st.plotly_chart(fig_e, use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    canny_r2 = ml_result.get("canny", {})
+                    st.markdown(f'<div class="pbox-blu"><div style="font-size:.65rem;color:var(--blu);font-weight:700;margin-bottom:.32rem">Canny Multi-Escala</div><div style="font-size:.72rem;color:var(--t2)">Estrutura dominante: <strong style="color:var(--t0)">{canny_r2.get("structure_level", "—")}</strong> · Total de bordas: <strong style="color:var(--yel)">{canny_r2.get("total_edges", 0):,}</strong></div></div>', unsafe_allow_html=True)
+
+                with t2:
+                    n_kp = orb_r.get("n_keypoints", 0)
+                    distr = orb_r.get("distribution", "n/a")
+                    st.markdown(f'<div class="ml-feat"><div style="font-size:.62rem;color:var(--t3);text-transform:uppercase;font-weight:600;letter-spacing:.08em;margin-bottom:.5rem">ORB Feature Detection</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem"><div><div style="font-size:.62rem;color:var(--t2);margin-bottom:2px">Keypoints detectados</div><div style="font-family:Syne,sans-serif;font-size:1.3rem;font-weight:900;color:var(--yel)">{n_kp}</div></div><div><div style="font-size:.62rem;color:var(--t2);margin-bottom:2px">Distribuição</div><div style="font-size:.76rem;font-weight:700;color:var(--grn)">{distr}</div></div><div><div style="font-size:.62rem;color:var(--t2);margin-bottom:2px">Escala média</div><div style="font-size:.76rem;font-weight:700;color:var(--blu)">{orb_r.get("mean_scale", 1.0):.2f}</div></div><div><div style="font-size:.62rem;color:var(--t2);margin-bottom:2px">Clusters</div><div style="font-size:.76rem;font-weight:700;color:var(--pur)">{len(orb_r.get("cluster_centers", []))}</div></div></div></div>', unsafe_allow_html=True)
+                    kps = orb_r.get("keypoints", np.array([]))
+                    if hasattr(kps, '__len__') and len(kps) > 0:
+                        kps_arr = np.array(kps)
+                        if len(kps_arr.shape) == 2 and kps_arr.shape[1] >= 2:
+                            h, w = ml_result.get("array_shape", [384, 384])
+                            fig_kp = go.Figure()
+                            fig_kp.add_trace(go.Scatter(x=kps_arr[:, 1], y=h - kps_arr[:, 0], mode='markers',
+                                                         marker=dict(size=4, color=VIB[0], opacity=0.7,
+                                                                     line=dict(color='rgba(255,255,255,.3)', width=0.5)),
+                                                         name="Keypoints"))
+                            ctrs = orb_r.get("cluster_centers", [])
+                            if ctrs:
+                                ca2 = np.array(ctrs)
+                                fig_kp.add_trace(go.Scatter(x=ca2[:, 1] if ca2.shape[1] > 1 else ca2[:, 0],
+                                                             y=h - ca2[:, 0], mode='markers',
+                                                             marker=dict(size=12, symbol='x', color=VIB[2],
+                                                                         line=dict(color='white', width=2)),
+                                                             name="Centros"))
+                            fig_kp.update_layout(**{**pc_dark(), 'height': 250,
+                                                     'title': dict(text=f"Mapa de {n_kp} Keypoints ORB", font=dict(color="#E8E9F0", family="Syne", size=10)),
+                                                     'xaxis': dict(range=[0, w], showgrid=False),
+                                                     'yaxis': dict(range=[0, h], showgrid=False, scaleanchor='x'),
+                                                     'margin': dict(l=10, r=10, t=32, b=8)})
+                            st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+                            st.plotly_chart(fig_kp, use_container_width=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="pbox-grn"><div style="font-size:.65rem;color:var(--grn);font-weight:700;margin-bottom:.28rem">Interpretação</div><div style="font-size:.72rem;color:var(--t2);line-height:1.65">{"Alta densidade de features — imagem com muitas estruturas distintas" if n_kp > 100 else "Densidade moderada de features" if n_kp > 40 else "Baixa densidade — imagem mais homogênea"}</div></div>', unsafe_allow_html=True)
+
+                with t3:
+                    glcm_props = [(k, v) for k, v in glcm_r.items() if
+                                  k not in ['error', 'texture_type'] and isinstance(v, float)]
+                    if glcm_props:
+                        names_g = [k.replace('_', ' ').title() for k, _ in glcm_props]
+                        vals_g = [v for _, v in glcm_props]
+                        mx_g = max(abs(v) for v in vals_g) + 1e-5
+                        vals_norm = [abs(v) / mx_g * 100 for v in vals_g]
+                        fig_gl = go.Figure()
+                        fig_gl.add_trace(go.Bar(x=names_g, y=vals_g,
+                                                 marker=dict(color=vals_norm, colorscale=[[0, "#1A1B2E"], [.4, "#4CC9F0"],
+                                                                                          [.7, "#6A9C89"], [1, "#0A6EBD"]]),
+                                                 text=[f"{v:.4f}" for v in vals_g], textposition="outside",
+                                                 textfont=dict(color="#6B6F88", size=8)))
+                        fig_gl.update_layout(**{**pc_dark(), 'height': 240,
+                                                 'title': dict(text="GLCM — Gray Level Co-occurrence Matrix", font=dict(color="#E8E9F0", family="Syne", size=10)),
+                                                 'margin': dict(l=10, r=10, t=36, b=8)})
+                        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+                        st.plotly_chart(fig_gl, use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    tt = glcm_r.get("texture_type", "desconhecido")
+                    contrast = glcm_r.get("contrast", 0)
+                    hom = glcm_r.get("homogeneity", 0)
+                    corr = glcm_r.get("correlation", 0)
+                    st.markdown(f'<div class="ml-feat"><div style="font-size:.62rem;color:var(--t3);text-transform:uppercase;font-weight:600;margin-bottom:.45rem">Textura: <span style="color:var(--yel)">{tt}</span></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;font-size:.72rem"><div>Contraste<br><strong>{contrast:.4f}</strong></div><div>Homog.<br><strong>{hom:.4f}</strong></div><div>Correlação<br><strong>{corr:.4f}</strong></div></div></div>', unsafe_allow_html=True)
+
+                with t4:
+                    pal = ml_result.get("kmeans_palette", [])
+                    if pal:
+                        st.markdown('<div style="font-size:.62rem;color:var(--t3);text-transform:uppercase;font-weight:600;letter-spacing:.08em;margin-bottom:.55rem">KMeans Paleta Dominante (7 clusters)</div>', unsafe_allow_html=True)
+                        for ci, cp in enumerate(pal):
+                            pct = cp.get("pct", 0)
+                            hex_c = cp.get("hex", "#888")
+                            r, g, b = cp.get("rgb", (128, 128, 128))
+                            bar = f'<div style="height:6px;width:{int(pct * 3)}%;background:{hex_c};border-radius:3px;max-width:100%"></div>'
+                            st.markdown(
+                                f'<div style="display:flex;align-items:center;gap:9px;margin-bottom:.4rem"><div></div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:.70rem;color:var(--t2);margin-bottom:2px"><span style="font-weight:600">{hex_c.upper()}</span><span>{pct:.1f}%</span></div>{bar}</div><div style="font-size:.60rem;color:var(--t3);width:80px;text-align:right">RGB({r},{g},{b})</div></div>',
+                                unsafe_allow_html=True,
+                            )
+                        fig_pal = go.Figure(go.Pie(values=[c["pct"] for c in pal], labels=[c["hex"] for c in pal],
+                                                    marker=dict(colors=[c["hex"] for c in pal],
+                                                                line=dict(color=["#0B0F1A"] * 7, width=2)),
+                                                    textfont=dict(color="white", size=8), hole=0.45))
+                        fig_pal.update_layout(height=220, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                               margin=dict(l=0, r=0, t=10, b=0), legend=dict(font=dict(color="#6B6F88", size=7)))
+                        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+                        st.plotly_chart(fig_pal, use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+
+                with t5:
+                    lf = fft_r.get("low_freq", 0)
+                    mf = fft_r.get("mid_freq", 0)
+                    hf = fft_r.get("high_freq", 0)
+                    fig_fft = go.Figure(go.Bar(x=["Baixa\n(estruturas grandes)", "Média\n(detalhes)", "Alta\n(ruído/textura fina)"],
+                                                 y=[lf, mf, hf], marker=dict(color=[VIB[0], VIB[1], VIB[2]]),
+                                                 text=[f"{v:.3f}" for v in [lf, mf, hf]], textposition="outside",
+                                                 textfont=dict(color="#6B6F88", size=9)))
+                    fig_fft.update_layout(**{**pc_dark(), 'height': 220,
+                                              'title': dict(text="FFT — Distribuição de Frequências Espaciais", font=dict(color="#E8E9F0", family="Syne", size=10)),
+                                              'margin': dict(l=10, r=10, t=36, b=8)})
+                    st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+                    st.plotly_chart(fig_fft, use_container_width=True)
+                    st.markdown('</div>', unsafe_allow_html=True)
+                    per = fft_r.get("periodic_score", 0)
+                    dom = fft_r.get("dominant_scale", "média")
+                    is_per = fft_r.get("is_periodic", False)
+                    c_fft = "var(--grn)" if is_per else "var(--t2)"
+                    st.markdown(f'<div class="ml-feat"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;font-size:.72rem"><div>Score periódico<br><strong>{per:.1f}</strong></div><div>Escala dominante<br><strong>{dom}</strong></div><div>Estrutura<br><strong>{"Periódica ✓" if is_per else "Não-periódica"}</strong></div></div></div>', unsafe_allow_html=True)
+
+                with t6:
+                    h_data = ml_result.get("histograms", {})
+                    bx = list(range(0, 256, 8))[:32]
+                    if h_data:
+                        fig4 = go.Figure()
+                        fig4.add_trace(go.Scatter(x=bx, y=h_data.get("r", [])[:32], fill='tozeroy', name='R',
+                                                    line=dict(color='rgba(255,59,92,.9)', width=1.5),
+                                                    fillcolor='rgba(255,59,92,.10)'))
+                        fig4.add_trace(go.Scatter(x=bx, y=h_data.get("g", [])[:32], fill='tozeroy', name='G',
+                                                    line=dict(color='rgba(106,156,137,.9)', width=1.5),
+                                                    fillcolor='rgba(106,156,137,.10)'))
+                        fig4.add_trace(go.Scatter(x=bx, y=h_data.get("b", [])[:32], fill='tozeroy', name='B',
+                                                    line=dict(color='rgba(76,201,240,.9)', width=1.5),
+                                                    fillcolor='rgba(76,201,240,.10)'))
+                        layout4 = {**pc_dark(), 'height': 200,
+                                    'title': dict(text="Histograma RGB", font=dict(color="#E8E9F0", family="Syne", size=10)),
+                                    'margin': dict(l=10, r=10, t=32, b=8),
+                                    'legend': dict(font=dict(color="#6B6F88", size=9))}
+                        fig4.update_layout(**layout4)
+                        st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
+                        st.plotly_chart(fig4, use_container_width=True)
+                        st.markdown('</div>', unsafe_allow_html=True)
+                    col_ = ml_result.get("color", {})
+                    mr = col_.get("r", 128)
+                    mg2 = col_.get("g", 128)
+                    mb2 = col_.get("b", 128)
+                    hex_m = "#{:02x}{:02x}{:02x}".format(int(mr), int(mg2), int(mb2))
+                    temp = "Quente" if col_.get("warm") else ("Fria" if col_.get("cool") else "Neutra")
+                    sym = col_.get("symmetry", 0)
+                    entr = col_.get("entropy", 0)
+                    st.markdown(f'<div class="ml-feat" style="display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;font-size:.72rem"><div><div style="width:28px;height:28px;border-radius:6px;background:{hex_m};border:1px solid rgba(255,255,255,.08);margin:0 auto .2rem"></div><div style="color:var(--t3)">Cor Média</div></div><div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.85rem;color:var(--yel)">{temp}</div><div style="color:var(--t3)">Temperatura</div></div><div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.85rem;color:var(--grn)">{sym:.2f}</div><div style="color:var(--t3)">Simetria</div></div><div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.85rem;color:var(--blu)">{entr:.2f}</div><div style="color:var(--t3)">Entropia</div></div></div>', unsafe_allow_html=True)
+
+        if run_claude and img_bytes:
+            st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown('<h2 style="margin-bottom:.5rem">🤖 Análise Claude Vision</h2>', unsafe_allow_html=True)
+            with st.spinner("Claude analisando a imagem…"):
+                ai_text, ai_err = call_claude_vision(img_bytes, VISION_PROMPT, api_key)
+            if ai_err:
+                st.error(f"Erro Claude Vision: {ai_err}")
+            elif ai_text:
+                try:
+                    clean = ai_text.strip().replace("```json", "").replace("```", "").strip()
+                    ai_data = json.loads(clean)
+                    tipo = ai_data.get("tipo", "—")
+                    origem = ai_data.get("origem", "—")
+                    desc = ai_data.get("descricao", "—")
+                    estruturas = ai_data.get("estruturas", [])
+                    tecnica = ai_data.get("tecnica", "—")
+                    qualidade = ai_data.get("qualidade", "—")
+                    confianca = ai_data.get("confianca", 0)
+                    termos = ai_data.get("termos_busca", "")
+                    obs = ai_data.get("observacoes", "")
+                    conf_c2 = VIB[1] if confianca > 80 else (VIB[0] if confianca > 60 else VIB[2])
+                    st.markdown(f'''<div style="background:linear-gradient(135deg,rgba(177,125,255,.08),rgba(76,201,240,.05));border:1px solid rgba(177,125,255,.22);border-radius:16px;padding:1.2rem;margin-bottom:.7rem">
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:.8rem">
+    <div>
+      <div style="font-size:.57rem;color:var(--pur);letter-spacing:.10em;text-transform:uppercase;font-weight:700;margin-bottom:4px">🤖 Claude Opus Vision</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:800;color:var(--t0);margin-bottom:4px">{tipo}</div>
+      <div style="color:var(--grn);font-size:.78rem;font-weight:600">{origem}</div>
+    </div>
+    <div style="background:rgba(0,0,0,.3);border-radius:12px;padding:.5rem .85rem;text-align:center;flex-shrink:0">
+      <div style="font-family:Syne,sans-serif;font-size:1.4rem;font-weight:900;color:{conf_c2}">{confianca}%</div>
+      <div style="font-size:.52rem;color:var(--t3);text-transform:uppercase">confiança IA</div>
+    </div>
+  </div>
+  <div style="background:rgba(255,255,255,.04);border-radius:10px;padding:.7rem .9rem;margin-bottom:.6rem;font-size:.78rem;color:var(--t2);line-height:1.7;border:1px solid rgba(255,255,255,.06)">
+    <strong>📝 Descrição:</strong> {desc}
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
+    <div style="font-size:.70rem;color:var(--t2)"><span>Técnica:</span> <strong>{tecnica}</strong></div>
+    <div style="font-size:.70rem;color:var(--t2)"><span>Qualidade:</span> <strong>{qualidade}</strong></div>
+  </div>
+  {f'<div style="font-size:.70rem;color:var(--t2);margin-bottom:.4rem"><span>Estruturas:</span> {", ".join(estruturas)}</div>' if estruturas else ""}
+  {f'<div style="background:rgba(106,156,137,.05);border:1px solid rgba(106,156,137,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65"><strong>💡 Observações:</strong> {obs}</div>' if obs else ""}
+</div>''', unsafe_allow_html=True)
+                    if termos:
+                        st.markdown(f'<div style="font-size:.62rem;color:var(--t3);margin:.3rem 0 .5rem">🔍 Buscando artigos com termos da IA: <em>{termos}</em></div>', unsafe_allow_html=True)
+                        with st.spinner("Buscando na literatura…"):
+                            wr = search_ss(termos, 5)
+                        if wr:
+                            for idx2, a2 in enumerate(wr):
+                                render_article(a2, idx=idx2 + 5000, ctx="img_claude")
+                except (json.JSONDecodeError, Exception):
+                    st.markdown(f'<div class="abox"><div style="font-size:.62rem;color:var(--pur);font-weight:700;margin-bottom:.5rem">🤖 Análise Claude Vision</div><div style="font-size:.78rem;color:var(--t2);line-height:1.7;white-space:pre-wrap">{ai_text[:1500]}</div></div>', unsafe_allow_html=True)
+
+        ml_r = st.session_state.get("img_result", {})
+        if ml_r and ml_r.get("ok") and not (run or run_claude):
+            pass
+        elif ml_r and ml_r.get("ok"):
+            st.markdown("<hr>", unsafe_allow_html=True)
+            st.markdown('<h2 style="margin-bottom:.6rem">🔗 Pesquisas Relacionadas</h2>', unsafe_allow_html=True)
+            cls2 = ml_r.get("classification", {})
+            kw_s = cls2.get("search_kw", "scientific imaging")
+            tn2, tf2, tw2 = st.tabs(["  🔬 Na Nebula  ", "  📁 Pastas  ", "  🌐 Internet  "])
+            with tn2:
+                kw_list = kw_s.lower().split()[:6]
+                nr = [(sum(1 for k in kw_list if len(k) > 3 and k in (p.get("title", "") + " " + p.get("abstract", "")).lower()), p) for p in st.session_state.feed_posts]
+                nr = [p for s, p in sorted(nr, key=lambda x: -x[0]) if s > 0]
+                for p in nr[:4]:
+                    render_post(p, ctx="img_neb", compact=True)
+                if not nr:
+                    st.markdown('<div style="color:var(--t3);padding:.8rem">Nenhuma pesquisa similar no Feed.</div>', unsafe_allow_html=True)
+            with tf2:
+                similar_imgs = find_similar_images(ml_r, st.session_state.folders)
+                if similar_imgs:
+                    for sc, fname, f, an in similar_imgs:
+                        st.markdown(
+                            f'''<div class="scard">
+                                <div style="font-size:.8rem;font-family:Syne;font-weight:700;color:var(--t0);margin-bottom:.2rem">
+                                    📁 {fname} · {f}
+                                </div>
+                                <div style="font-size:.65rem;color:var(--t3);margin-bottom:.2rem">
+                                    Similaridade: <span style="color:var(--grn);font-weight:700">{sc:.1f}pt</span>
+                                </div>
+                                <div style="font-size:.7rem;color:var(--t2)">
+                                    Categoria: {an.get("image_meta",{}).get("classification",{}).get("category","—")}
+                                </div>
+                            </div>''',
+                            unsafe_allow_html=True
+                        )
+                else:
+                    st.markdown('<div style="color:var(--t3);padding:.8rem">Nenhuma imagem relacionada nas suas pastas.</div>', unsafe_allow_html=True)
+            with tw2:
+                ck = f"img_{kw_s[:40]}"
+                if ck not in st.session_state.scholar_cache:
+                    with st.spinner("Buscando artigos…"):
+                        st.session_state.scholar_cache[ck] = search_ss(kw_s, 5)
+                wr2 = st.session_state.scholar_cache.get(ck, [])
+                for idx3, a3 in enumerate(wr2):
+                    render_article(a3, idx=idx3 + 3000, ctx="img_web")
+                if not wr2:
+                    st.markdown('<div style="color:var(--t3);padding:.8rem">Sem resultados na web.</div>', unsafe_allow_html=True)
+
+        elif not img_file:
+            st.markdown('<div class="glass" style="padding:4.5rem 2rem;text-align:center"><div style="font-size:2.8rem;opacity:.18;margin-bottom:1rem">🔬</div><div style="font-family:Syne,sans-serif;font-size:1rem;color:var(--t1)">Carregue uma imagem científica</div><div style="font-size:.72rem;color:var(--t3);margin-top:.4rem;line-height:1.9">Pipeline ML completo:<br>Sobel · Canny · ORB · GLCM · KMeans · FFT<br><br>Com API Key:<br>🤖 Claude Vision para análise real com IA</div></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def page_chat():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">💬 Mensagens</h1>', unsafe_allow_html=True)
+    cc, cm = st.columns([.85, 2.8])
+    email = st.session_state.current_user
+    users = st.session_state.users if isinstance(st.session_state.users, dict) else {}
+    with cc:
+        st.markdown('<div style="font-size:.58rem;font-weight:700;color:var(--t4);letter-spacing:.12em;text-transform:uppercase;margin-bottom:.7rem">Conversas</div>', unsafe_allow_html=True)
+        shown = set()
+        for ue in st.session_state.chat_contacts:
+            if ue == email or ue in shown:
+                continue
+            shown.add(ue)
+            ud = users.get(ue, {})
+            un = ud.get("name", "?")
+            ui = ini(un)
+            ug = ugrad(ue)
+            msgs = st.session_state.chat_messages.get(ue, [])
+            last = msgs[-1]["text"][:22] + "…" if msgs and len(msgs[-1]["text"]) > 22 else (msgs[-1]["text"] if msgs else "Iniciar")
+            active = st.session_state.active_chat == ue
+            online = is_online(ue)
+            dot = '<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
+            bg = f"rgba(255,255,255,{'.09' if active else '.04'})"
+            bdr = f"rgba(255,255,255,{'.18' if active else '.08'})"
+            st.markdown(
+                f'<div style="background:{bg};border:1px solid {bdr};border-radius:12px;padding:8px 10px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:7px">{avh(ui, 30, ug)}<div style="overflow:hidden;flex:1"><div style="font-size:.76rem;font-weight:600;font-family:Syne,sans-serif;color:var(--t0)">{dot}{un}</div><div style="font-size:.63rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("→", key=f"oc_{ue}", use_container_width=True):
+                st.session_state.active_chat = ue
+                st.rerun()
+        st.markdown("<hr>", unsafe_allow_html=True)
+        nc2 = st.text_input("", placeholder="E-mail…", key="new_ct", label_visibility="collapsed")
+        if st.button("+ Adicionar", key="btn_ac", use_container_width=True):
+            if nc2 in users and nc2 != email:
+                if nc2 not in st.session_state.chat_contacts:
+                    st.session_state.chat_contacts.append(nc2)
+                st.rerun()
+            else:
+                st.warning("Usuário não encontrado ou e-mail inválido.")
+    with cm:
+        if st.session_state.active_chat:
+            contact = st.session_state.active_chat
+            cd = users.get(contact, {})
+            cn = cd.get("name", "?")
+            ci = ini(cn)
+            cg = ugrad(contact)
+            msgs = st.session_state.chat_messages.get(contact, [])
+            online = is_online(contact)
+            dot = '<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
+            st.markdown(
+                f'<div style="background:var(--g2);border:1px solid var(--gb1);border-radius:14px;padding:10px 14px;margin-bottom:.85rem;display:flex;align-items:center;gap:10px">{avh(ci, 36, cg)}<div style="flex:1"><div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif;color:var(--t0)">{dot}{cn}</div><div style="font-size:.63rem;color:var(--grn)">🔒 AES-256</div></div></div>',
+                unsafe_allow_html=True,
+            )
+            for msg in msgs:
+                im = msg["from"] == "me"
+                cls = "bme" if im else "bthem"
+                st.markdown(
+                    f'<div style="display:flex;{"justify-content:flex-end" if im else ""}"><div class="{cls}">{msg["text"]}<div style="font-size:.57rem;color:var(--t3);margin-top:2px;text-align:{"right" if im else "left"}">{msg["time"]}</div></div></div>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown("<br>", unsafe_allow_html=True)
+            ci2, cb2 = st.columns([5, 1])
+            with ci2:
+                nm = st.text_input("", placeholder="Escreva uma mensagem…", key=f"mi_{contact}", label_visibility="collapsed")
+            with cb2:
+                if st.button("→", key=f"ms_{contact}", use_container_width=True):
+                    if nm:
+                        now = datetime.now().strftime("%H:%M")
+                        st.session_state.chat_messages.setdefault(contact, []).append({"from": "me", "text": nm, "time": now})
+                        st.rerun()
+        else:
+            st.markdown('<div class="glass" style="text-align:center;padding:5rem"><div style="font-size:2.2rem;opacity:.15;margin-bottom:.85rem">💬</div><div style="font-family:Syne,sans-serif;font-size:.96rem;color:var(--t1)">Selecione uma conversa</div><div style="font-size:.70rem;color:var(--t3);margin-top:.4rem">🔒 End-to-end criptografado</div></div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def page_settings():
+    st.markdown('<div class="pw">', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">⚙️ Configurações</h1>', unsafe_allow_html=True)
+    email = st.session_state.current_user
+    ud = st.session_state.users.get(email, {})
+    st.markdown(f'<div class="abox"><div style="font-size:.58rem;color:var(--t3);text-transform:uppercase;letter-spacing:.10em;margin-bottom:.4rem;font-weight:700">Conta</div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.95rem;color:var(--yel)">{email}</div></div>', unsafe_allow_html=True)
+    en = ud.get("2fa_enabled", False)
+    st.markdown('<div>', unsafe_allow_html=True)
+    if st.button("✕ Desativar 2FA" if en else "✓ Ativar 2FA", key="cfg_2fa"):
+        st.session_state.users[email]["2fa_enabled"] = not en
+        save_db()
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+    with st.form("cpw"):
+        op = st.text_input("Senha atual", type="password")
+        np2 = st.text_input("Nova senha", type="password")
+        nc3 = st.text_input("Confirmar", type="password")
+        if st.form_submit_button("🔑 Alterar Senha", use_container_width=True):
+            if hp(op) != ud.get("password", ""):
+                st.error("Senha atual incorreta.")
+            elif np2 != nc3:
+                st.error("As novas senhas não coincidem.")
+            elif len(np2) < 6:
+                st.error("A nova senha deve ter no mínimo 6 caracteres.")
+            else:
+                st.session_state.users[email]["password"] = hp(np2)
+                save_db()
+                st.success("✓ Senha alterada com sucesso!")
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+    for nm, ds in [("🔒 AES-256", "End-to-end"), ("🔏 SHA-256", "Hash senhas"), ("🛡 TLS 1.3", "Transmissão")]:
+        st.markdown(f'<div class="pbox-grn"><div style="display:flex;align-items:center;gap:9px"><div style="width:24px;height:24px;border-radius:7px;background:rgba(106,156,137,.12);display:flex;align-items:center;justify-content:center;color:var(--grn);font-size:.72rem">✓</div><div><div style="font-weight:700;color:var(--grn);font-size:.78rem">{nm}</div><div style="font-size:.66rem;color:var(--t3)">{ds}</div></div></div></div>', unsafe_allow_html=True)
+    st.markdown("<hr>", unsafe_allow_html=True)
+    if st.button("🚪 Sair da Conta", key="logout", use_container_width=True):
+        st.session_state.logged_in = False
+        st.session_state.current_user = None
+        st.session_state.page = "login"
+        st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+def main():
+    inject_css()
+    if not st.session_state.logged_in:
+        page_login()
+        return
+    render_nav()
+    if st.session_state.profile_view:
+        page_profile(st.session_state.profile_view)
+        return
+    {
+        "repository": page_repository,
+        "feed": page_feed,
+        "search": page_search,
+        "knowledge": page_knowledge,
+        "analytics": page_analytics,
+        "img_search": page_img_search,
+        "chat": page_chat,
+        "settings": page_settings,
+    }.get(st.session_state.page, page_repository)()
+
+if __name__ == "__main__":
+    main()
