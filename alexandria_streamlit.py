@@ -94,7 +94,7 @@ except:
 import streamlit as st
 
 st.set_page_config(
-    page_title="Nebula - Repositório Científico", page_icon="🔬", layout="wide", initial_sidebar_state="expanded"
+    page_title="Nebula - Repositório Científico", icon="🔬", layout="wide", initial_sidebar_state="expanded"
 )
 
 DB_FILE = "nebula_db.json"
@@ -199,8 +199,8 @@ def save_db():
                 "user_prefs": {k: dict(v) for k, v in st.session_state.user_prefs.items()},
                 "saved_articles": st.session_state.saved_articles,
                 "followed": st.session_state.followed,
-                "chat_messages": {k: list(v) for k, v in st.session_state.chat_messages.items()}, # Manter chat_messages
-                "chat_contacts": st.session_state.chat_contacts, # Manter chat_contacts
+                "chat_messages": {k: list(v) for k, v in st.session_state.chat_messages.items()},
+                "chat_contacts": st.session_state.chat_contacts,
             }, f, ensure_ascii=False, indent=2)
     except Exception as e:
         st.error(f"Erro ao salvar o banco de dados: {e}")
@@ -214,13 +214,12 @@ def init():
     st.session_state.setdefault("users", {**SEED_USERS, **disk.get("users", {})})
     st.session_state.setdefault("logged_in", False)
     st.session_state.setdefault("current_user", None)
-    st.session_state.setdefault("page", "repository") # Página inicial agora é o repositório
+    st.session_state.setdefault("page", "repository")
     st.session_state.setdefault("profile_view", None)
     st.session_state.setdefault("user_prefs", {k: defaultdict(float, v) for k, v in disk.get("user_prefs", {}).items()})
     st.session_state.setdefault("pending_verify", None)
     st.session_state.setdefault("pending_2fa", None)
 
-    # Pastas: enriquecer se antigas
     folders = disk.get("folders", {})
     if isinstance(folders, dict):
         for fn, fd in list(folders.items()):
@@ -249,7 +248,7 @@ def init():
     st.session_state.setdefault("chat_messages", {k: list(v) for k, v in disk.get("chat_messages", {}).items()})
     st.session_state.setdefault("active_chat", None)
     st.session_state.setdefault("followed", disk.get("followed", ["carlos@nebula.ai", "luana@nebula.ai"]))
-    st.session_state.setdefault("notifications", ["Nova conexão detectada"]) # Notificações simplificadas
+    st.session_state.setdefault("notifications", ["Nova conexão detectada"])
     st.session_state.setdefault("scholar_cache", {})
     st.session_state.setdefault("saved_articles", disk.get("saved_articles", []))
     st.session_state.setdefault("img_result", None)
@@ -259,7 +258,7 @@ def init():
     st.session_state.setdefault("anthropic_key", "")
     st.session_state.setdefault("ai_conn_cache", {})
     st.session_state.setdefault("ml_cache", {})
-    st.session_state.setdefault("local_index_version", 0) # Para invalidar cache do índice local
+    st.session_state.setdefault("local_index_version", 0)
 
 init()
 
@@ -779,7 +778,7 @@ def analyze_doc(fname, fbytes, ftype, area=""):
         if len(r["keywords"]) > 15: base_strengths.append(f"Vocabulário rico ({len(r['keywords'])} termos relevantes).")
         if words > 1500: base_strengths.append("Texto extenso, possivelmente cobrindo introdução, métodos e discussão.")
         r["strengths"] = base_strengths; r["improvements"] = analyze_quality(text)
-        r["summary"] = f"{ftype} · {words} palavras · ~{r['reading_time']}min · {', '.join(list(r['topics'].keys())[:2])} · {', '.join(r['keywords'][:4])}"
+        r["summary"] = f"{ftype} . {words} palavras . ~{r['reading_time']}min . {', '.join(list(r['topics'].keys())[:2])} . {', '.join(r['keywords'][:4])}"
     else:
         r["summary"] = f"Arquivo {ftype}."; r["relevance_score"] = 50
         r["keywords"] = kw_extract(fname.lower(), 5); r["topics"] = topic_dist(r["keywords"])
@@ -864,7 +863,7 @@ VIB = ["#0A1929", "#1A2F4A", "#1D3A5A", "#20456A", "#23507A", "#265B8A", "#29669
 
 # --- Indexação Local e Vetores de Interesse ---
 @st.cache_data(show_spinner=False, ttl=600)
-def build_local_index(users, folders, version): # Removido feed_posts
+def build_local_index(users, folders, version):
     docs = []
 
     for fname, folder in folders.items():
@@ -901,7 +900,7 @@ def recompute_folder_aggregates(folder):
     folder["keywords_agg"] = [kw for kw, _ in kw_counter.most_common(30)]
     folder["last_updated"] = datetime.now().isoformat()
 
-def build_user_interest_vectors(users, folders): # Removido feed_posts
+def build_user_interest_vectors(users, folders):
     vocab = Counter(); per_user = defaultdict(Counter)
 
     for fname, fd in folders.items():
@@ -1136,19 +1135,19 @@ def page_login():
         st.markdown(
             """<div style="text-align:center;margin-bottom:2.8rem">
   <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:.8rem">
-    <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#4CC9F0,#0A6EBD);display:flex;align-items:center;justify-content:center;font-size:1.4rem;box-shadow:0 0 24px rgba(76,201,240,.45)">🔬</div>
+    <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#4CC9F0,#0A6EBD);display:flex;align-items:center;justify-content:center;font-size:1.4rem;box-shadow:0 0 24px rgba(76,201,240,.45)"></div>
     <div style="font-family:Syne,sans-serif;font-size:2.6rem;font-weight:900;letter-spacing:-.06em;background:linear-gradient(135deg,#4CC9F0,#6A9C89);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">Nebula</div>
   </div>
   <div style="color:var(--t3);font-size:.60rem;letter-spacing:.26em;text-transform:uppercase;font-weight:700">Repositório de Conhecimento Científico</div>
 </div>""",
             unsafe_allow_html=True,
         )
-        ti, tu = st.tabs(["  🔑 Entrar  ", "  ✨ Criar conta  "])
+        ti, tu = st.tabs(["  Entrar  ", "  Criar conta  "])
         with ti:
             with st.form("lf"):
                 em = st.text_input("E-mail", placeholder="seu@email.com", key="li_e")
                 pw = st.text_input("Senha", placeholder="••••••••", type="password", key="li_p")
-                s = st.form_submit_button("→  Entrar", use_container_width=True)
+                s = st.form_submit_button("Entrar", use_container_width=True)
                 if s:
                     u = st.session_state.users.get(em)
                     if not u:
@@ -1172,7 +1171,7 @@ def page_login():
                 na = st.text_input("Área de pesquisa", key="su_a")
                 np_ = st.text_input("Senha", type="password", key="su_p")
                 np2 = st.text_input("Confirmar", type="password", key="su_p2")
-                s2 = st.form_submit_button("✓  Criar conta", use_container_width=True)
+                s2 = st.form_submit_button("Criar conta", use_container_width=True)
                 if s2:
                     if not all([nn, ne, na, np_, np2]):
                         st.error("Preencha todos os campos.")
@@ -1194,13 +1193,13 @@ def page_login():
 
 # Navegação (Feed Social removido)
 NAV = [
-    ("repository", "📚 Repositório", "yel"),
-    ("search", "🔍 Busca", "blu"),
-    ("knowledge", "🕸 Conexões IA", "grn"),
-    ("analytics", "📊 Análises", "pur"),
-    ("img_search", "🔬 Visão IA", "blu"),
-    ("chat", "💬 Chat", "grn"),
-    ("settings", "⚙️ Config", "red"),
+    ("repository", "Repositório", "yel"),
+    ("search", "Busca", "blu"),
+    ("knowledge", "Conexões IA", "grn"),
+    ("analytics", "Análises", "pur"),
+    ("img_search", "Visão IA", "blu"),
+    ("chat", "Chat", "grn"),
+    ("settings", "Configurações", "red"),
 ]
 
 def render_nav():
@@ -1213,7 +1212,7 @@ def render_nav():
 
     with st.sidebar:
         st.markdown(
-            '<div class="sb-logo"><div class="sb-logo-icon">🔬</div><div class="sb-logo-txt">Nebula</div></div>',
+            '<div class="sb-logo"><div class="sb-logo-icon"></div><div class="sb-logo-txt">Nebula</div></div>',
             unsafe_allow_html=True,
         )
         st.markdown(
@@ -1232,7 +1231,7 @@ def render_nav():
                 c = colors.get(col, "#0A6EBD")
                 active_styles += (
                     f'section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]'
-                    f' > [data-testid="stVerticalBlock"]:nth-child({i + 2})' # Ajustado o nth-child
+                    f' > [data-testid="stVerticalBlock"]:nth-child({i + 2})'
                     f' .stButton>button{{'
                     f"color:{c}!important;-webkit-text-fill-color:{c}!important;"
                     f"background:radial-gradient(circle at 0% 0%, rgba(255,255,255,.28), rgba(255,255,255,.12))!important;"
@@ -1258,12 +1257,12 @@ def render_nav():
             st.session_state.anthropic_key = ak
         if ak and ak.startswith("sk-"):
             st.markdown(
-                '<div style="font-size:.55rem;color:#6A9C89;padding:.1rem .2rem">● Claude Vision ativo</div>',
+                '<div style="font-size:.55rem;color:#6A9C89;padding:.1rem .2rem">. Claude Vision ativo</div>',
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(
-                '<div style="font-size:.55rem;color:#555770;padding:.1rem .2rem">● Insira chave para IA</div>',
+                '<div style="font-size:.55rem;color:#555770;padding:.1rem .2rem">. Insira chave para IA</div>',
                 unsafe_allow_html=True,
             )
         st.markdown("<hr>", unsafe_allow_html=True)
@@ -1271,9 +1270,9 @@ def render_nav():
             f'<div style="display:flex;align-items:center;gap:8px;padding:.2rem .1rem">{avh(ini_, 32, g)}<div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:#FFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px">{name}</div><div style="font-size:.58rem;color:#6B6F88">{u.get("area", "")[:18]}</div></div></div>',
             unsafe_allow_html=True,
         )
-        if st.button("👤 Meu Perfil", key="sb_myprofile", use_container_width=True):
+        if st.button("Meu Perfil", key="sb_myprofile", use_container_width=True):
             st.session_state.profile_view = email
-            st.session_state.page = "repository" # Redireciona para repositório ao ver perfil
+            st.session_state.page = "repository"
             st.rerun()
 
 def page_profile(target_email):
@@ -1286,10 +1285,9 @@ def page_profile(target_email):
     is_me = (email == target_email); is_fol = target_email in st.session_state.followed
     g = ugrad(target_email)
 
-    # Posts e curtidas removidos, foco em dados do usuário e artigos salvos
     saved_articles_for_user = [a for a in st.session_state.saved_articles if a.get("saved_by") == target_email] if not is_me else st.session_state.saved_articles
 
-    vb = f' <span class="badge-grn" style="font-size:.6rem">✓</span>' if tu.get("verified") else ""
+    vb = f' <span class="badge-grn" style="font-size:.6rem">.</span>' if tu.get("verified") else ""
     st.markdown(
         f"""<div class="prof-hero">
   <div class="prof-av" style="background:{g}">{ti}</div>
@@ -1311,7 +1309,7 @@ def page_profile(target_email):
     if not is_me:
         c1, c2, c3, _ = st.columns([1, 1, 1, 2])
         with c1:
-            if st.button("✓ Seguindo" if is_fol else "+ Seguir", key="su_n", use_container_width=True):
+            if st.button("Seguindo" if is_fol else "Seguir", key="su_n", use_container_width=True):
                 if is_fol:
                     st.session_state.followed.remove(target_email)
                     tu["followers"] = max(0, tu.get("followers", 0) - 1)
@@ -1320,35 +1318,34 @@ def page_profile(target_email):
                     tu["followers"] = tu.get("followers", 0) + 1
                 save_db(); st.rerun()
         with c2:
-            if st.button("💬 Mensagem", key="pf_chat", use_container_width=True):
+            if st.button("Mensagem", key="pf_chat", use_container_width=True):
                 st.session_state.chat_messages.setdefault(target_email, [])
                 st.session_state.active_chat = target_email
                 st.session_state.page = "chat"; st.rerun()
         with c3:
-            if st.button("← Voltar", key="pf_back", use_container_width=True):
+            if st.button("Voltar", key="pf_back", use_container_width=True):
                 st.session_state.profile_view = None; st.rerun()
 
-        # Aba de artigos salvos para outros usuários
-        ts = st.tabs([f"  🔖 Artigos Salvos ({len(saved_articles_for_user)})  "])[0]
+        ts = st.tabs([f"  Artigos Salvos ({len(saved_articles_for_user)})  "])[0]
         with ts:
             if saved_articles_for_user:
                 for idx, a in enumerate(saved_articles_for_user):
                     render_article(a, idx=idx + 3000, ctx="saved_other")
             else:
                 st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhum artigo salvo publicamente.</div>', unsafe_allow_html=True)
-    else: # Meu perfil
-        tm, ts = st.tabs(["  ✏️ Meus Dados  ", f"  🔖 Artigos Salvos ({len(st.session_state.saved_articles)})  "])
+    else:
+        tm, ts = st.tabs(["  Meus Dados  ", f"  Artigos Salvos ({len(st.session_state.saved_articles)})  "])
         with tm:
             new_n = st.text_input("Nome", value=tu.get("name", ""), key="cfg_n")
             new_a = st.text_input("Área", value=tu.get("area", ""), key="cfg_a")
             new_b = st.text_area("Bio", value=tu.get("bio", ""), key="cfg_b", height=80)
             cs, co = st.columns(2)
             with cs:
-                if st.button("💾 Salvar", key="btn_sp", use_container_width=True):
+                if st.button("Salvar", key="btn_sp", use_container_width=True):
                     st.session_state.users[email].update({"name": new_n, "area": new_a, "bio": new_b})
-                    save_db(); st.success("✓ Salvo!"); st.rerun()
+                    save_db(); st.success("Salvo!"); st.rerun()
             with co:
-                if st.button("🚪 Sair", key="btn_out", use_container_width=True):
+                if st.button("Sair", key="btn_out", use_container_width=True):
                     st.session_state.logged_in = False; st.session_state.current_user = None
                     st.session_state.page = "login"; st.rerun()
         with ts:
@@ -1356,7 +1353,7 @@ def page_profile(target_email):
                 for idx, a in enumerate(st.session_state.saved_articles):
                     render_article(a, idx=idx + 3000, ctx="saved")
                     uid2 = re.sub(r"[^a-zA-Z0-9]", "", f"rms_{idx}")[:20]
-                    if st.button("🗑 Remover", key=f"rm_sa_{uid2}", use_container_width=True):
+                    if st.button("Remover", key=f"rm_sa_{uid2}", use_container_width=True):
                         st.session_state.saved_articles = [s for s in st.session_state.saved_articles if s.get("doi") != a.get("doi")]
                         save_db(); st.rerun()
             else:
@@ -1365,17 +1362,17 @@ def page_profile(target_email):
 def render_article(a, idx=0, ctx="web"):
     sc = VIB[1] if a.get("origin") == "semantic" else VIB[2]
     sn = "Semantic Scholar" if a.get("origin") == "semantic" else "CrossRef"
-    cite = f" · {a['citations']} cit." if a.get("citations") else ""
+    cite = f" . {a['citations']} cit." if a.get("citations") else ""
     uid = re.sub(r"[^a-zA-Z0-9]", "", f"{ctx}_{idx}_{str(a.get('doi', ''))[:10]}")[:32]
     is_saved = any(s.get("doi") == a.get("doi") for s in st.session_state.saved_articles)
     ab = (a.get("abstract", "") or "")[:250] + ("…" if len(a.get("abstract", "")) > 250 else "")
     st.markdown(
-        f'<div class="scard"><div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:.28rem"><div style="flex:1;font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0)">{a["title"]}</div><span style="font-size:.58rem;color:{sc};background:rgba(255,255,255,.04);border-radius:7px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{sn}</span></div><div style="color:var(--t3);font-size:.64rem;margin-bottom:.3rem">{a["authors"]} · <em>{a["source"]}</em> · {a["year"]}{cite}</div><div style="color:var(--t2);font-size:.76rem;line-height:1.62">{ab}</div></div>',
+        f'<div class="scard"><div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:.28rem"><div style="flex:1;font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0)">{a["title"]}</div><span style="font-size:.58rem;color:{sc};background:rgba(255,255,255,.04);border-radius:7px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{sn}</span></div><div style="color:var(--t3);font-size:.64rem;margin-bottom:.3rem">{a["authors"]} . <em>{a["source"]}</em> . {a["year"]}{cite}</div><div style="color:var(--t2);font-size:.76rem;line-height:1.62">{ab}</div></div>',
         unsafe_allow_html=True,
     )
     ca, cb, cc = st.columns(3)
     with ca:
-        if st.button("🔖 Salvo" if is_saved else "📌 Salvar", key=f"svw_{uid}", use_container_width=True):
+        if st.button("Salvo" if is_saved else "Salvar", key=f"svw_{uid}", use_container_width=True):
             if is_saved:
                 st.session_state.saved_articles = [s for s in st.session_state.saved_articles if s.get("doi") != a.get("doi")]
                 st.toast("Removido")
@@ -1384,25 +1381,25 @@ def render_article(a, idx=0, ctx="web"):
                 st.toast("Salvo!")
             save_db(); st.rerun()
     with cb:
-        if st.button("📋 Citar", key=f"ctw_{uid}", use_container_width=True):
+        if st.button("Citar", key=f"ctw_{uid}", use_container_width=True):
             st.toast(f'{a["authors"]} ({a["year"]}). {a["title"]}.')
     with cc:
         if a.get("url"):
             st.markdown(
-                f'<a href="{a["url"]}" target="_blank" style="color:var(--blu);font-size:.78rem;text-decoration:none;line-height:2.4;display:block">↗ Abrir</a>',
+                f'<a href="{a["url"]}" target="_blank" style="color:var(--blu);font-size:.78rem;text-decoration:none;line-height:2.4;display:block">Abrir</a>',
                 unsafe_allow_html=True,
             )
 
 def page_search():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.3rem">🔍 Busca Acadêmica & Repositório</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.3rem">Busca Acadêmica & Repositório</h1>', unsafe_allow_html=True)
     c1, c2 = st.columns([4, 1])
     with c1:
-        q = st.text_input("", placeholder="CRISPR · quantum ML · dark matter…", key="sq", label_visibility="collapsed")
+        q = st.text_input("", placeholder="CRISPR . quantum ML . dark matter...", key="sq", label_visibility="collapsed")
     with c2:
-        if st.button("🔍 Buscar", key="btn_s", use_container_width=True):
+        if st.button("Buscar", key="btn_s", use_container_width=True):
             if q:
-                with st.spinner("Varredura completa (repositório + web)…"):
+                with st.spinner("Varredura completa (repositório + web)..."):
                     docs = build_local_index(st.session_state.users, st.session_state.folders, st.session_state.local_index_version)
                     local_results = search_local(q, docs, topk=25)
                     ssr = search_ss(q, 6); crr = search_cr(q, 4)
@@ -1418,8 +1415,8 @@ def page_search():
 
         ta, tr, tw = st.tabs([
             f"  Todos ({len(local) + len(web)})  ",
-            f"  📚 Repositório ({len(repo_docs)})  ",
-            f"  🌐 Internet ({len(web)})  ",
+            f"  Repositório ({len(repo_docs)})  ",
+            f"  Internet ({len(web)})  ",
         ])
 
         def render_repo_doc(doc):
@@ -1431,10 +1428,10 @@ def page_search():
             st.markdown(
                 f"""<div class="scard">
     <div style="font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0);margin-bottom:.2rem">
-        📁 {doc["title"]}
+        {f} ({folder})
     </div>
     <div style="font-size:.64rem;color:var(--t3);margin-bottom:.25rem">
-        Pasta: <strong>{folder}</strong> · Relevância: <span style="color:var(--yel)">{rel}%</span>
+        Relevância: <span style="color:var(--yel);font-weight:700">{rel}%</span>
     </div>
     <div style="font-size:.73rem;color:var(--t2);margin-bottom:.3rem">
         Temas: {", ".join(topics) if topics else "—"}
@@ -1465,7 +1462,7 @@ def page_search():
 
 def page_knowledge():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">🕸 Rede de Conexões com IA</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">Rede de Conexões com IA</h1>', unsafe_allow_html=True)
     email = st.session_state.current_user
     users = st.session_state.users if isinstance(st.session_state.users, dict) else {}
     api_key = st.session_state.get("anthropic_key", "")
@@ -1501,7 +1498,7 @@ def page_knowledge():
         fig.add_trace(go.Scatter3d(x=[p1["x"], p2["x"], None], y=[p1["y"], p2["y"], None], z=[p1["z"], p2["z"], None],
                                    mode="lines", line=dict(color=f"rgba(10,110,189,{alpha:.2f})", width=min(3, 1 + strength)),
                                    hoverinfo="none", showlegend=False))
-    nc = [("⭐ Você", "#0A6EBD") if ue == email else (("#6A9C89", "#6A9C89") if ue in st.session_state.followed else ("#4CC9F0", "#4CC9F0")) for ue in rlist]
+    nc = [("Voce", "#0A6EBD") if ue == email else (("#6A9C89", "#6A9C89") if ue in st.session_state.followed else ("#4CC9F0", "#4CC9F0")) for ue in rlist]
     ncolors = [c[1] for c in nc]
     nsizes = [22 if ue == email else (16 if ue in st.session_state.followed else 11) for ue in rlist]
     fig.add_trace(go.Scatter3d(x=[pos[ue]["x"] for ue in rlist], y=[pos[ue]["y"] for ue in rlist], z=[pos[ue]["z"] for ue in rlist],
@@ -1521,13 +1518,13 @@ def page_knowledge():
     for col, (cls, v, l) in zip([c1, c2, c3, c4],
                                  [("mval-yel", len(rlist), "Pesquisadores"), ("mval-grn", len(edges), "Conexões"),
                                   ("mval-blu", len(st.session_state.followed), "Seguindo"),
-                                  ("mval-red", len(st.session_state.folders), "Pastas")]): # Ajustado para pastas
+                                  ("mval-red", len(st.session_state.folders), "Pastas")]):
         with col:
             st.markdown(f'<div class="mbox"><div class="{cls}">{v}</div><div class="mlbl">{l}</div></div>', unsafe_allow_html=True)
     st.markdown("<hr>", unsafe_allow_html=True)
 
     tm, tai, tmi, tall = st.tabs([
-        "  🗺 Mapa  ", "  🤖 IA Conexões  ", "  🔗 Minhas  ", "  👥 Todos  ",
+        "  Mapa  ", "  IA Conexões  ", "  Minhas  ", "  Todos  ",
     ])
 
     with tm:
@@ -1535,22 +1532,22 @@ def page_knowledge():
             n1 = users.get(e1, {}); n2 = users.get(e2, {})
             ts = tags_html(common[:4]) if common else '<span style="color:var(--t3);font-size:.66rem">seguimento</span>'
             st.markdown(
-                f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--yel)">{n1.get("name", "?")}</span><span style="color:var(--t3)">↔</span><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--yel)">{n2.get("name", "?")}</span><div style="flex:1">{ts}</div><span style="font-size:.63rem;color:var(--grn);font-weight:700">{strength}pt</span></div></div>',
+                f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap"><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--yel)">{n1.get("name", "?")}</span><span style="color:var(--t3)">.</span><span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--yel)">{n2.get("name", "?")}</span><div style="flex:1">{ts}</div><span style="font-size:.63rem;color:var(--grn);font-weight:700">{strength}pt</span></div></div>',
                 unsafe_allow_html=True,
             )
 
     with tai:
         st.markdown(
-            '<div class="api-banner"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.88rem;margin-bottom:.28rem;color:var(--pur)">🤖 Sugestões Inteligentes de Conexão</div><div style="font-size:.74rem;color:var(--t2);line-height:1.65">Claude AI analisa seu perfil e repositório para encontrar colaborações científicas ideais</div></div>',
+            '<div class="api-banner"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.88rem;margin-bottom:.28rem;color:var(--pur)">Sugestões Inteligentes de Conexão</div><div style="font-size:.74rem;color:var(--t2);line-height:1.65">Claude AI analisa seu perfil e repositório para encontrar colaborações científicas ideais</div></div>',
             unsafe_allow_html=True,
         )
         if not api_key or not api_key.startswith("sk-"):
             st.markdown(
-                '<div class="pbox-yel"><div style="font-size:.75rem;color:var(--yel);font-weight:600;margin-bottom:.28rem">⚠️ Chave API necessária</div><div style="font-size:.72rem;color:var(--t2)">Insira sua Anthropic API key na barra lateral para usar sugestões com IA.</div></div>',
+                '<div class="pbox-yel"><div style="font-size:.75rem;color:var(--yel);font-weight:600;margin-bottom:.28rem">. Chave API necessária</div><div style="font-size:.72rem;color:var(--t2)">Insira sua Anthropic API key na barra lateral para usar sugestões com IA.</div></div>',
                 unsafe_allow_html=True,
             )
             st.markdown(
-                '<div style="font-size:.62rem;color:var(--t3);margin:.5rem 0">💡 Sugestões algorítmicas (sem IA):</div>',
+                '<div style="font-size:.62rem;color:var(--t3);margin:.5rem 0">. Sugestões algorítmicas (sem IA):</div>',
                 unsafe_allow_html=True,
             )
             my_tags = rtags.get(email, set())
@@ -1565,18 +1562,18 @@ def page_knowledge():
                     )
                     cf_b, cv_b = st.columns(2)
                     with cf_b:
-                        if st.button(f"+ Seguir {rn.split()[0]}", key=f"ais_{ue}", use_container_width=True):
+                        if st.button(f"Seguir {rn.split()[0]}", key=f"ais_{ue}", use_container_width=True):
                             if ue not in st.session_state.followed:
                                 st.session_state.followed.append(ue)
                                 ud["followers"] = ud.get("followers", 0) + 1
                             save_db(); st.rerun()
                     with cv_b:
-                        if st.button(f"👤 Perfil", key=f"aip_{ue}", use_container_width=True):
+                        if st.button(f"Perfil", key=f"aip_{ue}", use_container_width=True):
                             st.session_state.profile_view = ue; st.rerun()
         else:
             cache_key = f"conn_{email}_{len(users)}_{len(st.session_state.folders)}_{st.session_state.local_index_version}"
-            if st.button("🤖 Gerar Sugestões IA", key="btn_ai_conn"):
-                with st.spinner("Claude analisando sua rede científica…"):
+            if st.button("Gerar Sugestões IA", key="btn_ai_conn"):
+                with st.spinner("Claude analisando sua rede científica..."):
                     result, err = call_claude_connections(users, st.session_state.folders, email, api_key)
                     if result: st.session_state.ai_conn_cache[cache_key] = result
                     else: st.error(f"Erro IA: {err}")
@@ -1602,22 +1599,22 @@ def page_knowledge():
     </div>
   </div>
   <div style="background:rgba(255,255,255,.03);border-radius:10px;padding:.55rem .75rem;margin-bottom:.5rem;font-size:.76rem;color:var(--t2);line-height:1.65;border:1px solid rgba(177,125,255,.10)">
-    🤖 {sug.get("razao", "Conexão recomendada pela IA")}
+    . {sug.get("razao", "Conexão recomendada pela IA")}
   </div>
   <div>{tags_html(temas[:5])}</div>
 </div>''', unsafe_allow_html=True)
                     c_f, c_p, c_c = st.columns(3)
                     with c_f:
-                        if st.button("✓ Seguindo" if is_fol2 else "+ Seguir", key=f"aic_f_{sue}", use_container_width=True):
+                        if st.button("Seguindo" if is_fol2 else "Seguir", key=f"aic_f_{sue}", use_container_width=True):
                             if not is_fol2:
                                 st.session_state.followed.append(sue)
                                 sud["followers"] = sud.get("followers", 0) + 1
                             save_db(); st.rerun()
                     with c_p:
-                        if st.button("👤 Perfil", key=f"aic_p_{sue}", use_container_width=True):
+                        if st.button("Perfil", key=f"aic_p_{sue}", use_container_width=True):
                             st.session_state.profile_view = sue; st.rerun()
                     with c_c:
-                        if st.button("💬 Chat", key=f"aic_c_{sue}", use_container_width=True):
+                        if st.button("Chat", key=f"aic_c_{sue}", use_container_width=True):
                             st.session_state.chat_messages.setdefault(sue, [])
                             st.session_state.active_chat = sue; st.session_state.page = "chat"; st.rerun()
             else:
@@ -1634,15 +1631,15 @@ def page_knowledge():
             )
             cv, cm2, _ = st.columns([1, 1, 4])
             with cv:
-                if st.button("👤 Ver", key=f"kv_{oth}", use_container_width=True):
+                if st.button("Ver", key=f"kv_{oth}", use_container_width=True):
                     st.session_state.profile_view = oth; st.rerun()
             with cm2:
-                if st.button("💬", key=f"kc_{oth}", use_container_width=True):
+                if st.button("Chat", key=f"kc_{oth}", use_container_width=True):
                     st.session_state.chat_messages.setdefault(oth, []); st.session_state.active_chat = oth
                     st.session_state.page = "chat"; st.rerun()
 
     with tall:
-        sq2 = st.text_input("", placeholder="🔍 Buscar…", key="all_s", label_visibility="collapsed")
+        sq2 = st.text_input("", placeholder="Buscar...", key="all_s", label_visibility="collapsed")
         for ue, ud in users.items():
             if ue == email: continue
             rn = ud.get("name", "?"); ua = ud.get("area", "")
@@ -1654,10 +1651,10 @@ def page_knowledge():
             )
             ca2, cb2, cc2 = st.columns(3)
             with ca2:
-                if st.button("👤 Perfil", key=f"av_{ue}", use_container_width=True):
+                if st.button("Perfil", key=f"av_{ue}", use_container_width=True):
                     st.session_state.profile_view = ue; st.rerun()
             with cb2:
-                if st.button("✓ Seg." if is_fol else "+ Seguir", key=f"af_{ue}", use_container_width=True):
+                if st.button("Seguindo" if is_fol else "Seguir", key=f"af_{ue}", use_container_width=True):
                     if is_fol:
                         st.session_state.followed.remove(ue)
                         ud["followers"] = max(0, ud.get("followers", 0) - 1)
@@ -1666,14 +1663,14 @@ def page_knowledge():
                         ud["followers"] = ud.get("followers", 0) + 1
                     save_db(); st.rerun()
             with cc2:
-                if st.button("💬 Chat", key=f"ac_{ue}", use_container_width=True):
+                if st.button("Chat", key=f"ac_{ue}", use_container_width=True):
                     st.session_state.chat_messages.setdefault(ue, []); st.session_state.active_chat = ue
                     st.session_state.page = "chat"; st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
 def page_repository():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">📚 Repositório de Pesquisa</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">Repositório de Pesquisa</h1>', unsafe_allow_html=True)
     email = st.session_state.current_user
     u = guser(); ra = u.get("area", "")
     c1, c2, c3 = st.columns([2, 1.2, 1.5])
@@ -1683,7 +1680,7 @@ def page_repository():
         nfd = st.text_input("Descrição", key="nf_d")
     with c3:
         nvis = st.selectbox("Visibilidade", ["private", "team", "public"], key="nf_vis")
-    if st.button("📁 Criar Pasta", key="btn_nf", use_container_width=True):
+    if st.button("Criar Pasta", key="btn_nf", use_container_width=True):
         if nfn.strip():
             if nfn not in st.session_state.folders:
                 st.session_state.folders[nfn] = {
@@ -1698,7 +1695,7 @@ def page_repository():
     st.markdown("<hr>", unsafe_allow_html=True)
     if not st.session_state.folders:
         st.markdown(
-            '<div class="glass" style="text-align:center;padding:4rem"><div style="font-size:2.2rem;opacity:.2;margin-bottom:.7rem">📁</div><div style="color:var(--t3)">Nenhuma pasta criada ainda.</div></div>',
+            '<div class="glass" style="text-align:center;padding:4rem"><div style="font-size:2.2rem;opacity:.2;margin-bottom:.7rem"></div><div style="color:var(--t3)">Nenhuma pasta criada ainda.</div></div>',
             unsafe_allow_html=True,
         )
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1718,7 +1715,7 @@ def page_repository():
         top_topics = ", ".join(list(fd.get("topics_agg", {}).keys())[:2])
         last_update_str = time_ago(fd.get("last_updated", datetime.now().isoformat())[:10])
 
-        with st.expander(f"📁 {fn} — {num_files} arquivo(s) · {top_topics} · Atualizado {last_update_str}"):
+        with st.expander(f"Pasta: {fn} . {num_files} arquivo(s) . {top_topics} . Atualizado {last_update_str}"):
             st.markdown(f'<div style="font-size:.75rem;color:var(--t2);margin-bottom:.5rem">Descrição: {fd.get("desc", "Sem descrição.")}</div>', unsafe_allow_html=True)
             st.markdown(f'<div style="font-size:.75rem;color:var(--t2);margin-bottom:.8rem">Visibilidade: <span style="font-weight:700;color:var(--yel)">{fd.get("visibility", "private").capitalize()}</span></div>', unsafe_allow_html=True)
 
@@ -1727,52 +1724,64 @@ def page_repository():
                 label_visibility="collapsed", accept_multiple_files=True,
             )
             if up:
+                new_files_added = False
                 for uf in up:
-                    if uf.name not in files: files.append(uf.name)
-                    if fn not in st.session_state.folder_files_bytes: st.session_state.folder_files_bytes[fn] = {}
-                    uf.seek(0); st.session_state.folder_files_bytes[fn][uf.name] = uf.read()
-                fd["files"] = files; save_db()
-                st.success(f"{len(up)} arquivo(s) adicionado(s)!"); st.rerun()
+                    if uf.name not in files:
+                        files.append(uf.name)
+                        new_files_added = True
+                    if fn not in st.session_state.folder_files_bytes:
+                        st.session_state.folder_files_bytes[fn] = {}
+                    uf.seek(0)
+                    st.session_state.folder_files_bytes[fn][uf.name] = uf.read()
+
+                if new_files_added:
+                    fd["files"] = files
+                    save_db()
+                    st.session_state.local_index_version += 1 # Invalidate index if new files added
+                    st.success(f"{len(up)} arquivo(s) adicionado(s)!")
+                    st.experimental_rerun() # Rerun para exibir os novos arquivos na lista
+                else:
+                    st.info("Nenhum novo arquivo para adicionar.")
 
             if files:
                 st.markdown('<div style="font-size:.62rem;color:var(--t3);text-transform:uppercase;font-weight:600;letter-spacing:.08em;margin-top:.8rem;margin-bottom:.5rem">Arquivos na Pasta</div>', unsafe_allow_html=True)
                 for f in files:
                     ft = ftype(f); has_analysis = f in analyses
-                    icon = {"PDF": "📄", "Word": "📝", "Planilha": "📊", "Dados": "📈", "Código": "🐍", "Imagem": "🖼", "Markdown": "📋"}.get(ft, "📄")
-                    ab2 = f' <span class="badge-grn" style="font-size:.57rem;margin-left:5px">✓</span>' if has_analysis else ""
+                    icon_char = {"PDF": "📄", "Word": "📝", "Planilha": "📊", "Dados": "📈", "Código": "🐍", "Imagem": "🖼", "Markdown": "📋"}.get(ft, "📄")
+                    ab2 = f' <span class="badge-grn" style="font-size:.57rem;margin-left:5px">.</span>' if has_analysis else ""
                     st.markdown(
-                        f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>{icon}</span><span style="font-size:.75rem;color:var(--t2);flex:1">{f}</span>{ab2}</div>',
+                        f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>{icon_char}</span><span style="font-size:.75rem;color:var(--t2);flex:1">{f}</span>{ab2}</div>',
                         unsafe_allow_html=True,
                     )
 
             col_analyze, col_delete, _ = st.columns([1.5, 1.5, 2])
             with col_analyze:
-                if st.button("🔬 Analisar Arquivos", key=f"an_{fn}", use_container_width=True):
+                if st.button("Analisar Arquivos", key=f"an_{fn}", use_container_width=True):
                     if files:
-                        pb = st.progress(0, "Iniciando análise…"); fb = st.session_state.folder_files_bytes.get(fn, {})
+                        pb = st.progress(0, "Iniciando análise..."); fb = st.session_state.folder_files_bytes.get(fn, {})
                         for fi, f in enumerate(files):
-                            pb.progress((fi + 1) / len(files), f"Analisando: {f[:25]}…")
+                            pb.progress((fi + 1) / len(files), f"Analisando: {f[:25]}...")
                             fbytes = fb.get(f, b""); ft2 = ftype(f)
 
                             if ft2 == "Imagem":
                                 img_meta = analyze_image_file(f, fbytes)
-                                if img_meta: analyses[f] = {"image_meta": img_meta, "summary": f"Imagem · {img_meta['classification']['category']}"}
+                                if img_meta: analyses[f] = {"image_meta": img_meta, "summary": f"Imagem . {img_meta['classification']['category']}"}
                                 else: analyses[f] = {"summary": "Falha na análise de imagem."}
                             else: analyses[f] = analyze_doc(f, fbytes, ft2, ra)
 
                         fd["analyses"] = analyses; recompute_folder_aggregates(fd)
                         save_db(); st.session_state.local_index_version += 1
-                        pb.empty(); st.success("✓ Análise completa!"); st.rerun()
+                        pb.empty(); st.success("Análise completa!"); st.experimental_rerun()
                     else: st.warning("Adicione arquivos à pasta para analisar.")
             with col_delete:
-                if st.button("🗑 Excluir Pasta", key=f"df_{fn}", use_container_width=True):
+                if st.button("Excluir Pasta", key=f"df_{fn}", use_container_width=True):
                     del st.session_state.folders[fn]; save_db()
-                    st.session_state.local_index_version += 1; st.rerun()
+                    st.session_state.local_index_version += 1; st.experimental_rerun()
 
             if analyses:
                 st.markdown('<div style="font-size:.62rem;color:var(--t3);text-transform:uppercase;font-weight:600;letter-spacing:.08em;margin-top:.8rem;margin-bottom:.5rem">Resultados das Análises</div>', unsafe_allow_html=True)
                 for f, an in analyses.items():
-                    with st.expander(f"🔬 {f}"):
+                    with st.expander(f"Análise: {f}"):
                         if "image_meta" in an:
                             img_meta = an["image_meta"]; cls_ = img_meta["classification"]
                             conf_c = VIB[1] if cls_["confidence"] > 80 else (VIB[0] if cls_["confidence"] > 60 else VIB[2])
@@ -1811,18 +1820,18 @@ def page_repository():
 
                             if an.get("strengths"):
                                 st.markdown('<div style="font-size:.62rem;color:var(--grn);font-weight:700;margin-top:.5rem;margin-bottom:.2rem">Pontos Fortes:</div>', unsafe_allow_html=True)
-                                for s in an["strengths"]: st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-left:.5rem">✓ {s}</div>', unsafe_allow_html=True)
+                                for s in an["strengths"]: st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-left:.5rem">. {s}</div>', unsafe_allow_html=True)
                             if an.get("improvements"):
                                 st.markdown('<div style="font-size:.62rem;color:var(--yel);font-weight:700;margin-top:.5rem;margin-bottom:.2rem">Sugestões de Melhoria:</div>', unsafe_allow_html=True)
-                                for i in an["improvements"]: st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-left:.5rem">💡 {i}</div>', unsafe_allow_html=True)
+                                for i in an["improvements"]: st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-left:.5rem">. {i}</div>', unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 def page_analytics():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">📊 Painel de Análises</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">Painel de Análises</h1>', unsafe_allow_html=True)
     email = st.session_state.current_user
     d = st.session_state.stats_data
-    tf, ti, tpr = st.tabs(["  📁 Repositório  ", "  📈 Impacto  ", "  🎯 Interesses  "]) # Removido tab de Publicações
+    tf, ti, tpr = st.tabs(["  Repositório  ", "  Impacto  ", "  Interesses  "])
     with tf:
         folders = st.session_state.folders
         if not folders:
@@ -1860,8 +1869,8 @@ def page_analytics():
         nh = st.number_input("Índice H", 0, 200, d.get("h_index", 4), key="e_h")
         nfi = st.number_input("Fator impacto", 0.0, 100.0, float(d.get("fator_impacto", 3.8)), step=0.1, key="e_fi")
         nn = st.text_area("Notas sobre seu impacto", value=d.get("notes", ""), key="e_nt", height=70)
-        if st.button("💾 Salvar Métricas", key="btn_sm"):
-            d.update({"h_index": nh, "fator_impacto": nfi, "notes": nn}); st.success("✓ Métricas salvas!")
+        if st.button("Salvar Métricas", key="btn_sm"):
+            d.update({"h_index": nh, "fator_impacto": nfi, "notes": nn}); st.success("Métricas salvas!")
     with tpr:
         prefs = st.session_state.user_prefs.get(email, {})
         if prefs:
@@ -1884,34 +1893,34 @@ def page_analytics():
 
 def page_img_search():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.25rem">🔬 Visão IA Científica</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--t3);font-size:.76rem;margin-bottom:.85rem">Pipeline ML: Sobel · Canny · ORB Keypoints · GLCM · KMeans · FFT + Claude Vision (cached)</p>', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.25rem">Visão IA Científica</h1>', unsafe_allow_html=True)
+    st.markdown('<p style="color:var(--t3);font-size:.76rem;margin-bottom:.85rem">Pipeline ML: Sobel . Canny . ORB Keypoints . GLCM . KMeans . FFT + Claude Vision (cached)</p>', unsafe_allow_html=True)
 
     api_key = st.session_state.get("anthropic_key", ""); has_api = api_key.startswith("sk-") if api_key else False
 
     if has_api:
-        st.markdown('<div class="api-banner"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.82rem;color:var(--pur);margin-bottom:.2rem">🤖 Claude Vision Ativo</div><div style="font-size:.70rem;color:var(--t2)">Análise real com IA + pipeline ML completo habilitados</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="api-banner"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.82rem;color:var(--pur);margin-bottom:.2rem">Claude Vision Ativo</div><div style="font-size:.70rem;color:var(--t2)">Análise real com IA + pipeline ML completo habilitados</div></div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="pbox-yel" style="margin-bottom:.7rem"><div style="font-size:.70rem;color:var(--yel);font-weight:600;margin-bottom:.15rem">💡 Modo ML apenas</div><div style="font-size:.66rem;color:var(--t2)">Insira sua API key na barra lateral para ativar Claude Vision (análise real com IA)</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="pbox-yel" style="margin-bottom:.7rem"><div style="font-size:.70rem;color:var(--yel);font-weight:600;margin-bottom:.15rem">. Modo ML apenas</div><div style="font-size:.66rem;color:var(--t2)">Insira sua API key na barra lateral para ativar Claude Vision (análise real com IA)</div></div>', unsafe_allow_html=True)
 
     cu, cr = st.columns([1, 1.9])
     with cu:
         st.markdown('<div class="glass" style="padding:1rem">', unsafe_allow_html=True)
-        img_file = st.file_uploader("📷 Carregar imagem científica", type=["png", "jpg", "jpeg", "webp", "tiff"], key="img_up")
+        img_file = st.file_uploader("Carregar imagem científica", type=["png", "jpg", "jpeg", "webp", "tiff"], key="img_up")
         img_bytes = None
         if img_file:
             img_bytes = img_file.read()
             st.image(img_bytes, use_container_width=True)
-        run = st.button("🔬 Analisar Imagem (ML)", key="btn_run", use_container_width=True)
-        if img_bytes and has_api: run_claude = st.button("🤖 Claude Vision", key="btn_vision", use_container_width=True)
+        run = st.button("Analisar Imagem (ML)", key="btn_run", use_container_width=True)
+        if img_bytes and has_api: run_claude = st.button("Claude Vision", key="btn_vision", use_container_width=True)
         else: run_claude = False
-        st.markdown('<div class="pbox-yel" style="margin-top:.8rem"><div style="font-size:.62rem;color:var(--yel);font-weight:700;margin-bottom:2px">⚠️ Aviso IA</div><div style="font-size:.60rem;color:var(--t2);line-height:1.62">Análise computacional. Valide com especialistas da área.</div></div>', unsafe_allow_html=True)
+        st.markdown('<div class="pbox-yel" style="margin-top:.8rem"><div style="font-size:.62rem;color:var(--yel);font-weight:700;margin-bottom:2px">. Aviso IA</div><div style="font-size:.60rem;color:var(--t2);line-height:1.62">Análise computacional. Valide com especialistas da área.</div></div>', unsafe_allow_html=True)
 
     with cr:
         if run and img_bytes:
             img_hash = hashlib.md5(img_bytes).hexdigest()
             if img_hash not in st.session_state.ml_cache:
-                with st.spinner("Executando pipeline ML…"): ml_result = run_full_ml_pipeline_cached(img_bytes)
+                with st.spinner("Executando pipeline ML..."): ml_result = run_full_ml_pipeline_cached(img_bytes)
                 st.session_state.ml_cache[img_hash] = ml_result
             else: ml_result = st.session_state.ml_cache[img_hash]; st.success("Resultado carregado do cache.")
             st.session_state.img_result = ml_result
@@ -1961,7 +1970,7 @@ def page_img_search():
                     st.plotly_chart(fig_e, use_container_width=True)
                     st.markdown('</div>', unsafe_allow_html=True)
                     canny_r2 = ml_result.get("canny", {})
-                    st.markdown(f'<div class="pbox-blu"><div style="font-size:.65rem;color:var(--blu);font-weight:700;margin-bottom:.32rem">Canny Multi-Escala</div><div style="font-size:.72rem;color:var(--t2)">Estrutura dominante: <strong style="color:var(--t0)">{canny_r2.get("structure_level", "—")}</strong> · Total de bordas: <strong style="color:var(--yel)">{canny_r2.get("total_edges", 0):,}</strong></div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="pbox-blu"><div style="font-size:.65rem;color:var(--blu);font-weight:700;margin-bottom:.32rem">Canny Multi-Escala</div><div style="font-size:.72rem;color:var(--t2)">Estrutura dominante: <strong style="color:var(--t0)">{canny_r2.get("structure_level", "—")}</strong> . Total de bordas: <strong style="color:var(--yel)">{canny_r2.get("total_edges", 0):,}</strong></div></div>', unsafe_allow_html=True)
 
                 with t2:
                     n_kp = orb_r.get("n_keypoints", 0); distr = orb_r.get("distribution", "n/a")
@@ -1992,7 +2001,7 @@ def page_img_search():
                             st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
                             st.plotly_chart(fig_kp, use_container_width=True)
                             st.markdown('</div>', unsafe_allow_html=True)
-                    st.markdown(f'<div class="pbox-grn"><div style="font-size:.65rem;color:var(--grn);font-weight:700;margin-bottom:.28rem">Interpretação</div><div style="font-size:.72rem;color:var(--t2);line-height:1.65">{"Alta densidade de features — imagem com muitas estruturas distintas" if n_kp > 100 else "Densidade moderada de features" if n_kp > 40 else "Baixa densidade — imagem mais homogênea"}</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="pbox-grn"><div style="font-size:.65rem;color:var(--grn);font-weight:700;margin-bottom:.28rem">Interpretação</div><div style="font-size:.72rem;color:var(--t2);line-height:1.65">{"Alta densidade de features . imagem com muitas estruturas distintas" if n_kp > 100 else "Densidade moderada de features" if n_kp > 40 else "Baixa densidade . imagem mais homogênea"}</div></div>', unsafe_allow_html=True)
 
                 with t3:
                     glcm_props = [(k, v) for k, v in glcm_r.items() if k not in ['error', 'texture_type'] and isinstance(v, float)]
@@ -2008,7 +2017,7 @@ def page_img_search():
                                                  text=[f"{v:.4f}" for v in vals_g], textposition="outside",
                                                  textfont=dict(color="#6B6F88", size=8)))
                         fig_gl.update_layout(**{**pc_dark(), 'height': 240,
-                                                 'title': dict(text="GLCM — Gray Level Co-occurrence Matrix", font=dict(color="#E8E9F0", family="Syne", size=10)),
+                                                 'title': dict(text="GLCM . Gray Level Co-occurrence Matrix", font=dict(color="#E8E9F0", family="Syne", size=10)),
                                                  'margin': dict(l=10, r=10, t=36, b=8)})
                         st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
                         st.plotly_chart(fig_gl, use_container_width=True)
@@ -2045,14 +2054,14 @@ def page_img_search():
                                                  text=[f"{v:.3f}" for v in [lf, mf, hf]], textposition="outside",
                                                  textfont=dict(color="#6B6F88", size=9)))
                     fig_fft.update_layout(**{**pc_dark(), 'height': 220,
-                                              'title': dict(text="FFT — Distribuição de Frequências Espaciais", font=dict(color="#E8E9F0", family="Syne", size=10)),
+                                              'title': dict(text="FFT . Distribuição de Frequências Espaciais", font=dict(color="#E8E9F0", family="Syne", size=10)),
                                               'margin': dict(l=10, r=10, t=36, b=8)})
                     st.markdown('<div class="chart-wrap">', unsafe_allow_html=True)
                     st.plotly_chart(fig_fft, use_container_width=True)
                     st.markdown('</div>', unsafe_allow_html=True)
                     per = fft_r.get("periodic_score", 0); dom = fft_r.get("dominant_scale", "média")
                     is_per = fft_r.get("is_periodic", False); c_fft = "var(--grn)" if is_per else "var(--t2)"
-                    st.markdown(f'<div class="ml-feat"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;font-size:.72rem"><div>Score periódico<br><strong>{per:.1f}</strong></div><div>Escala dominante<br><strong>{dom}</strong></div><div>Estrutura<br><strong>{"Periódica ✓" if is_per else "Não-periódica"}</strong></div></div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="ml-feat"><div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;font-size:.72rem"><div>Score periódico<br><strong>{per:.1f}</strong></div><div>Escala dominante<br><strong>{dom}</strong></div><div>Estrutura<br><strong>{"Periódica ." if is_per else "Não-periódica"}</strong></div></div></div>', unsafe_allow_html=True)
 
                 with t6:
                     h_data = ml_result.get("histograms", {}); bx = list(range(0, 256, 8))[:32]
@@ -2083,8 +2092,8 @@ def page_img_search():
 
         if run_claude and img_bytes:
             st.markdown("<hr>", unsafe_allow_html=True)
-            st.markdown('<h2 style="margin-bottom:.5rem">🤖 Análise Claude Vision</h2>', unsafe_allow_html=True)
-            with st.spinner("Claude analisando a imagem…"): ai_text, ai_err = call_claude_vision(img_bytes, VISION_PROMPT, api_key)
+            st.markdown('<h2 style="margin-bottom:.5rem">Análise Claude Vision</h2>', unsafe_allow_html=True)
+            with st.spinner("Claude analisando a imagem..."): ai_text, ai_err = call_claude_vision(img_bytes, VISION_PROMPT, api_key)
             if ai_err: st.error(f"Erro Claude Vision: {ai_err}")
             elif ai_text:
                 try:
@@ -2098,7 +2107,7 @@ def page_img_search():
                     st.markdown(f'''<div style="background:linear-gradient(135deg,rgba(177,125,255,.08),rgba(76,201,240,.05));border:1px solid rgba(177,125,255,.22);border-radius:16px;padding:1.2rem;margin-bottom:.7rem">
   <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:.8rem">
     <div>
-      <div style="font-size:.57rem;color:var(--pur);letter-spacing:.10em;text-transform:uppercase;font-weight:700;margin-bottom:4px">🤖 Claude Opus Vision</div>
+      <div style="font-size:.57rem;color:var(--pur);letter-spacing:.10em;text-transform:uppercase;font-weight:700;margin-bottom:4px">Claude Opus Vision</div>
       <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:800;color:var(--t0);margin-bottom:4px">{tipo}</div>
       <div style="color:var(--grn);font-size:.78rem;font-weight:600">{origem}</div>
     </div>
@@ -2108,30 +2117,30 @@ def page_img_search():
     </div>
   </div>
   <div style="background:rgba(255,255,255,.04);border-radius:10px;padding:.7rem .9rem;margin-bottom:.6rem;font-size:.78rem;color:var(--t2);line-height:1.7;border:1px solid rgba(255,255,255,.06)">
-    <strong>📝 Descrição:</strong> {desc}
+    <strong>Descrição:</strong> {desc}
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.5rem">
     <div style="font-size:.70rem;color:var(--t2)"><span>Técnica:</span> <strong>{tecnica}</strong></div>
     <div style="font-size:.70rem;color:var(--t2)"><span>Qualidade:</span> <strong>{qualidade}</strong></div>
   </div>
   {f'<div style="font-size:.70rem;color:var(--t2);margin-bottom:.4rem"><span>Estruturas:</span> {", ".join(estruturas)}</div>' if estruturas else ""}
-  {f'<div style="background:rgba(106,156,137,.05);border:1px solid rgba(106,156,137,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65"><strong>💡 Observações:</strong> {obs}</div>' if obs else ""}
+  {f'<div style="background:rgba(106,156,137,.05);border:1px solid rgba(106,156,137,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65"><strong>Observações:</strong> {obs}</div>' if obs else ""}
 </div>''', unsafe_allow_html=True)
                     if termos:
-                        st.markdown(f'<div style="font-size:.62rem;color:var(--t3);margin:.3rem 0 .5rem">🔍 Buscando artigos com termos da IA: <em>{termos}</em></div>', unsafe_allow_html=True)
-                        with st.spinner("Buscando na literatura…"): wr = search_ss(termos, 5)
+                        st.markdown(f'<div style="font-size:.62rem;color:var(--t3);margin:.3rem 0 .5rem">Buscando artigos com termos da IA: <em>{termos}</em></div>', unsafe_allow_html=True)
+                        with st.spinner("Buscando na literatura..."): wr = search_ss(termos, 5)
                         if wr:
                             for idx2, a2 in enumerate(wr): render_article(a2, idx=idx2 + 5000, ctx="img_claude")
                 except (json.JSONDecodeError, Exception):
-                    st.markdown(f'<div class="abox"><div style="font-size:.62rem;color:var(--pur);font-weight:700;margin-bottom:.5rem">🤖 Análise Claude Vision</div><div style="font-size:.78rem;color:var(--t2);line-height:1.7;white-space:pre-wrap">{ai_text[:1500]}</div></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="abox"><div style="font-size:.62rem;color:var(--pur);font-weight:700;margin-bottom:.5rem">Análise Claude Vision</div><div style="font-size:.78rem;color:var(--t2);line-height:1.7;white-space:pre-wrap">{ai_text[:1500]}</div></div>', unsafe_allow_html=True)
 
         ml_r = st.session_state.get("img_result", {})
         if ml_r and ml_r.get("ok") and not (run or run_claude): pass
         elif ml_r and ml_r.get("ok"):
             st.markdown("<hr>", unsafe_allow_html=True)
-            st.markdown('<h2 style="margin-bottom:.6rem">🔗 Pesquisas Relacionadas</h2>', unsafe_allow_html=True)
+            st.markdown('<h2 style="margin-bottom:.6rem">Pesquisas Relacionadas</h2>', unsafe_allow_html=True)
             cls2 = ml_r.get("classification", {}); kw_s = cls2.get("search_kw", "scientific imaging")
-            tf2, tw2 = st.tabs(["  📁 Pastas  ", "  🌐 Internet  "]) # Removido tab "Na Nebula"
+            tf2, tw2 = st.tabs(["  Pastas  ", "  Internet  "])
             with tf2:
                 similar_imgs = find_similar_images(ml_r, st.session_state.folders)
                 if similar_imgs:
@@ -2139,7 +2148,7 @@ def page_img_search():
                         st.markdown(
                             f'''<div class="scard">
                                 <div style="font-size:.8rem;font-family:Syne;font-weight:700;color:var(--t0);margin-bottom:.2rem">
-                                    📁 {fname} · {f}
+                                    {fname} . {f}
                                 </div>
                                 <div style="font-size:.65rem;color:var(--t3);margin-bottom:.2rem">
                                     Similaridade: <span style="color:var(--grn);font-weight:700">{sc:.1f}pt</span>
@@ -2154,18 +2163,18 @@ def page_img_search():
             with tw2:
                 ck = f"img_{kw_s[:40]}"
                 if ck not in st.session_state.scholar_cache:
-                    with st.spinner("Buscando artigos…"): st.session_state.scholar_cache[ck] = search_ss(kw_s, 5)
+                    with st.spinner("Buscando artigos..."): st.session_state.scholar_cache[ck] = search_ss(kw_s, 5)
                 wr2 = st.session_state.scholar_cache.get(ck, [])
                 for idx3, a3 in enumerate(wr2): render_article(a3, idx=idx3 + 3000, ctx="img_web")
                 if not wr2: st.markdown('<div style="color:var(--t3);padding:.8rem">Sem resultados na web.</div>', unsafe_allow_html=True)
 
         elif not img_file:
-            st.markdown('<div class="glass" style="padding:4.5rem 2rem;text-align:center"><div style="font-size:2.8rem;opacity:.18;margin-bottom:1rem">🔬</div><div style="font-family:Syne,sans-serif;font-size:1rem;color:var(--t1)">Carregue uma imagem científica</div><div style="font-size:.72rem;color:var(--t3);margin-top:.4rem;line-height:1.9">Pipeline ML completo:<br>Sobel · Canny · ORB · GLCM · KMeans · FFT<br><br>Com API Key:<br>🤖 Claude Vision para análise real com IA</div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="glass" style="padding:4.5rem 2rem;text-align:center"><div style="font-size:2.8rem;opacity:.18;margin-bottom:1rem"></div><div style="font-family:Syne,sans-serif;font-size:1rem;color:var(--t1)">Carregue uma imagem científica</div><div style="font-size:.72rem;color:var(--t3);margin-top:.4rem;line-height:1.9">Pipeline ML completo:<br>Sobel . Canny . ORB . GLCM . KMeans . FFT<br><br>Com API Key:<br>Claude Vision para análise real com IA</div></div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 def page_chat():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">💬 Mensagens</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">Mensagens</h1>', unsafe_allow_html=True)
     cc, cm = st.columns([.85, 2.8])
     email = st.session_state.current_user
     users = st.session_state.users if isinstance(st.session_state.users, dict) else {}
@@ -2186,11 +2195,11 @@ def page_chat():
                 f'<div style="background:{bg};border:1px solid {bdr};border-radius:12px;padding:8px 10px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:7px">{avh(ui, 30, ug)}<div style="overflow:hidden;flex:1"><div style="font-size:.76rem;font-weight:600;font-family:Syne,sans-serif;color:var(--t0)">{dot}{un}</div><div style="font-size:.63rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>',
                 unsafe_allow_html=True,
             )
-            if st.button("→", key=f"oc_{ue}", use_container_width=True):
+            if st.button("Abrir", key=f"oc_{ue}", use_container_width=True): # Alterado "->" para "Abrir"
                 st.session_state.active_chat = ue; st.rerun()
         st.markdown("<hr>", unsafe_allow_html=True)
-        nc2 = st.text_input("", placeholder="E-mail…", key="new_ct", label_visibility="collapsed")
-        if st.button("+ Adicionar", key="btn_ac", use_container_width=True):
+        nc2 = st.text_input("", placeholder="E-mail...", key="new_ct", label_visibility="collapsed")
+        if st.button("Adicionar", key="btn_ac", use_container_width=True):
             if nc2 in users and nc2 != email:
                 if nc2 not in st.session_state.chat_contacts: st.session_state.chat_contacts.append(nc2)
                 st.rerun()
@@ -2202,7 +2211,7 @@ def page_chat():
             msgs = st.session_state.chat_messages.get(contact, [])
             online = is_online(contact); dot = '<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
             st.markdown(
-                f'<div style="background:var(--g2);border:1px solid var(--gb1);border-radius:14px;padding:10px 14px;margin-bottom:.85rem;display:flex;align-items:center;gap:10px">{avh(ci, 36, cg)}<div style="flex:1"><div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif;color:var(--t0)">{dot}{cn}</div><div style="font-size:.63rem;color:var(--grn)">🔒 AES-256</div></div></div>',
+                f'<div style="background:var(--g2);border:1px solid var(--gb1);border-radius:14px;padding:10px 14px;margin-bottom:.85rem;display:flex;align-items:center;gap:10px">{avh(ci, 36, cg)}<div style="flex:1"><div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif;color:var(--t0)">{dot}{cn}</div><div style="font-size:.63rem;color:var(--grn)">AES-256</div></div></div>',
                 unsafe_allow_html=True,
             )
             for msg in msgs:
@@ -2214,26 +2223,27 @@ def page_chat():
             st.markdown("<br>", unsafe_allow_html=True)
             ci2, cb2 = st.columns([5, 1])
             with ci2:
-                nm = st.text_input("", placeholder="Escreva uma mensagem…", key=f"mi_{contact}", label_visibility="collapsed")
+                nm = st.text_input("", placeholder="Escreva uma mensagem...", key=f"mi_{contact}", label_visibility="collapsed")
             with cb2:
-                if st.button("→", key=f"ms_{contact}", use_container_width=True):
+                if st.button("Enviar", key=f"ms_{contact}", use_container_width=True):
                     if nm:
                         now = datetime.now().strftime("%H:%M")
                         st.session_state.chat_messages.setdefault(contact, []).append({"from": "me", "text": nm, "time": now})
-                        st.rerun()
+                        st.session_state[f"mi_{contact}"] = "" # Limpa o input
+                        st.rerun() # Rerun para atualizar o chat
         else:
-            st.markdown('<div class="glass" style="text-align:center;padding:5rem"><div style="font-size:2.2rem;opacity:.15;margin-bottom:.85rem">💬</div><div style="font-family:Syne,sans-serif;font-size:.96rem;color:var(--t1)">Selecione uma conversa</div><div style="font-size:.70rem;color:var(--t3);margin-top:.4rem">🔒 End-to-end criptografado</div></div>', unsafe_allow_html=True)
+            st.markdown('<div class="glass" style="text-align:center;padding:5rem"><div style="font-size:2.2rem;opacity:.15;margin-bottom:.85rem"></div><div style="font-family:Syne,sans-serif;font-size:.96rem;color:var(--t1)">Selecione uma conversa</div><div style="font-size:.70rem;color:var(--t3);margin-top:.4rem">End-to-end criptografado</div></div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
 def page_settings():
     st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">⚙️ Configurações</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.8rem;margin-bottom:.9rem">Configurações</h1>', unsafe_allow_html=True)
     email = st.session_state.current_user
     ud = st.session_state.users.get(email, {})
     st.markdown(f'<div class="abox"><div style="font-size:.58rem;color:var(--t3);text-transform:uppercase;letter-spacing:.10em;margin-bottom:.4rem;font-weight:700">Conta</div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.95rem;color:var(--yel)">{email}</div></div>', unsafe_allow_html=True)
     en = ud.get("2fa_enabled", False)
     st.markdown('<div>', unsafe_allow_html=True)
-    if st.button("✕ Desativar 2FA" if en else "✓ Ativar 2FA", key="cfg_2fa", use_container_width=True):
+    if st.button("Desativar 2FA" if en else "Ativar 2FA", key="cfg_2fa", use_container_width=True):
         st.session_state.users[email]["2fa_enabled"] = not en
         save_db(); st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
@@ -2242,19 +2252,19 @@ def page_settings():
         op = st.text_input("Senha atual", type="password")
         np2 = st.text_input("Nova senha", type="password")
         nc3 = st.text_input("Confirmar", type="password")
-        if st.form_submit_button("🔑 Alterar Senha", use_container_width=True):
+        if st.form_submit_button("Alterar Senha", use_container_width=True):
             if hp(op) != ud.get("password", ""): st.error("Senha atual incorreta.")
             elif np2 != nc3: st.error("As novas senhas não coincidem.")
             elif len(np2) < 6: st.error("A nova senha deve ter no mínimo 6 caracteres.")
             else:
                 st.session_state.users[email]["password"] = hp(np2)
-                save_db(); st.success("✓ Senha alterada com sucesso!")
+                save_db(); st.success("Senha alterada com sucesso!")
         st.markdown('</div>', unsafe_allow_html=True)
     st.markdown("<hr>", unsafe_allow_html=True)
-    for nm, ds in [("🔒 AES-256", "End-to-end"), ("🔏 SHA-256", "Hash senhas"), ("🛡 TLS 1.3", "Transmissão")]:
-        st.markdown(f'<div class="pbox-grn"><div style="display:flex;align-items:center;gap:9px"><div style="width:24px;height:24px;border-radius:7px;background:rgba(106,156,137,.12);display:flex;align-items:center;justify-content:center;color:var(--grn);font-size:.72rem">✓</div><div><div style="font-weight:700;color:var(--grn);font-size:.78rem">{nm}</div><div style="font-size:.66rem;color:var(--t3)">{ds}</div></div></div></div>', unsafe_allow_html=True)
+    for nm, ds in [("AES-256", "End-to-end"), ("SHA-256", "Hash senhas"), ("TLS 1.3", "Transmissão")]:
+        st.markdown(f'<div class="pbox-grn"><div style="display:flex;align-items:center;gap:9px"><div style="width:24px;height:24px;border-radius:7px;background:rgba(106,156,137,.12);display:flex;align-items:center;justify-content:center;color:var(--grn);font-size:.72rem">.</div><div><div style="font-weight:700;color:var(--grn);font-size:.78rem">{nm}</div><div style="font-size:.66rem;color:var(--t3)">{ds}</div></div></div></div>', unsafe_allow_html=True)
     st.markdown("<hr>", unsafe_allow_html=True)
-    if st.button("🚪 Sair da Conta", key="logout", use_container_width=True):
+    if st.button("Sair da Conta", key="logout", use_container_width=True):
         st.session_state.logged_in = False; st.session_state.current_user = None
         st.session_state.page = "login"; st.rerun()
     st.markdown('</div>', unsafe_allow_html=True)
