@@ -502,8 +502,8 @@ def deep_analyze_research_algorithmic(post, all_posts):
 
     # Sugestões de melhoria
     improvements=[]
-    if likes<50: improvements.append("Aumentar visibilidade — compartilhe em congressos")
-    if comments<3: improvements.append("Incentivar discussão — faça perguntas abertas no resumo")
+    if likes<50: improvements.append("Aumentar visibilidade - compartilhe em congressos")
+    if comments<3: improvements.append("Incentivar discussão - faça perguntas abertas no resumo")
     if not post.get("methodology"): improvements.append("Detalhe melhor a metodologia utilizada")
 
     # Pesquisadores com interesses similares
@@ -1162,7 +1162,7 @@ def render_post(post,ctx="feed",show_author=True,compact=False):
     if st.session_state.get(f"cmt_{ctx}_{pid}",False):
         for c in post.get("comments",[]):
             ci=ini(c["user"]); ce2=next((e for e,u in st.session_state.users.items() if u.get("name")==c["user"]),""); cg=ugrad(ce2)
-            st.markdown(f'<div class="cmt"><div style="display:flex;align-items:center;gap:7px;margin-bottom:.2rem">{avh(ci,26,cg)}<span style="font-size:.73rem;font-weight:700;color:var(--acc)">{c["user"]}</span></div><div style="font-size:.78rem;color:var(--t2);line-height:1.55;padding-left:33px">{c["text"]}</div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="cmt"><div style="display:flex;align-items:center;gap:7px;margin-bottom:.2rem">{avh(ci,26,cg)}<span style="font-size:.73rem;font-weight:700;color:var(--acc)}">{c["user"]}</span></div><div style="font-size:.78rem;color:var(--t2);line-height:1.55;padding-left:33px">{c["text"]}</div></div>',unsafe_allow_html=True)
         nc_txt=st.text_input("",placeholder="Escreva um comentário…",key=f"ci_{ctx}_{pid}",label_visibility="collapsed")
         if st.button("Enviar Comentário",key=f"cs_{ctx}_{pid}"):
             if nc_txt:
@@ -1217,8 +1217,8 @@ def render_post_deep_analysis(post,ctx=""):
             st.markdown(f'<div style="margin-top:.6rem;background:rgba(155,111,212,.06);border:1px solid rgba(155,111,212,.18);border-radius:12px;padding:.8rem">'
                         f'<div style="font-size:.62rem;color:#B98FE8;font-weight:700;margin-bottom:.4rem">Análise Claude IA</div>'
                         f'<div style="font-size:.75rem;color:var(--t2);line-height:1.7;margin-bottom:.4rem">{da.get("resumo_executivo","")}</div>'
-                        f'<div style="margin-top:.5rem;font-size:.65rem;color:var(--t3)">Metodologia: <strong style="color:var(--t1)">{da.get("metodologia_score",0)}/100</strong> . Inovação: <strong style="color:var(--t1)">{da.get("inovacao_score",0)}/100</strong> . Impacto: <strong style="color:var(--teal)">{da.get("impacto_potencial","—")}</strong></div>'
-                        f'<div style="margin-top:.5rem;font-size:.65rem;color:var(--t3)">Tendência: <strong style="color:var(--cya)">{da.get("tendencia_temporal","—")}</strong> . Keywords emergentes: <strong style="color:var(--orn)">{", ".join(da.get("keywords_emergentes",[]))}</strong></div>'
+                        f'<div style="margin-top:.5rem;font-size:.65rem;color:var(--t3)">Metodologia: <strong style="color:var(--t1)}">{da.get("metodologia_score",0)}/100</strong> . Inovação: <strong style="color:var(--t1)}">{da.get("inovacao_score",0)}/100</strong> . Impacto: <strong style="color:var(--teal)}">{da.get("impacto_potencial","—")}</strong></div>'
+                        f'<div style="margin-top:.5rem;font-size:.65rem;color:var(--t3)">Tendência: <strong style="color:var(--cya)}">{da.get("tendencia_temporal","—")}</strong> . Keywords emergentes: <strong style="color:var(--orn)}">{", ".join(da.get("keywords_emergentes",[]))}</strong></div>'
                         f'</div>',unsafe_allow_html=True)
     st.markdown('</div>',unsafe_allow_html=True)
 
@@ -1234,7 +1234,7 @@ def render_article(a,idx=0,ctx="web"):
     ab=(a.get("abstract","") or "")[:280]+("…" if len(a.get("abstract",""))>280 else "")
     year_badge=f'<span style="font-size:.58rem;color:#38C8F0;font-weight:700">{a.get("year","?")}</span>'
     st.markdown(f'<div class="scard"><div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:.28rem">'
-                f'<div style="flex:1;font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0)">{a["title"]}</div>'
+                f'<div style="flex:1;font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0)}">{a["title"]}</div>'
                 f'<span style="font-size:.57rem;color:{sc};background:rgba(255,255,255,.04);border-radius:7px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{sn}</span></div>'
                 f'<div style="color:var(--t3);font-size:.63rem;margin-bottom:.3rem">{a["authors"]} . <em>{a["source"]}</em> . {year_badge}{cite}</div>'
                 f'<div style="color:var(--t2);font-size:.75rem;line-height:1.62">{ab}</div></div>',unsafe_allow_html=True)
@@ -1286,121 +1286,111 @@ def page_login():
                 nn=st.text_input("Nome completo",key="su_n"); ne=st.text_input("E-mail",key="su_e")
                 na=st.text_input("Área de pesquisa",key="su_a"); ni=st.text_input("Bolsa/Afiliação",key="su_i")
                 np_=st.text_input("Senha",type="password",key="su_p"); np2=st.text_input("Confirmar",type="password",key="su_p2")
-                s2=st.form_submit_button("Criar conta",use_container_width=True)
-                if s2:
-                    if not all([nn,ne,na,np_,np2]): st.error("Preencha todos os campos.")
+                s=st.form_submit_button("Criar conta",use_container_width=True)
+                if s:
+                    if not nn or not ne or not na or not np_ or not np2: st.error("Preencha todos os campos.")
                     elif np_!=np2: st.error("Senhas não coincidem.")
+                    elif len(np_)<6: st.error("Senha mínima de 6 caracteres.")
                     elif ne in st.session_state.users: st.error("E-mail já cadastrado.")
                     else:
-                        st.session_state.users[ne]={"name":nn,"password":hp(np_),"bio":"","area":na,"bolsa_afiliacao":ni or "",
-                                                     "followers":0,"following":0,"verified":True,"2fa_enabled":False,"h_index":0,"publications":0}
-                        save_db(); st.session_state.logged_in=True; st.session_state.current_user=ne
-                        record(area_tags(na),2.0); st.session_state.page="feed"; st.rerun()
+                        st.session_state.users[ne]={"name":nn,"password":hp(np_),"area":na,"bolsa_afiliacao":ni,
+                                                    "followers":0,"following":0,"verified":False,"2fa_enabled":False,
+                                                    "h_index":0,"publications":0}
+                        save_db(); st.success("Conta criada! Faça login.")
+                        st.session_state.page="login"; st.rerun()
 
 # ================================================
 #  PAGE: PROFILE
 # ================================================
 def page_profile(target_email):
-    tu=st.session_state.users.get(target_email,{})
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
     email=st.session_state.current_user
-    if not tu: st.error("Perfil não encontrado."); return
-    tname=tu.get("name","?"); ti=ini(tname); is_me=(email==target_email)
-    is_fol=target_email in st.session_state.followed; g=ugrad(target_email)
-    user_posts=[p for p in st.session_state.feed_posts if p.get("author_email")==target_email]
-    liked_posts=[p for p in st.session_state.feed_posts if target_email in p.get("liked_by",[])]
-    total_likes=sum(p["likes"] for p in user_posts); total_citations=sum(p.get("citations",0) for p in user_posts)
-    vb=f' <span class="badge-teal" style="font-size:.6rem">Verificado</span>' if tu.get("verified") else ""
-    st.markdown(f"""<div class="prof-hero">
-  <div class="prof-av" style="background:{g}">{ti}</div>
-  <div style="flex:1">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:.22rem">
-      <span style="font-family:Syne,sans-serif;font-weight:800;font-size:1.35rem;color:var(--t0)">{tname}</span>{vb}
-    </div>
-    <div style="color:var(--acc);font-size:.80rem;font-weight:600;margin-bottom:.12rem">{tu.get("area","")}</div>
-    <div style="color:var(--t3);font-size:.70rem;margin-bottom:.3rem">{tu.get("bolsa_afiliacao","")} {" . ORCID: "+tu.get("orcid","") if tu.get("orcid") else ""}</div>
-    <div style="color:var(--t2);font-size:.77rem;line-height:1.7;margin-bottom:.7rem">{tu.get("bio","Sem biografia.")}</div>
-    <div style="display:flex;gap:1.6rem;flex-wrap:wrap">
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{tu.get("followers",0)}</span><span style="color:var(--t3);font-size:.67rem"> seguidores</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{tu.get("following",0)}</span><span style="color:var(--t3);font-size:.67rem"> seguindo</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{len(user_posts)}</span><span style="color:var(--t3);font-size:.67rem"> pesquisas</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--acc)">{fmt_num(total_likes)}</span><span style="color:var(--t3);font-size:.67rem"> curtidas</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--teal)">{total_citations}</span><span style="color:var(--t3);font-size:.67rem"> citações</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--pur)">{tu.get("h_index",0)}</span><span style="color:var(--t3);font-size:.67rem"> h-index</span></div>
-    </div>
-  </div>
-</div>""",unsafe_allow_html=True)
+    u=st.session_state.users.get(target_email,{})
+    if not u: st.error("Usuário não encontrado."); return
+    is_me=target_email==email
+    is_followed=target_email in st.session_state.followed
+    name=u.get("name","?"); area=u.get("area","?"); bio=u.get("bio","")
+    bolsa_afiliacao=u.get("bolsa_afiliacao",""); followers=u.get("followers",0); following=u.get("following",0)
+    h_index=u.get("h_index",0); publications=u.get("publications",0)
+    uin=ini(name); g=ugrad(target_email)
+
+    st.markdown(f'<div class="prof-hero">{avh(uin,76,g)}<div style="flex:1"><div style="font-family:Syne,sans-serif;font-size:1.6rem;font-weight:800;color:var(--t0);margin-bottom:.2rem">{name}</div><div style="font-size:.85rem;color:var(--t2);margin-bottom:.4rem">{area} . {bolsa_afiliacao}</div><div style="font-size:.78rem;color:var(--t3);line-height:1.6">{bio}</div></div></div>',unsafe_allow_html=True)
+    c1,c2,c3,c4=st.columns(4)
+    with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{followers}</div><div class="mlbl">Seguidores</div></div>',unsafe_allow_html=True)
+    with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{following}</div><div class="mlbl">Seguindo</div></div>',unsafe_allow_html=True)
+    with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{h_index}</div><div class="mlbl">Índice H</div></div>',unsafe_allow_html=True)
+    with c4: st.markdown(f'<div class="mbox"><div class="mval-red">{publications}</div><div class="mlbl">Publicações</div></div>',unsafe_allow_html=True)
+    st.markdown("<hr>",unsafe_allow_html=True)
+
     if not is_me:
-        c1,c2,c3,_=st.columns([1,1,1,2])
+        c1,c2,_=st.columns([1,1,2])
         with c1:
-            if st.button("Seguindo" if is_fol else "Seguir",key="su_n",use_container_width=True):
-                if is_fol: st.session_state.followed.remove(target_email); tu["followers"]=max(0,tu.get("followers",0)-1)
-                else: st.session_state.followed.append(target_email); tu["followers"]=tu.get("followers",0)+1
+            if st.button("Seguindo" if is_followed else "Seguir",key="prof_follow",use_container_width=True):
+                if is_followed: st.session_state.followed.remove(target_email); u["followers"]=max(0,u.get("followers",0)-1)
+                else: st.session_state.followed.append(target_email); u["followers"]=u.get("followers",0)+1
                 save_db(); st.rerun()
         with c2:
-            if st.button("Mensagem",key="pf_chat",use_container_width=True):
-                st.session_state.chat_messages.setdefault(target_email,[])
-                st.session_state.active_chat=target_email; st.session_state.page="chat"; st.rerun()
-        with c3:
-            if st.button("Voltar",key="pf_back",use_container_width=True): st.session_state.profile_view=None; st.rerun()
-        tp,tl=st.tabs([f"  Pesquisas ({len(user_posts)})  ",f"  Curtidas ({len(liked_posts)})  "])
-        with tp:
-            for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="profile",show_author=False)
-            if not user_posts: st.markdown('<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa publicada.</div>',unsafe_allow_html=True)
-        with tl:
-            for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="prof_liked",compact=True)
+            if st.button("Mensagem",key="prof_chat",use_container_width=True):
+                st.session_state.chat_messages.setdefault(target_email,[]); st.session_state.active_chat=target_email; st.session_state.page="chat"; st.rerun()
     else:
-        saved_arts=st.session_state.saved_articles
-        tm,tl,ts2,ts,tst=st.tabs(["  Meus Dados  ",f"  Publicações ({len(user_posts)})  ",
-                                    f"  Curtidas ({len(liked_posts)})  ",f"  Salvos ({len(saved_arts)})  ","  Estatísticas  "])
-        with tm:
-            new_n=st.text_input("Nome",value=tu.get("name",""),key="cfg_n")
-            new_a=st.text_input("Área",value=tu.get("area",""),key="cfg_a")
-            new_inst=st.text_input("Bolsa/Afiliação",value=tu.get("bolsa_afiliacao",""),key="cfg_inst")
-            new_orcid=st.text_input("ORCID",value=tu.get("orcid",""),key="cfg_orc",placeholder="0000-0000-0000-0000")
-            new_b=st.text_area("Bio",value=tu.get("bio",""),key="cfg_b",height=80)
-            cs,co=st.columns(2)
-            with cs:
-                if st.button("Salvar",key="btn_sp",use_container_width=True):
-                    st.session_state.users[email].update({"name":new_n,"area":new_a,"bio":new_b,"bolsa_afiliacao":new_inst,"orcid":new_orcid})
-                    save_db(); st.success("Salvo!"); st.rerun()
-            with co:
-                if st.button("Sair",key="btn_out",use_container_width=True):
-                    st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
-        with tl:
-            for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="myp",show_author=False)
-            if not user_posts: st.markdown('<div class="glass" style="padding:2.5rem;text-align:center;color:var(--t3)">Nenhuma pesquisa ainda.</div>',unsafe_allow_html=True)
-        with ts2:
-            for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="mylk",compact=True)
-        with ts:
-            if saved_arts:
-                for idx,a in enumerate(saved_arts):
-                    render_article(a,idx=idx+3000,ctx="saved")
-                    uid2=re.sub(r'[^a-zA-Z0-9]','',f"rms_{idx}")[:20]
-                    if st.button("Remover",key=f"rm_sa_{uid2}",use_container_width=True):
-                        st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]
-                        save_db(); st.rerun()
-            else: st.markdown('<div class="glass" style="padding:2.5rem;text-align:center;color:var(--t3)">Nenhum artigo salvo.</div>',unsafe_allow_html=True)
-        with tst:
-            if user_posts:
-                total_v=sum(p.get("views",0) for p in user_posts)
-                avg_l=sum(p["likes"] for p in user_posts)/len(user_posts)
-                c1,c2,c3,c4=st.columns(4)
-                with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{total_likes}</div><div class="mlbl">Total Curtidas</div></div>',unsafe_allow_html=True)
-                with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{total_citations}</div><div class="mlbl">Citações</div></div>',unsafe_allow_html=True)
-                with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{fmt_num(total_v)}</div><div class="mlbl">Visualizações</div></div>',unsafe_allow_html=True)
-                with c4: st.markdown(f'<div class="mbox"><div class="mval-red">{round(avg_l,1)}</div><div class="mlbl">Média Curtidas</div></div>',unsafe_allow_html=True)
-                # Posts over time
-                by_month=defaultdict(int)
-                for p in user_posts:
-                    try: by_month[p.get("date","")[:7]]+=1
-                    except: pass
-                months=sorted(by_month.keys()); counts=[by_month[m] for m in months]
-                if len(months)>1:
-                    fig=go.Figure(go.Scatter(x=months,y=counts,fill='tozeroy',line=dict(color="#0D7FE8",width=2),fillcolor="rgba(13,127,232,.08)",mode="lines+markers",marker=dict(color="#0D7FE8",size=7)))
-                    fig.update_layout(**{**pc_dark(),'height':180,'title':dict(text="Publicações por mês",font=dict(color="#E2E6F0",family="Syne",size=10))})
-                    st.markdown('<div class="chart-wrap">',unsafe_allow_html=True)
-                    st.plotly_chart(fig,use_container_width=True)
-                    st.markdown('</div>',unsafe_allow_html=True)
+        if st.button("Editar Perfil",key="edit_my_profile",use_container_width=True):
+            st.session_state.page="settings"; st.rerun()
+
+    st.markdown("<hr>",unsafe_allow_html=True)
+    t1,t2,t3=st.tabs(["  Publicações  ","  Repositórios  ","  Interesses  "])
+    with t1:
+        user_posts=[p for p in st.session_state.feed_posts if p.get("author_email")==target_email]
+        if not user_posts: st.info("Nenhuma publicação.")
+        else:
+            for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="prof",show_author=False)
+    with t2:
+        user_folders=[(fn,fd) for fn,fd in st.session_state.folders.items() if fd.get("owner_email")==target_email]
+        if not user_folders: st.info("Nenhum repositório.")
+        else:
+            for fn,fd in user_folders:
+                analyzed_count=len(fd.get("analyses",{}))
+                st.markdown(f'<div class="repo-card"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0);margin-bottom:.2rem">📁 {fn}</div><div style="font-size:.68rem;color:var(--t3)">{fd.get("desc","")} . {len(fd.get("files",[]))} arquivos . {analyzed_count} analisados</div></div>',unsafe_allow_html=True)
+    with t3:
+        prefs=st.session_state.user_prefs.get(target_email,{})
+        if prefs:
+            top=sorted(prefs.items(),key=lambda x:-x[1])[:12]; mx=max(s for _,s in top) if top else 1
+            cats=[t for t,_ in top[:8]]; vals=[round(s/mx*100) for _,s in top[:8]]
+            if len(cats)>=3:
+                fig3=go.Figure(go.Scatterpolar(r=vals+[vals[0]],theta=cats+[cats[0]],fill='toself',line=dict(color="#0D7FE8"),fillcolor="rgba(13,127,232,.10)"))
+                fig3.update_layout(height=270,polar=dict(bgcolor="rgba(0,0,0,0)",radialaxis=dict(visible=True,gridcolor="rgba(255,255,255,.04)",color="#5A6180",tickfont=dict(size=8)),angularaxis=dict(gridcolor="rgba(255,255,255,.04)",color="#5A6180",tickfont=dict(size=9))),paper_bgcolor="rgba(0,0,0,0)",margin=dict(l=40,r=40,t=15,b=15))
+                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True)
+                st.plotly_chart(fig3,use_container_width=True)
+                st.markdown('</div>',unsafe_allow_html=True)
+            for t,s in top[:10]:
+                norm=s/mx*100
+                st.markdown(f'<div style="margin-bottom:.3rem"><div style="display:flex;justify-content:space-between;font-size:.71rem;margin-bottom:3px"><span style="color:var(--t1)}">{t}</span><span style="color:var(--t3)}">{round(norm)}%</span></div>{prog_bar(norm,"#0D7FE8")}</div>',unsafe_allow_html=True)
+        else: st.info("Interaja com pesquisas para mapear interesses.")
+
+        # Análise de engajamento e publicações (movido para cá)
+        user_posts=[p for p in st.session_state.feed_posts if p.get("author_email")==target_email]
+        if user_posts:
+            total_likes=sum(p["likes"] for p in user_posts)
+            total_citations=sum(p.get("citations",0) for p in user_posts)
+            total_v=sum(p.get("views",0) for p in user_posts)
+            avg_l=total_likes/len(user_posts) if user_posts else 0
+            st.markdown('<div class="dtxt">Métricas de Publicação</div>',unsafe_allow_html=True)
+            c1,c2,c3,c4=st.columns(4)
+            with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{total_likes}</div><div class="mlbl">Curtidas</div></div>',unsafe_allow_html=True)
+            with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{total_citations}</div><div class="mlbl">Citações</div></div>',unsafe_allow_html=True)
+            with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{fmt_num(total_v)}</div><div class="mlbl">Visualizações</div></div>',unsafe_allow_html=True)
+            with c4: st.markdown(f'<div class="mbox"><div class="mval-red">{round(avg_l,1)}</div><div class="mlbl">Média Curtidas</div></div>',unsafe_allow_html=True)
+            # Posts over time
+            by_month=defaultdict(int)
+            for p in user_posts:
+                try: by_month[p.get("date","")[:7]]+=1
+                except: pass
+            months=sorted(by_month.keys()); counts=[by_month[m] for m in months]
+            if len(months)>1:
+                fig=go.Figure(go.Scatter(x=months,y=counts,fill='tozeroy',line=dict(color="#0D7FE8",width=2),fillcolor="rgba(13,127,232,.08)",mode="lines+markers",marker=dict(color="#0D7FE8",size=7)))
+                fig.update_layout(**{**pc_dark(),'height':180,'title':dict(text="Publicações por mês",font=dict(color="#E2E6F0",family="Syne",size=10))})
+                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True)
+                st.plotly_chart(fig,use_container_width=True)
+                st.markdown('</div>',unsafe_allow_html=True)
 
 # ================================================
 #  PAGE: FEED (Agora um feed de publicações, não um repositório)
@@ -1416,7 +1406,7 @@ def page_feed():
     cm,cs=st.columns([2,.9],gap="medium")
     with cm:
         if co:
-            st.markdown(f'<div class="compose-box"><div style="display:flex;align-items:center;gap:9px;margin-bottom:.9rem">{avh(uin,40,g)}<div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.88rem;color:var(--t0)">{uname}</div><div style="font-size:.65rem;color:var(--t3)">{u.get("area","Pesquisador")}</div></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="compose-box"><div style="display:flex;align-items:center;gap:9px;margin-bottom:.9rem">{avh(uin,40,g)}<div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.88rem;color:var(--t0)}">{uname}</div><div style="font-size:.65rem;color:var(--t3)}">{u.get("area","Pesquisador")}</div></div></div>',unsafe_allow_html=True)
             nt=st.text_input("Título *",key="np_t",placeholder="Título da pesquisa…")
             nab=st.text_area("Resumo *",key="np_ab",height=100,placeholder="Descreva sua pesquisa…")
             c1c,c2c,c3c=st.columns(3)
@@ -1472,7 +1462,7 @@ def page_feed():
             sn+=1
             is_fol=ue in st.session_state.followed; uin_r=ini(rn); rg=ugrad(ue); online=is_online(ue)
             dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
-            st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)">{avh(uin_r,30,rg)}<div style="flex:1;min-width:0"><div style="font-size:.75rem;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{dot}{rn}</div><div style="font-size:.59rem;color:var(--t3)">{ud.get("area","")[:20]}</div></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)">{avh(uin_r,30,rg)}<div style="flex:1;min-width:0"><div style="font-size:.75rem;font-weight:600;color:var(--t1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{dot}{rn}</div><div style="font-size:.59rem;color:var(--t3)}">{ud.get("area","")[:20]}</div></div></div>',unsafe_allow_html=True)
             cf2,cv2=st.columns(2)
             with cf2:
                 if st.button("Seguir" if not is_fol else "Seguindo",key=f"sf_{ue}",use_container_width=True):
@@ -1525,7 +1515,7 @@ def page_search():
         fldr=res.get("folders",[])
         web=ss+[x for x in cr if not any(x["title"].lower()==s["title"].lower() for s in ss)]
         total=len(neb)+len(web)+len(fldr)
-        st.markdown(f'<div style="font-size:.65rem;color:var(--t2);margin-bottom:.8rem">Encontrados: <strong style="color:var(--t0)">{total}</strong> resultados . {len(neb)} na plataforma . {len(fldr)} em repositórios . {len(web)} na internet</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:.65rem;color:var(--t2);margin-bottom:.8rem">Encontrados: <strong style="color:var(--t0)}">{total}</strong> resultados . {len(neb)} na plataforma . {len(fldr)} em repositórios . {len(web)} na internet</div>',unsafe_allow_html=True)
         # Temporal analysis of results
         if neb or web:
             years_neb=[p.get("date","")[:4] for p in neb if p.get("date")]
@@ -1553,7 +1543,7 @@ def page_search():
                 st.markdown('<div style="font-size:.58rem;color:var(--orn);font-weight:700;margin:.7rem 0 .4rem;letter-spacing:.10em;text-transform:uppercase">. Encontrado nos seus repositórios</div>',unsafe_allow_html=True)
                 for fm in fldr[:4]:
                     kws=fm["analysis"].get("keywords",[]); rel=fm["analysis"].get("relevance_score",0)
-                    st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px"><span style="font-size:1rem">📁</span><div style="flex:1"><div style="font-family:Syne,sans-serif;font-size:.84rem;font-weight:700;color:var(--t0)">{fm["file"]}</div><div style="font-size:.63rem;color:var(--t3)">em: {fm["folder"]} . relevância: {rel}%</div><div style="margin-top:.25rem">{tags_html(kws[:5])}</div></div></div></div>',unsafe_allow_html=True)
+                    st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px"><span style="font-size:1rem">📁</span><div style="flex:1"><div style="font-family:Syne,sans-serif;font-size:.84rem;font-weight:700;color:var(--t0)}">{fm["file"]}</div><div style="font-size:.63rem;color:var(--t3)}">em: {fm["folder"]} . relevância: {rel}%</div><div style="margin-top:.25rem">{tags_html(kws[:5])}</div></div></div></div>',unsafe_allow_html=True)
             if web:
                 st.markdown('<div style="font-size:.58rem;color:var(--cya);font-weight:700;margin:.7rem 0 .4rem;letter-spacing:.10em;text-transform:uppercase">. Literatura científica</div>',unsafe_allow_html=True)
                 for idx,a in enumerate(web): render_article(a,idx=idx,ctx="all_w")
@@ -1677,9 +1667,9 @@ def page_knowledge():
             ts=tags_html(common[:5]) if common else '<span style="color:var(--t3);font-size:.63rem">via seguimento</span>'
             st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
                         f'{avh(ini(n1.get("name","?")),28,ugrad(e1))}'
-                        f'<span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{n1.get("name","?")}</span>'
+                        f'<span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)}">{n1.get("name","?")}</span>'
                         f'<span style="color:var(--t3);font-size:.7rem"> . </span>'
-                        f'<span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{n2.get("name","?")}</span>'
+                        f'<span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)}">{n2.get("name","?")}</span>'
                         f'{avh(ini(n2.get("name","?")),28,ugrad(e2))}'
                         f'<div style="flex:1">{ts}</div>'
                         f'<span style="font-size:.62rem;font-weight:700;color:{jac_color}">Jaccard {jac:.2f}</span>'
@@ -1719,8 +1709,8 @@ def page_knowledge():
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:.5rem">
     {avh(ini(rn),38,rg)}
     <div style="flex:1">
-      <div style="font-family:Syne,sans-serif;font-weight:700;font-size:.88rem;color:var(--t0)">{rn} {"✓" if sud.get("verified") else ""}</div>
-      <div style="font-size:.64rem;color:var(--t3)">{sud.get("area","")} . {sud.get("bolsa_afiliacao","")} . {sug["n_posts"]} pesquisas</div>
+      <div style="font-family:Syne,sans-serif;font-weight:700;font-size:.88rem;color:var(--t0)}">{rn} {"✓" if sud.get("verified") else ""}</div>
+      <div style="font-size:.64rem;color:var(--t3)}">{sud.get("area","")} . {sud.get("bolsa_afiliacao","")} . {sug["n_posts"]} pesquisas</div>
     </div>
     <div style="text-align:center;background:rgba(0,0,0,.25);border-radius:10px;padding:.38rem .65rem;flex-shrink:0">
       <div style="font-family:Syne,sans-serif;font-size:1.15rem;font-weight:900;color:{sc_c}">{sc}</div>
@@ -1775,7 +1765,7 @@ def page_knowledge():
         for e1,e2,common,jac,strength in sorted(mc,key=lambda x:-x[4]):
             oth=e2 if e1==email else e1; od=users.get(oth,{}); og=ugrad(oth)
             jac_c="#36B8A0" if jac>0.3 else "#0D7FE8"
-            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">{avh(ini(od.get("name","?")),34,og)}<div style="flex:1"><div style="font-weight:700;font-size:.82rem;font-family:Syne,sans-serif;color:var(--t0)">{od.get("name","?")}</div><div style="font-size:.65rem;color:var(--t3)">{od.get("area","")} . {od.get("bolsa_afiliacao","")}</div><div style="margin-top:.25rem">{tags_html(common[:4])}</div></div><span style="font-size:.62rem;color:{jac_c};font-weight:700">Jac {jac:.2f}</span></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">{avh(ini(od.get("name","?")),34,og)}<div style="flex:1"><div style="font-weight:700;font-size:.82rem;font-family:Syne,sans-serif;color:var(--t0)}">{od.get("name","?")}</div><div style="font-size:.65rem;color:var(--t3)}">{od.get("area","")} . {od.get("bolsa_afiliacao","")}</div><div style="margin-top:.25rem">{tags_html(common[:4])}</div></div><span style="font-size:.62rem;color:{jac_c};font-weight:700">Jac {jac:.2f}</span></div></div>',unsafe_allow_html=True)
             cv2,cm2,_=st.columns([1,1,4])
             with cv2:
                 if st.button("Ver Perfil",key=f"kv_{oth}",use_container_width=True): st.session_state.profile_view=oth; st.rerun()
@@ -1791,7 +1781,7 @@ def page_knowledge():
             if sq2 and sq2.lower() not in rn.lower() and sq2.lower() not in ua.lower(): continue
             is_fol=ue in st.session_state.followed; rg=ugrad(ue)
             common_t=rtags.get(email,set())&rtags.get(ue,set()); jac_s=jaccard(rtags.get(email,set()),rtags.get(ue,set()))
-            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{avh(ini(rn),34,rg)}<div style="flex:1"><div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{rn}</div><div style="font-size:.63rem;color:var(--t3)">{ua} . {ud.get("bolsa_afiliacao","")}</div>{f"<div style='margin-top:.2rem'>{tags_html(list(common_t)[:3])}</div>" if common_t else ""}</div><span style="font-size:.60rem;color:{"#36B8A0" if jac_s>0.2 else "#5A6180"};font-weight:600">Sim. {jac_s:.0%}</span></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{avh(ini(rn),34,rg)}<div style="flex:1"><div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)}">{rn}</div><div style="font-size:.63rem;color:var(--t3)}">{ua} . {ud.get("bolsa_afiliacao","")}</div>{f"<div style='margin-top:.2rem'>{tags_html(list(common_t)[:3])}</div>" if common_t else ""}</div><span style="font-size:.60rem;color:{"#36B8A0" if jac_s>0.2 else "#5A6180"};font-weight:600">Sim. {jac_s:.0%}</span></div></div>',unsafe_allow_html=True)
             ca2,cb2,cc2=st.columns(3)
             with ca2:
                 if st.button("Ver Perfil",key=f"av_{ue}",use_container_width=True): st.session_state.profile_view=ue; st.rerun()
@@ -1836,7 +1826,7 @@ def page_repository():
         if st.button("Criar Repositório",key="btn_nf",use_container_width=True):
             if nfn.strip():
                 if nfn not in st.session_state.folders:
-                    st.session_state.folders[fn]={"desc":nfd,"type":nft,"files":[],"notes":"","analyses":{},"created":datetime.now().strftime("%Y-%m-%d"),"tags":[],"owner_email":email}
+                    st.session_state.folders[nfn]={"desc":nfd,"type":nft,"files":[],"notes":"","analyses":{},"created":datetime.now().strftime("%Y-%m-%d"),"tags":[],"owner_email":email}
                     save_db(); st.success(f"Repositório '{nfn}' criado!"); st.rerun()
                 else: st.warning("Já existe.")
             else: st.warning("Digite um nome.")
@@ -1865,7 +1855,7 @@ def page_repository():
         analyzed_count=len(analyses)
 
         with st.expander(f"{'📁' if not analyses else '📂'} {fn} . {len(files)} arq. . {analyzed_count} analisados"):
-            st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.6rem"><span class="{badge_cls}">{ftype_badge}</span><span style="font-size:.65rem;color:var(--t3)">{fd.get("desc","")}</span><span style="font-size:.62rem;color:var(--t4);margin-left:auto">Criado: {created}</span></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.6rem"><span class="{badge_cls}">{ftype_badge}</span><span style="font-size:.65rem;color:var(--t3)}">{fd.get("desc","")}</span><span style="font-size:.62rem;color:var(--t4);margin-left:auto">Criado: {created}</span></div>',unsafe_allow_html=True)
 
             # Upload
             up=st.file_uploader("Carregar arquivos",type=None,key=f"up_{fn}",label_visibility="collapsed",accept_multiple_files=True)
@@ -1938,10 +1928,10 @@ def page_repository():
                         st.markdown(f'<div class="abox"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.86rem;margin-bottom:.28rem">{f}</div>'
                                     f'<div style="font-size:.74rem;color:var(--t2);margin-bottom:.45rem">{an.get("summary","")}</div>'
                                     f'<div style="display:flex;gap:1.4rem;margin-top:.4rem">'
-                                    f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:{rc}">{rel}%</div><div style="font-size:.54rem;color:var(--t3);text-transform:uppercase">Relevância</div></div>'
-                                    f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--cya)">{wq}%</div><div style="font-size:.54rem;color:var(--t3);text-transform:uppercase">Qualidade</div></div>'
-                                    f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--orn)">{an.get("word_count",0)}</div><div class="mlbl">Palavras</div></div>'
-                                    f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--pur)">{an.get("reading_time",0)}min</div><div class="mlbl">Leitura</div></div>'
+                                    f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:{rc}">{rel}%</div><div class="mlbl">Relevância</div></div>'
+                                    f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--cya)}">{wq}%</div><div class="mlbl">Qualidade</div></div>'
+                                    f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--orn)}">{an.get("word_count",0)}</div><div class="mlbl">Palavras</div></div>'
+                                    f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--pur)}">{an.get("reading_time",0)}min</div><div class="mlbl">Leitura</div></div>'
                                     f'</div></div>',unsafe_allow_html=True)
                         if kws: st.markdown(tags_html(kws[:18]),unsafe_allow_html=True)
                         if topics:
@@ -2024,7 +2014,7 @@ def page_analytics():
                 st.plotly_chart(fig_eng,use_container_width=True)
                 st.markdown('</div>',unsafe_allow_html=True)
             for p in sorted(my_posts,key=lambda x:x.get("date",""),reverse=True):
-                st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0)">{p["title"][:55]}</div>{badge(p["status"])}</div><div style="font-size:.67rem;color:var(--t3);margin-top:.32rem">{p.get("date","")} . Curtidas:{p["likes"]} . Citações:{p.get("citations",0)} . Comentários:{len(p.get("comments",[]))} . Visualizações:{fmt_num(p.get("views",0))}</div></div>',unsafe_allow_html=True)
+                st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0)}">{p["title"][:55]}</div>{badge(p["status"])}</div><div style="font-size:.67rem;color:var(--t3);margin-top:.32rem">{p.get("date","")} . Curtidas:{p["likes"]} . Citações:{p.get("citations",0)} . Comentários:{len(p.get("comments",[]))} . Visualizações:{fmt_num(p.get("views",0))}</div></div>',unsafe_allow_html=True)
 
     with ti:
         c1,c2,c3=st.columns(3)
@@ -2050,7 +2040,7 @@ def page_analytics():
                 st.markdown('</div>',unsafe_allow_html=True)
             for t,s in top[:10]:
                 norm=s/mx*100
-                st.markdown(f'<div style="margin-bottom:.3rem"><div style="display:flex;justify-content:space-between;font-size:.71rem;margin-bottom:3px"><span style="color:var(--t1)">{t}</span><span style="color:var(--t3)">{round(norm)}%</span></div>{prog_bar(norm,"#0D7FE8")}</div>',unsafe_allow_html=True)
+                st.markdown(f'<div style="margin-bottom:.3rem"><div style="display:flex;justify-content:space-between;font-size:.71rem;margin-bottom:3px"><span style="color:var(--t1)}">{t}</span><span style="color:var(--t3)}">{round(norm)}%</span></div>{prog_bar(norm,"#0D7FE8")}</div>',unsafe_allow_html=True)
         else: st.info("Interaja com pesquisas para mapear interesses.")
 
     # Tendências globais da plataforma (movido para cá)
@@ -2135,7 +2125,7 @@ def page_img_search():
     </div>
   </div>
   <div style="display:flex;flex-wrap:wrap;gap:4px">
-    {"".join(f'<span style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:2px 8px;font-size:.59rem;color:var(--t3)">{k}: {v}pt</span>' for k,v in cls_["all_scores"].items())}
+    {"".join(f'<span style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:20px;padding:2px 8px;font-size:.59rem;color:var(--t3)}">{k}: {v}pt</span>' for k,v in cls_["all_scores"].items())}
   </div>
 </div>''',unsafe_allow_html=True)
                 sobel_r=ml_result.get("sobel",{}); orb_r=ml_result.get("orb",{}); glcm_r=ml_result.get("glcm",{}); fft_r=ml_result.get("fft",{})
@@ -2170,7 +2160,7 @@ def page_img_search():
                             st.markdown('<div class="chart-wrap">',unsafe_allow_html=True)
                             st.plotly_chart(fig_kp,use_container_width=True)
                             st.markdown('</div>',unsafe_allow_html=True)
-                    st.markdown(f'<div class="pbox-teal"><div style="font-size:.65rem;color:var(--teal);font-weight:700;margin-bottom:.25rem">Interpretação</div><div style="font-size:.72rem;color:var(--t2)">{"Alta densidade de features — muitas estruturas distintas" if n_kp>100 else "Densidade moderada de features" if n_kp>40 else "Baixa densidade — imagem mais homogênea"}</div></div>',unsafe_allow_html=True)
+                    st.markdown(f'<div class="pbox-teal"><div style="font-size:.65rem;color:var(--teal);font-weight:700;margin-bottom:.25rem">Interpretação</div><div style="font-size:.72rem;color:var(--t2)}">{"Alta densidade de features — muitas estruturas distintas" if n_kp>100 else "Densidade moderada de features" if n_kp>40 else "Baixa densidade — imagem mais homogênea"}</div></div>',unsafe_allow_html=True)
                 with t3:
                     glcm_props=[(k,v) for k,v in glcm_r.items() if k not in ['error','texture_type'] and isinstance(v,float)]
                     if glcm_props:
@@ -2226,12 +2216,12 @@ def page_img_search():
     <strong style="color:var(--t1)">Representação Científica:</strong> {ai_data.get("representacao_cientifica","—")}
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.4rem">
-    <div style="font-size:.70rem;color:var(--t2)">Técnica: <strong style="color:var(--t1)">{ai_data.get("tecnica_experimental","—")}</strong></div>
+    <div style="font-size:.70rem;color:var(--t2)">Técnica: <strong style="color:var(--t1)}">{ai_data.get("tecnica_experimental","—")}</strong></div>
     <div style="font-size:.70rem;color:var(--t2)">Qualidade: <strong style="color:var(--acc)}">{ai_data.get("qualidade_tecnica","—")}</strong></div>
     <div style="font-size:.70rem;color:var(--t2)">Confiança IA: <strong style="color:var(--teal)}">{ai_data.get("confianca_ia",0)}%</strong></div>
   </div>
   {f"<div style='font-size:.70rem;color:var(--t2);margin-bottom:.35rem'>Estruturas Chave: {', '.join(ai_data.get('estruturas_chave',[]))}</div>" if ai_data.get("estruturas_chave") else ""}
-  {f"<div style='background:rgba(54,184,160,.05);border:1px solid rgba(54,184,160,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65'><strong style='color:var(--teal)'>Observações:</strong> {ai_data.get('observacoes_adicionais','')}</div>" if ai_data.get("observacoes_adicionais") else ""}
+  {f"<div style='background:rgba(54,184,160,.05);border:1px solid rgba(54,184,160,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65'><strong style='color:var(--teal)'>Observações:</strong> {ai_data.get('observacoes_adicionais','')}.</div>" if ai_data.get("observacoes_adicionais") else ""}
   {f"<div style='font-size:.70rem;color:var(--t2);margin-top:.35rem'>Metodologias Sugeridas: {', '.join(ai_data.get('metodologias_complementares_sugeridas',[]))}</div>" if ai_data.get("metodologias_complementares_sugeridas") else ""}
   {f"<div style='font-size:.70rem;color:var(--t2)'>Áreas de Colaboração: {', '.join(ai_data.get('areas_de_colaboracao_potencial',[]))}</div>" if ai_data.get("areas_de_colaboracao_potencial") else ""}
 </div>''',unsafe_allow_html=True)
@@ -2299,7 +2289,7 @@ def page_chat():
             active=st.session_state.active_chat==ue; online=is_online(ue)
             dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
             bg=f"rgba(13,127,232,.1)" if active else "rgba(255,255,255,.04)"; bdr=f"rgba(13,127,232,.25)" if active else "rgba(255,255,255,.08)"
-            st.markdown(f'<div style="background:{bg};border:1px solid {bdr};border-radius:12px;padding:8px 10px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:7px">{avh(ui,30,ug)}<div style="overflow:hidden;flex:1"><div style="font-size:.75rem;font-weight:600;font-family:Syne,sans-serif;color:var(--t0)">{dot}{un}</div><div style="font-size:.62rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="background:{bg};border:1px solid {bdr};border-radius:12px;padding:8px 10px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:7px">{avh(ui,30,ug)}<div style="overflow:hidden;flex:1"><div style="font-size:.75rem;font-weight:600;font-family:Syne,sans-serif;color:var(--t0)}">{dot}{un}</div><div style="font-size:.62rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>',unsafe_allow_html=True)
             if st.button("Abrir",key=f"oc_{ue}",use_container_width=True): st.session_state.active_chat=ue; st.rerun()
         st.markdown("<hr>",unsafe_allow_html=True)
         nc2=st.text_input("",placeholder="E-mail do pesquisador…",key="new_ct",label_visibility="collapsed")
@@ -2312,7 +2302,7 @@ def page_chat():
             contact=st.session_state.active_chat; cd=users.get(contact,{})
             cn=cd.get("name","?"); ci=ini(cn); cg=ugrad(contact); msgs=st.session_state.chat_messages.get(contact,[])
             online=is_online(contact); dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
-            st.markdown(f'<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px 14px;margin-bottom:.85rem;display:flex;align-items:center;gap:10px">{avh(ci,36,cg)}<div style="flex:1"><div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif;color:var(--t0)">{dot}{cn}</div><div style="font-size:.63rem;color:var(--teal)">Criptografado E2E</div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px 14px;margin-bottom:.85rem;display:flex;align-items:center;gap:10px">{avh(ci,36,cg)}<div style="flex:1"><div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif;color:var(--t0)}">{dot}{cn}</div><div style="font-size:.63rem;color:var(--teal)}">Criptografado E2E</div></div>',unsafe_allow_html=True)
             if st.button("Ver Perfil",key="chat_profile",use_container_width=False): st.session_state.profile_view=contact; st.rerun()
             st.markdown('</div>',unsafe_allow_html=True)
             for msg in msgs:
@@ -2364,7 +2354,7 @@ def page_settings():
                 else: st.session_state.users[email]["password"]=hp(np2); save_db(); st.success("Senha alterada!")
         st.markdown("<hr>",unsafe_allow_html=True)
         for nm,ds,ic in [("AES-256","Mensagens end-to-end","🔒"),("SHA-256","Hash de senhas","🔏"),("TLS 1.3","Transmissão segura","🛡")]:
-            st.markdown(f'<div class="pbox-teal"><div style="display:flex;align-items:center;gap:9px"><span style="font-size:1rem">{ic}</span><div><div style="font-weight:700;color:var(--teal);font-size:.78rem">{nm}</div><div style="font-size:.65rem;color:var(--t3)">{ds}</div></div><span class="badge-teal" style="margin-left:auto">Ativo</span></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="pbox-teal"><div style="display:flex;align-items:center;gap:9px"><span style="font-size:1rem">{ic}</span><div><div style="font-weight:700;color:var(--teal);font-size:.78rem">{nm}</div><div style="font-size:.65rem;color:var(--t3)}">{ds}</div></div><span class="badge-teal" style="margin-left:auto">Ativo</span></div></div>',unsafe_allow_html=True)
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ================================================
