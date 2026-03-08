@@ -313,7 +313,7 @@ def sobel_analysis(gray_arr):
                 padded=np.pad(img,((ph,ph),(pw,pw)),mode='edge')
                 out=np.zeros_like(img)
                 for i in range(k.shape[0]):
-                    for j in range(k.shape[1]): out+=k[i,j]*padded[i:i+img.shape[0],j:j+img.shape[1]]
+                    for j in range(k.shape[1]): out+=k[i,j]*padded[i:i+img.shape[0],j:j+img[1]]
                 return out
             sx=conv2d(gray_arr.astype(np.float32),kx); sy=conv2d(gray_arr.astype(np.float32),kx.T)
         magnitude=np.sqrt(sx**2+sy**2)
@@ -782,7 +782,7 @@ section[data-testid="stSidebar"] .stButton>button span{{color:inherit!important;
 .scard:hover{{border-color:rgba(13,127,232,.2);transform:translateY(-1px);box-shadow:0 4px 20px rgba(13,127,232,.08);}}
 
 .mbox{{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:var(--r16);padding:.9rem;text-align:center;}}
-.abox{{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.09);border-radius:var(--r16);padding:1rem;margin-bottom:.6rem;}}
+.abox{{background:rgba(255,255,255,.05);border:19x solid rgba(255,255,255,.09);border-radius:var(--r16);padding:1rem;margin-bottom:.6rem;}}
 
 /* Analysis boxes */
 .pbox-acc{{background:rgba(13,127,232,.06);border:1px solid rgba(13,127,232,.18);border-radius:var(--r12);padding:.85rem;margin-bottom:.5rem;}}
@@ -1167,7 +1167,7 @@ def page_profile(target_email):
       <span style="font-family:Syne,sans-serif;font-weight:800;font-size:1.35rem;color:var(--t0)">{tname}</span>{vb}
     </div>
     <div style="color:var(--acc);font-size:.80rem;font-weight:600;margin-bottom:.12rem">{tu.get("area","")}</div>
-    <div style="color:var(--t3);font-size:.70rem;margin-bottom:.3rem">{tu.get("scholarship","")} {"· ORCID: "+tu.get("orcid","") if tu.get("orcid") else ""}</div>
+    <div style="color:var(--t3);font-size:.70rem;margin-bottom:.3rem">{tu.get("scholarship","")} {"· ORCID: "+tu.get("orcid","") if tu.get("orcid") else ""}<br>
     <div style="color:var(--t2);font-size:.77rem;line-height:1.7;margin-bottom:.7rem">{tu.get("bio","Sem biografia.")}</div>
     <div style="display:flex;gap:1.6rem;flex-wrap:wrap">
       <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{tu.get("followers",0)}</span><span style="color:var(--t3);font-size:.67rem"> seguidores</span></div>
@@ -1212,7 +1212,7 @@ def page_profile(target_email):
             with cs:
                 if st.button("Salvar",key="btn_sp",use_container_width=True): # Removed emoji
                     st.session_state.users[email].update({"name":new_n,"area":new_a,"bio":new_b,"scholarship":new_sch,"orcid":new_orcid}) # Changed to scholarship
-                    save_db(); st.success("Salvo!"); st.rerun() # Removed emoji
+                    save_db(); st.success("Salvo!") # Removed emoji
             with co:
                 if st.button("Sair",key="btn_out",use_container_width=True): # Removed emoji
                     st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
@@ -1320,7 +1320,7 @@ def page_search():
     <div style="font-size:.70rem;color:var(--t2)">Qualidade: <strong style="color:var(--acc)">{ai_data.get("qualidade_visual","—")}</strong></div>
     <div style="font-size:.70rem;color:var(--t2)">Confiança IA: <strong style="color:var(--teal)">{ai_data.get("confianca_analise_ia",0)}%</strong></div>
   </div>
-  {f"<div style='font-size:.70rem;color:var(--t2);margin-bottom:.35rem'>Elementos: {', '.join(ai_data.get('elementos_identificados',[]))}</div>" if ai_data.get("elementos_identificados") else ""}
+  {f"<div style='font-size:.70rem;color:var(--t2);margin-bottom:.35rem'>Estruturas: {', '.join(ai_data.get('elementos_identificados',[]))}</div>" if ai_data.get("elementos_identificados") else ""}
   {f"<div style='background:rgba(54,184,160,.05);border:1px solid rgba(54,184,160,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65'><strong style='color:var(--teal)'>Observações:</strong> {ai_data.get('observacoes_adicionais','')}</div>" if ai_data.get("observacoes_adicionais") else ""}
   {f"<div style='background:rgba(13,127,232,.05);border:1px solid rgba(13,127,232,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65;margin-top:.5rem'><strong style='color:var(--acc)'>Aprofundamento:</strong> {ai_data.get('metodologia_sugerida_aprofundamento','')}</div>" if ai_data.get("metodologia_sugerida_aprofundamento") else ""}
 </div>''', unsafe_allow_html=True)
@@ -1364,13 +1364,12 @@ def page_search():
         total=len(neb)+len(web)+len(fldr)
         st.markdown(f'<div style="font-size:.65rem;color:var(--t2);margin-bottom:.8rem">Encontrados: <strong style="color:var(--t0)">{total}</strong> resultados · {len(neb)} na plataforma · {len(fldr)} em pastas · {len(web)} na internet</div>',unsafe_allow_html=True)
         # Temporal analysis of results
-        if neb:
+        if len(all_years)>1: # This block was missing `all_years` definition if `neb` was empty
             years=[p.get("date","")[:4] for p in neb if p.get("date")]
             year_counts=Counter(years)
-        web_years=[str(a.get("year","")) for a in web if a.get("year")]
-        web_year_counts=Counter(web_years)
-        all_years=sorted(set(list(year_counts.keys() if neb else [])+list(web_year_counts.keys())))
-        if len(all_years)>1:
+            web_years=[str(a.get("year","")) for a in web if a.get("year")]
+            web_year_counts=Counter(web_years)
+            all_years=sorted(set(list(year_counts.keys() if neb else [])+list(web_year_counts.keys())))
             combined={y:year_counts.get(y,0)+web_year_counts.get(y,0) for y in all_years}
             fig_t=go.Figure(go.Bar(x=list(combined.keys()),y=list(combined.values()),
                                     marker=dict(color=list(range(len(combined))),colorscale=[[0,BG_COLOR_DARK],[1,PRIMARY_COLOR]]),
@@ -1580,7 +1579,7 @@ def page_knowledge():
         fig_m=go.Figure(go.Heatmap(z=matrix,x=names,y=names,
                                     colorscale=[[0,BG_COLOR_DARK],[0.3,BG_COLOR_MEDIUM],[0.7,PRIMARY_COLOR],[1,SECONDARY_COLOR]],
                                     zmin=0,zmax=1,text=[[f"{v:.2f}" for v in row] for row in matrix],
-                                    texttemplate="%{text}",textfont=dict(size=8,color="rgba(255,255,255,.5)")))
+                                    texttemplate="%{{text}}",textfont=dict(size=8,color="rgba(255,255,255,.5)"))) # Corrected f-string here
         fig_m.update_layout(height=350,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
                              font=dict(color=TEXT_COLOR_DARK,size=9),margin=dict(l=80,r=10,t=10,b=80),
                              xaxis=dict(tickfont=dict(size=8)),yaxis=dict(tickfont=dict(size=8)))
@@ -1749,14 +1748,14 @@ def page_repository():
                         if fn not in st.session_state.folder_files_bytes: st.session_state.folder_files_bytes[fn]={}
                         uf.seek(0); st.session_state.folder_files_bytes[fn][uf.name]=uf.read()
                     fd["files"]=files; save_db(); st.success(f" {len(up)} arquivo(s) adicionado(s)!") # Removed emoji
-
+                    st.rerun()
                 # File list
                 if files:
                     for f in files:
                         ft=ftype(f); ha=f in analyses
                         icon={"PDF":"📄","Word":"📝","Planilha":"📊","Dados":"📈","Código":"🐍","Imagem":"🖼","Markdown":"📋","Notebook":"📓"}.get(ft,"📄")
                         an_badge=f'<span class="badge-teal" style="font-size:.55rem">analisado</span>' if ha else "" # Removed emoji
-                        rel_score=analyses[f].get("relevance_score",0) if ha else 0
+                        rel_score=analyses[f].get("relevance_score",0) if ha else ""
                         rel_bar=prog_bar(rel_score,SECONDARY_COLOR) if ha else ""
                         rm_uid=re.sub(r'[^a-zA-Z0-9]','',f"rmf_{fn}_{f}")[:28]
                         st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>{icon}</span><div style="flex:1"><div style="font-size:.74rem;color:var(--t1);font-weight:500">{f} {an_badge}</div>{rel_bar}</div></div>',unsafe_allow_html=True)
@@ -1813,7 +1812,7 @@ def page_repository():
                             st.markdown(f'<div class="abox"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.86rem;margin-bottom:.28rem">{f}</div>'
                                         f'<div style="font-size:.74rem;color:var(--t2);margin-bottom:.45rem">{an.get("summary","")}</div>'
                                         f'<div style="display:flex;gap:1.4rem;margin-top:.4rem">'
-                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:{rc}">{rel}%</div><div style="font-size:.54rem;color:var(--t3);text-transform:uppercase">Relevância</div></div>'
+                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:{rc}">{rel}%</div><div class="mlbl">Relevância</div></div>'
                                         f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--cya)}">{wq}%</div><div class="mlbl">Qualidade</div></div>'
                                         f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--orn)}">{an.get("word_count",0)}</div><div class="mlbl">Palavras</div></div>'
                                         f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--pur)}">{an.get("reading_time",0)}min</div><div class="mlbl">Leitura</div></div>'
