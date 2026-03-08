@@ -672,7 +672,7 @@ def inject_css():
   --r8:8px;--r12:12px;--r16:16px;--r20:20px;--r28:28px;
   --gls:rgba(13,127,232,.08);--gls-bdr:rgba(13,127,232,.18);
 }}
-*,*::before,*::after{{box-sizing:border-box;margin:0;padding:0}}
+*,*::before,**::after{{box-sizing:border-box;margin:0;padding:0}}
 html,body,.stApp{{background:var(--bg)!important;color:var(--t1)!important;font-family:'DM Sans',-apple-system,sans-serif!important;}}
 
 /* Removed ambient background animations */
@@ -892,11 +892,11 @@ def avh(initials,sz=40,grad=None):
     return f'<div style="width:{sz}px;height:{sz}px;border-radius:50%;background:{bg};display:flex;align-items:center;justify-content:center;font-family:Syne,sans-serif;font-weight:800;font-size:{fs}px;color:white;flex-shrink:0;border:1.5px solid rgba(255,255,255,.12)">{initials}</div>'
 
 def tags_html(tags):
-    return ' '.join(f'<span class="tag">{t}</span>' for t in (tags or []))
+    return ' '.join(f'<span class="tag">{{t}}</span>' for t in (tags or []))
 
 def badge(s):
     m={"Publicado":"badge-teal","Concluído":"badge-pur"}
-    return f'<span class="{m.get(s,"badge-acc")}">{s}</span>'
+    return f'<span class="{m.get(s,"badge-acc")}">{{s}}</span>'
 
 def prog_bar(val,color=PRIMARY_COLOR,max_val=100):
     pct=min(100,val/max_val*100) if max_val>0 else 0
@@ -933,7 +933,7 @@ def render_nav():
                               f' .stButton>button{{color:{c}!important;-webkit-text-fill-color:{c}!important;'
                               f'background:{BUTTON_HOVER_BG}!important;border-color:{c}33!important;font-weight:700!important;'
                               f'box-shadow:0 0 0 1px {c}20 inset,0 4px 16px rgba(13,127,232,.15)!important;}}')
-        if active_css: st.markdown(f'<style>{active_css}</style>',unsafe_allow_html=True)
+        if active_css: st.markdown(f'<style>{{active_css}}</style>',unsafe_allow_html=True) # Corrected f-string here
         for key,label,col in NAV:
             if st.button(label,key=f"sb_{key}",use_container_width=True):
                 st.session_state.profile_view=None
@@ -942,7 +942,7 @@ def render_nav():
         # Notifications - Removed emoji
         notifs=st.session_state.get("notifications",[])
         if notifs:
-            st.markdown(f'<div style="margin:.6rem .2rem .35rem;font-size:.57rem;color:var(--acc);font-weight:700;letter-spacing:.09em;text-transform:uppercase"> {len(notifs)} notificações</div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="margin:.6rem .2rem .35rem;font-size:.57rem;color:var(--acc);font-weight:700;letter-spacing:.09em;text-transform:uppercase"> {{len(notifs)}} notificações</div>',unsafe_allow_html=True) # Corrected f-string here
         st.markdown("<hr>",unsafe_allow_html=True)
         st.markdown('<div class="sb-lbl">Claude API Key</div>',unsafe_allow_html=True)
         ak=st.text_input("",placeholder="sk-ant-...",type="password",key="sb_apikey",label_visibility="collapsed",value=st.session_state.anthropic_key)
@@ -952,7 +952,7 @@ def render_nav():
         else:
             st.markdown(f'<div style="font-size:.54rem;color:var(--t4);padding:.1rem .2rem">● Insira chave para IA avançada</div>',unsafe_allow_html=True)
         st.markdown("<hr>",unsafe_allow_html=True)
-        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.2rem .1rem">{avh(ini_,32,g)}<div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:#FFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:128px">{name}</div><div style="font-size:.57rem;color:var(--t3)">{u.get("area","")[:18]}</div></div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.2rem .1rem">{{avh(ini_,32,g)}}<div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;color:#FFF;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:128px">{{name}}</div><div style="font-size:.57rem;color:var(--t3)">{{u.get("area","")[:18]}}</div></div></div>',unsafe_allow_html=True) # Corrected f-string here
         if st.button("Meu Perfil",key="sb_myprofile",use_container_width=True):
             st.session_state.profile_view=email
             st.session_state.page="repository" # Changed to repository as main page
@@ -970,27 +970,27 @@ def render_post(post,ctx="feed",show_author=True,compact=False):
     if compact and len(ab)>220: ab=ab[:220]+"…"
     if show_author:
         hdr=(f'<div style="padding:.75rem 1.1rem .5rem;display:flex;align-items:center;gap:9px;border-bottom:1px solid rgba(255,255,255,.04)">'
-             f'{avh(ain,36,g)}<div style="flex:1;min-width:0">'
-             f'<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.85rem;color:var(--t0)">{aname}</div>'
-             f'<div style="color:var(--t3);font-size:.62rem">{post.get("area","")} · {dt}</div>'
-             f'</div>{badge(post["status"])}</div>')
+             f'{{avh(ain,36,g)}}<div style="flex:1;min-width:0">' # Corrected f-string here
+             f'<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.85rem;color:var(--t0)">{{aname}}</div>' # Corrected f-string here
+             f'<div style="color:var(--t3);font-size:.62rem">{{post.get("area","")}} · {{dt}}</div>' # Corrected f-string here
+             f'</div>{{badge(post["status"])}}</div>') # Corrected f-string here
     else:
-        hdr=f'<div style="padding:.3rem 1.1rem .12rem;display:flex;justify-content:space-between;align-items:center"><span style="color:var(--t3);font-size:.62rem">{dt}</span>{badge(post["status"])}</div>'
+        hdr=f'<div style="padding:.3rem 1.1rem .12rem;display:flex;justify-content:space-between;align-items:center"><span style="color:var(--t3);font-size:.62rem">{{dt}}</span>{{badge(post["status"])}}</div>' # Corrected f-string here
     citations=post.get("citations",0)
-    cit_html=f'<span style="font-size:.62rem;color:var(--t2);margin-left:8px"> {citations} cit.</span>' if citations else ""
-    st.markdown(f'<div class="post-card">{hdr}<div style="padding:.6rem 1.1rem">'
-                f'<div style="font-family:Syne,sans-serif;font-size:.95rem;font-weight:700;margin-bottom:.28rem;color:var(--t0)">{post["title"]}{cit_html}</div>'
-                f'<div style="color:var(--t2);font-size:.78rem;line-height:1.65;margin-bottom:.48rem">{ab}</div>'
-                f'<div>{tags_html(post.get("tags",[]))}</div></div></div>',unsafe_allow_html=True)
+    cit_html=f'<span style="font-size:.62rem;color:var(--t2);margin-left:8px"> {{citations}} cit.</span>' if citations else "" # Corrected f-string here
+    st.markdown(f'<div class="post-card">{{hdr}}<div style="padding:.6rem 1.1rem">' # Corrected f-string here
+                f'<div style="font-family:Syne,sans-serif;font-size:.95rem;font-weight:700;margin-bottom:.28rem;color:var(--t0)">{{post["title"]}}{{cit_html}}</div>' # Corrected f-string here
+                f'<div style="color:var(--t2);font-size:.78rem;line-height:1.65;margin-bottom:.48rem">{{ab}}</div>' # Corrected f-string here
+                f'<div>{{tags_html(post.get("tags",[]))}}</div></div></div>',unsafe_allow_html=True) # Corrected f-string here
     heart=" " if liked else " "; book=" " if saved else " "; nc=len(post.get("comments",[])) # Removed emojis
     ca,cb,cc,cd,ce,cf=st.columns([1.1,1,.65,.55,1,1.1])
     with ca:
-        if st.button(f"{heart} {fmt_num(post['likes'])}",key=f"lk_{ctx}_{pid}",use_container_width=True):
+        if st.button(f"{heart} {{fmt_num(post['likes'])}}",key=f"lk_{ctx}_{pid}",use_container_width=True): # Corrected f-string here
             if liked: post["liked_by"].remove(email); post["likes"]=max(0,post["likes"]-1)
             else: post["liked_by"].append(email); post["likes"]+=1; record(post.get("tags",[]),1.5)
             save_db(); st.rerun()
     with cb:
-        if st.button(f" {nc}" if nc else " ",key=f"cm_{ctx}_{pid}",use_container_width=True): # Removed emojis
+        if st.button(f" {{nc}}" if nc else " ",key=f"cm_{ctx}_{pid}",use_container_width=True): # Corrected f-string here
             k=f"cmt_{ctx}_{pid}"; st.session_state[k]=not st.session_state.get(k,False); st.rerun()
     with cc:
         if st.button(book,key=f"sv_{ctx}_{pid}",use_container_width=True):
@@ -1001,10 +1001,10 @@ def render_post(post,ctx="feed",show_author=True,compact=False):
         if st.button("Análise",key=f"dp_{ctx}_{pid}",use_container_width=True): # Changed emoji to text
             st.session_state[f"deepan_{pid}"]=not st.session_state.get(f"deepan_{pid}",False); st.rerun()
     with ce:
-        st.markdown(f'<div style="text-align:center;color:var(--t3);font-size:.66rem;padding:.48rem 0"> {fmt_num(views)}</div>',unsafe_allow_html=True) # Removed emoji
+        st.markdown(f'<div style="text-align:center;color:var(--t3);font-size:.66rem;padding:.48rem 0"> {{fmt_num(views)}}</div>',unsafe_allow_html=True) # Corrected f-string here
     with cf:
         if show_author and aemail:
-            if st.button(f" {aname.split()[0]}",key=f"vp_{ctx}_{pid}",use_container_width=True): # Removed emoji
+            if st.button(f" {{aname.split()[0]}}",key=f"vp_{ctx}_{pid}",use_container_width=True): # Corrected f-string here
                 st.session_state.profile_view=aemail; st.rerun()
     # Deep analysis inline
     if st.session_state.get(f"deepan_{pid}",False):
@@ -1013,7 +1013,7 @@ def render_post(post,ctx="feed",show_author=True,compact=False):
     if st.session_state.get(f"cmt_{ctx}_{pid}",False):
         for c in post.get("comments",[]):
             ci=ini(c["user"]); ce2=next((e for e,u in st.session_state.users.items() if u.get("name")==c["user"]),""); cg=ugrad(ce2)
-            st.markdown(f'<div class="cmt"><div style="display:flex;align-items:center;gap:7px;margin-bottom:.2rem">{avh(ci,26,cg)}<span style="font-size:.73rem;font-weight:700;color:var(--acc)">{c["user"]}</span></div><div style="font-size:.78rem;color:var(--t2);line-height:1.55;padding-left:33px">{c["text"]}</div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="cmt"><div style="display:flex;align-items:center;gap:7px;margin-bottom:.2rem">{{avh(ci,26,cg)}}<span style="font-size:.73rem;font-weight:700;color:var(--acc)">{{c["user"]}}</span></div><div style="font-size:.78rem;color:var(--t2);line-height:1.55;padding-left:33px">{{c["text"]}}</div></div>',unsafe_allow_html=True) # Corrected f-string here
         nc_txt=st.text_input("",placeholder="Escreva um comentário…",key=f"ci_{ctx}_{pid}",label_visibility="collapsed")
         if st.button("Enviar",key=f"cs_{ctx}_{pid}"): # Removed emoji
             if nc_txt:
@@ -1039,12 +1039,12 @@ def render_post_deep_analysis(post,ctx=""):
     c1,c2,c3=st.columns(3)
     with c1:
         eg_c=SECONDARY_COLOR if engagement_score>60 else (WARNING_COLOR if engagement_score>30 else ERROR_COLOR)
-        st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.4rem;font-weight:900;color:{eg_c}">{engagement_score}</div><div class="mlbl">Engajamento</div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.4rem;font-weight:900;color:{eg_c}">{{engagement_score}}</div><div class="mlbl">Engajamento</div></div>',unsafe_allow_html=True) # Corrected f-string here
     with c2:
-        st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.4rem;font-weight:900;color:{TERTIARY_COLOR}">{novelty_score}</div><div class="mlbl">Novidade</div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.4rem;font-weight:900;color:{TERTIARY_COLOR}">{{novelty_score}}</div><div class="mlbl">Novidade</div></div>',unsafe_allow_html=True) # Corrected f-string here
     with c3:
         cc_=(SECONDARY_COLOR if completeness>80 else WARNING_COLOR)
-        st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.4rem;font-weight:900;color:{cc_}">{completeness}%</div><div class="mlbl">Completude</div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="mbox"><div style="font-family:Syne,sans-serif;font-size:1.4rem;font-weight:900;color:{cc_}">{{completeness}}%</div><div class="mlbl">Completude</div></div>',unsafe_allow_html=True) # Corrected f-string here
     # Improvement points
     improvements=[]
     if len(abstract)<300: improvements.append("Expandir o resumo com metodologia detalhada") # Removed emoji
@@ -1052,9 +1052,9 @@ def render_post_deep_analysis(post,ctx=""):
     if citations<5: improvements.append("Incluir mais referências bibliográficas") # Removed emoji
     if not post.get("methodology"): improvements.append("Especificar metodologia utilizada") # Removed emoji
     if improvements:
-        st.markdown(f'<div class="pbox-orn" style="margin-top:.5rem"><div style="font-size:.65rem;color:var(--orn);font-weight:700;margin-bottom:.4rem"> Sugestões de melhoria</div>{"".join(f"<div style=\"font-size:.73rem;color:var(--t2);margin-bottom:.22rem\">→ {imp}</div>" for imp in improvements)}</div>',unsafe_allow_html=True) # Removed emoji
+        st.markdown(f'<div class="pbox-orn" style="margin-top:.5rem"><div style="font-size:.65rem;color:var(--orn);font-weight:700;margin-bottom:.4rem"> Sugestões de melhoria</div>{{"".join(f"<div style=\"font-size:.73rem;color:var(--t2);margin-bottom:.22rem\">→ {{imp}}</div>" for imp in improvements)}}</div>',unsafe_allow_html=True) # Corrected f-string here
     if similar_posts:
-        st.markdown(f'<div style="font-size:.62rem;color:var(--t3);margin-top:.5rem;font-weight:600"> {len(similar_posts)} pesquisas similares na plataforma</div>',unsafe_allow_html=True) # Removed emoji
+        st.markdown(f'<div style="font-size:.62rem;color:var(--t3);margin-top:.5rem;font-weight:600"> {{len(similar_posts)}} pesquisas similares na plataforma</div>',unsafe_allow_html=True) # Corrected f-string here
     # AI Analysis button
     if api_key.startswith("sk-") if api_key else False:
         if st.button(f"Análise Claude IA",key=f"claude_an_{ctx}_{pid}"): # Removed emoji
@@ -1062,13 +1062,13 @@ def render_post_deep_analysis(post,ctx=""):
             with st.spinner("Claude analisando…"):
                 result,err=call_claude_analysis(content,api_key,"research")
             if result: st.session_state.deep_analysis_cache[cache_key]=result
-            elif err: st.error(f"Erro: {err}")
+            elif err: st.error(f"Erro: {{err}}") # Corrected f-string here
         da=st.session_state.deep_analysis_cache.get(cache_key)
         if da:
             st.markdown(f'<div style="margin-top:.6rem;background:rgba(155,111,212,.06);border:1px solid rgba(155,111,212,.18);border-radius:12px;padding:.8rem">'
                         f'<div style="font-size:.62rem;color:#B98FE8;font-weight:700;margin-bottom:.4rem"> Claude IA</div>' # Removed emoji
-                        f'<div style="font-size:.75rem;color:var(--t2);line-height:1.7">{da.get("resumo_executivo","")}</div>'
-                        f'<div style="margin-top:.5rem;font-size:.65rem;color:var(--t3)">Metodologia: <strong style="color:var(--t1)">{da.get("metodologia_score",0)}/100</strong> · Inovação: <strong style="color:var(--t1)">{da.get("inovacao_score",0)}/100</strong> · Impacto: <strong style="color:var(--teal)">{da.get("impacto_potencial","—")}</strong></div>'
+                        f'<div style="font-size:.75rem;color:var(--t2);line-height:1.7">{{da.get("resumo_executivo","")}}</div>' # Corrected f-string here
+                        f'<div style="margin-top:.5rem;font-size:.65rem;color:var(--t3)">Metodologia: <strong style="color:var(--t1)">{{da.get("metodologia_score",0)}}/100</strong> · Inovação: <strong style="color:var(--t1)">{{da.get("inovacao_score",0)}}/100</strong> · Impacto: <strong style="color:var(--teal)">{{da.get("impacto_potencial","—")}}</strong></div>' # Corrected f-string here
                         f'</div>',unsafe_allow_html=True)
     st.markdown('</div>',unsafe_allow_html=True)
 
@@ -1078,16 +1078,16 @@ def render_post_deep_analysis(post,ctx=""):
 def render_article(a,idx=0,ctx="web"):
     sc=PRIMARY_COLOR if a.get("origin")=="semantic" else SECONDARY_COLOR
     sn="Semantic Scholar" if a.get("origin")=="semantic" else "CrossRef"
-    cite=f" · {a['citations']} cit." if a.get("citations") else ""
-    uid=re.sub(r'[^a-zA-Z0-9]','',f"{ctx}_{idx}_{str(a.get('doi',''))[:10]}")[:32]
+    cite=f" · {{a['citations']}} cit." if a.get("citations") else "" # Corrected f-string here
+    uid=re.sub(r'[^a-zA-Z0-9]','',f"{{ctx}}_{{idx}}_{str(a.get('doi',''))[:10]}")[:32] # Corrected f-string here
     is_saved=any(s.get('doi')==a.get('doi') for s in st.session_state.saved_articles)
     ab=(a.get("abstract","") or "")[:280]+("…" if len(a.get("abstract",""))>280 else "")
-    year_badge=f'<span style="font-size:.58rem;color:#38C8F0;font-weight:700">{a.get("year","?")}</span>'
+    year_badge=f'<span style="font-size:.58rem;color:#38C8F0;font-weight:700">{{a.get("year","?")}}</span>' # Corrected f-string here
     st.markdown(f'<div class="scard"><div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:.28rem">'
-                f'<div style="flex:1;font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0)">{a["title"]}</div>'
-                f'<span style="font-size:.57rem;color:{sc};background:rgba(255,255,255,.04);border-radius:7px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{sn}</span></div>'
-                f'<div style="color:var(--t3);font-size:.63rem;margin-bottom:.3rem">{a["authors"]} · <em>{a["source"]}</em> · {year_badge}{cite}</div>'
-                f'<div style="color:var(--t2);font-size:.75rem;line-height:1.62">{ab}</div></div>',unsafe_allow_html=True)
+                f'<div style="flex:1;font-family:Syne,sans-serif;font-size:.86rem;font-weight:700;color:var(--t0)">{{a["title"]}}</div>' # Corrected f-string here
+                f'<span style="font-size:.57rem;color:{sc};background:rgba(255,255,255,.04);border-radius:7px;padding:2px 7px;white-space:nowrap;flex-shrink:0">{{sn}}</span></div>' # Corrected f-string here
+                f'<div style="color:var(--t3);font-size:.63rem;margin-bottom:.3rem">{{a["authors"]}} · <em>{{a["source"]}}</em> · {{year_badge}}{{cite}}</div>' # Corrected f-string here
+                f'<div style="color:var(--t2);font-size:.75rem;line-height:1.62">{{ab}}</div></div>',unsafe_allow_html=True) # Corrected f-string here
     ca,cb,cc=st.columns(3)
     with ca:
         cls="badge-teal" if is_saved else ""
@@ -1098,10 +1098,10 @@ def render_article(a,idx=0,ctx="web"):
             save_db(); st.rerun()
         st.markdown('</div>',unsafe_allow_html=True)
     with cb:
-        if st.button("Citar",key=f"ctw_{uid}"): st.toast(f'{a["authors"]} ({a["year"]}). {a["title"]}.') # Removed emoji
+        if st.button("Citar",key=f"ctw_{uid}"): st.toast(f'{{a["authors"]}} ({{a["year"]}}). {{a["title"]}}.') # Corrected f-string here
     with cc:
         if a.get("url"):
-            st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:var(--cya);font-size:.78rem;text-decoration:none;line-height:2.4;display:block"> Abrir PDF</a>',unsafe_allow_html=True) # Removed emoji
+            st.markdown(f'<a href="{{a["url"]}}" target="_blank" style="color:var(--cya);font-size:.78rem;text-decoration:none;line-height:2.4;display:block"> Abrir PDF</a>',unsafe_allow_html=True) # Corrected f-string here
 
 # ================================================
 #  PAGE: LOGIN
@@ -1161,24 +1161,24 @@ def page_profile(target_email):
     total_likes=sum(p["likes"] for p in user_posts); total_citations=sum(p.get("citations",0) for p in user_posts)
     vb=f' <span class="badge-teal" style="font-size:.6rem">Verificado</span>' if tu.get("verified") else "" # Removed emoji
     st.markdown(f"""<div class="prof-hero">
-  <div class="prof-av" style="background:{g}">{ti}</div>
+  <div class="prof-av" style="background:{g}">{{ti}}</div>
   <div style="flex:1">
     <div style="display:flex;align-items:center;gap:6px;margin-bottom:.22rem">
-      <span style="font-family:Syne,sans-serif;font-weight:800;font-size:1.35rem;color:var(--t0)">{tname}</span>{vb}
+      <span style="font-family:Syne,sans-serif;font-weight:800;font-size:1.35rem;color:var(--t0)">{{tname}}</span>{{vb}}
     </div>
-    <div style="color:var(--acc);font-size:.80rem;font-weight:600;margin-bottom:.12rem">{tu.get("area","")}</div>
-    <div style="color:var(--t3);font-size:.70rem;margin-bottom:.3rem">{tu.get("scholarship","")} {"· ORCID: "+tu.get("orcid","") if tu.get("orcid") else ""}</div>
-    <div style="color:var(--t2);font-size:.77rem;line-height:1.7;margin-bottom:.7rem">{tu.get("bio","Sem biografia.")}</div>
+    <div style="color:var(--acc);font-size:.80rem;font-weight:600;margin-bottom:.12rem">{{tu.get("area","")}}</div>
+    <div style="color:var(--t3);font-size:.70rem;margin-bottom:.3rem">{{tu.get("scholarship","")}} {{ "· ORCID: "+tu.get("orcid","") if tu.get("orcid") else ""}}</div>
+    <div style="color:var(--t2);font-size:.77rem;line-height:1.7;margin-bottom:.7rem">{{tu.get("bio","Sem biografia.")}}</div>
     <div style="display:flex;gap:1.6rem;flex-wrap:wrap">
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{tu.get("followers",0)}</span><span style="color:var(--t3);font-size:.67rem"> seguidores</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{tu.get("following",0)}</span><span style="color:var(--t3);font-size:.67rem"> seguindo</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{len(user_posts)}</span><span style="color:var(--t3);font-size:.67rem"> pesquisas</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--acc)">{fmt_num(total_likes)}</span><span style="color:var(--t3);font-size:.67rem"> curtidas</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--teal)">{total_citations}</span><span style="color:var(--t3);font-size:.67rem"> citações</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--pur)">{tu.get("h_index",0)}</span><span style="color:var(--t3);font-size:.67rem"> h-index</span></div>
+      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{{tu.get("followers",0)}}</span><span style="color:var(--t3);font-size:.67rem"> seguidores</span></div>
+      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{{tu.get("following",0)}}</span><span style="color:var(--t3);font-size:.67rem"> seguindo</span></div>
+      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--t0)">{{len(user_posts)}}</span><span style="color:var(--t3);font-size:.67rem"> pesquisas</span></div>
+      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--acc)">{{fmt_num(total_likes)}}</span><span style="color:var(--t3);font-size:.67rem"> curtidas</span></div>
+      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--teal)">{{total_citations}}</span><span style="color:var(--t3);font-size:.67rem"> citações</span></div>
+      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:var(--pur)">{{tu.get("h_index",0)}}</span><span style="color:var(--t3);font-size:.67rem"> h-index</span></div>
     </div>
   </div>
-</div>""",unsafe_allow_html=True)
+</div>""",unsafe_allow_html=True) # Corrected f-string here
     if not is_me:
         c1,c2,c3,_=st.columns([1,1,1,2])
         with c1:
@@ -1192,7 +1192,7 @@ def page_profile(target_email):
                 st.session_state.active_chat=target_email; st.session_state.page="chat"; st.rerun()
         with c3:
             if st.button("Voltar",key="pf_back",use_container_width=True): st.session_state.profile_view=None; st.rerun() # Removed emoji
-        tp,tl=st.tabs([f"  Pesquisas ({len(user_posts)})  ",f"  Curtidas ({len(liked_posts)})  "]) # Removed emojis
+        tp,tl=st.tabs([f"  Pesquisas ({{len(user_posts)}})  ",f"  Curtidas ({{len(liked_posts)}})  "]) # Corrected f-string here
         with tp:
             for p in sorted(user_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="profile",show_author=False)
             if not user_posts: st.markdown(f'<div class="glass" style="padding:2rem;text-align:center;color:var(--t3)">Nenhuma pesquisa publicada.</div>',unsafe_allow_html=True) # Removed emoji
@@ -1200,8 +1200,8 @@ def page_profile(target_email):
             for p in sorted(liked_posts,key=lambda x:x.get("date",""),reverse=True): render_post(p,ctx="prof_liked",compact=True)
     else:
         saved_arts=st.session_state.saved_articles
-        tm,tl,ts2,ts,tst=st.tabs(["  Meus Dados  ",f"  Publicações ({len(user_posts)})  ",
-                                    f"  Curtidas ({len(liked_posts)})  ",f"  Salvos ({len(saved_arts)})  ","  Estatísticas  "]) # Removed emojis
+        tm,tl,ts2,ts,tst=st.tabs(["  Meus Dados  ",f"  Publicações ({{len(user_posts)}})  ", # Corrected f-string here
+                                    f"  Curtidas ({{len(liked_posts)}})  ",f"  Salvos ({{len(saved_arts)}})  ","  Estatísticas  "]) # Corrected f-string here
         with tm:
             new_n=st.text_input("Nome",value=tu.get("name",""),key="cfg_n")
             new_a=st.text_input("Área",value=tu.get("area",""),key="cfg_a")
@@ -1225,7 +1225,7 @@ def page_profile(target_email):
             if saved_arts:
                 for idx,a in enumerate(saved_arts):
                     render_article(a,idx=idx+3000,ctx="saved")
-                    uid2=re.sub(r'[^a-zA-Z0-9]','',f"rms_{idx}")[:20]
+                    uid2=re.sub(r'[^a-zA-Z0-9]','',f"rms_{{idx}}")[:20] # Corrected f-string here
                     if st.button("Remover",key=f"rm_sa_{uid2}",use_container_width=True): # Removed emoji
                         st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]
                         save_db(); st.rerun()
@@ -1235,10 +1235,10 @@ def page_profile(target_email):
                 total_v=sum(p.get("views",0) for p in user_posts)
                 avg_l=sum(p["likes"] for p in user_posts)/len(user_posts)
                 c1,c2,c3,c4=st.columns(4)
-                with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{total_likes}</div><div class="mlbl">Total Curtidas</div></div>',unsafe_allow_html=True)
-                with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{total_citations}</div><div class="mlbl">Citações</div></div>',unsafe_allow_html=True)
-                with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{fmt_num(total_v)}</div><div class="mlbl">Visualizações</div></div>',unsafe_allow_html=True)
-                with c4: st.markdown(f'<div class="mbox"><div class="mval-red">{round(avg_l,1)}</div><div class="mlbl">Média Curtidas</div></div>',unsafe_allow_html=True)
+                with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{{total_likes}}</div><div class="mlbl">Total Curtidas</div></div>',unsafe_allow_html=True) # Corrected f-string here
+                with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{{total_citations}}</div><div class="mlbl">Citações</div></div>',unsafe_allow_html=True) # Corrected f-string here
+                with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{{fmt_num(total_v)}}</div><div class="mlbl">Visualizações</div></div>',unsafe_allow_html=True) # Corrected f-string here
+                with c4: st.markdown(f'<div class="mbox"><div class="mval-red">{{round(avg_l,1)}}</div><div class="mlbl">Média Curtidas</div></div>',unsafe_allow_html=True) # Corrected f-string here
                 # Posts over time
                 by_month=defaultdict(int)
                 for p in user_posts:
@@ -1284,7 +1284,7 @@ def page_search():
                     with st.spinner("Claude Vision analisando imagem em detalhes..."):
                         ai_text, ai_err = call_claude_analysis(img_bytes, api_key, "image_detail")
                     if ai_err:
-                        st.error(f"Erro na análise Claude Vision: {ai_err}")
+                        st.error(f"Erro na análise Claude Vision: {{ai_err}}") # Corrected f-string here
                         st.session_state.image_analysis_cache[img_hash] = {"error": ai_err}
                     elif ai_text:
                         try:
@@ -1309,25 +1309,25 @@ def page_search():
     if ai_data and not ai_data.get("error") and not ai_data.get("raw_response"):
         st.markdown(f'''<div class="ai-card" style="margin-top:1rem;">
   <div style="font-size:.57rem;color:var(--pur);letter-spacing:.10em;text-transform:uppercase;font-weight:700;margin-bottom:.4rem">Claude Vision Analysis</div>
-  <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:800;color:var(--t0);margin-bottom:4px">{ai_data.get("tipo_imagem","Não identificado")}</div>
-  <div style="color:var(--teal);font-size:.78rem;font-weight:600;margin-bottom:.5rem">{ai_data.get("area_cientifica","Não especificada")}</div>
+  <div style="font-family:Syne,sans-serif;font-size:1.05rem;font-weight:800;color:var(--t0);margin-bottom:4px">{{ai_data.get("tipo_imagem","Não identificado")}}</div>
+  <div style="color:var(--teal);font-size:.78rem;font-weight:600;margin-bottom:.5rem">{{ai_data.get("area_cientifica","Não especificada")}}</div>
   <div style="background:rgba(255,255,255,.04);border-radius:10px;padding:.7rem .9rem;margin-bottom:.5rem;font-size:.77rem;color:var(--t2);line-height:1.7;border:1px solid rgba(255,255,255,.06)">
-    {ai_data.get("descricao_detalhada","Sem descrição detalhada.")}
+    {{ai_data.get("descricao_detalhada","Sem descrição detalhada.")}}
   </div>
-  <div style="font-size:.70rem;color:var(--t2);margin-bottom:.35rem">Representação Científica: <strong style="color:var(--t1)">{ai_data.get("representacao_cientifica","Não especificada.")}</strong></div>
+  <div style="font-size:.70rem;color:var(--t2);margin-bottom:.35rem">Representação Científica: <strong style="color:var(--t1)">{{ai_data.get("representacao_cientifica","Não especificada.")}}</strong></div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.4rem">
-    <div style="font-size:.70rem;color:var(--t2)">Técnica: <strong style="color:var(--t1)">{ai_data.get("tecnica_experimental_ou_metodo","Não informada")}</strong></div>
-    <div style="font-size:.70rem;color:var(--t2)">Qualidade: <strong style="color:var(--acc)">{ai_data.get("qualidade_visual","—")}</strong></div>
-    <div style="font-size:.70rem;color:var(--t2)">Confiança IA: <strong style="color:var(--teal)">{ai_data.get("confianca_analise_ia",0)}%</strong></div>
+    <div style="font-size:.70rem;color:var(--t2)">Técnica: <strong style="color:var(--t1)">{{ai_data.get("tecnica_experimental_ou_metodo","Não informada")}}</strong></div>
+    <div style="font-size:.70rem;color:var(--t2)">Qualidade: <strong style="color:var(--acc)">{{ai_data.get("qualidade_visual","—")}}</strong></div>
+    <div style="font-size:.70rem;color:var(--t2)">Confiança IA: <strong style="color:var(--teal)">{{ai_data.get("confianca_analise_ia",0)}}%</strong></div>
   </div>
-  {f"<div style='font-size:.70rem;color:var(--t2);margin-bottom:.35rem'>Estruturas: {', '.join(ai_data.get('elementos_identificados',[]))}</div>" if ai_data.get("elementos_identificados") else ""}
-  {f"<div style='background:rgba(54,184,160,.05);border:1px solid rgba(54,184,160,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65'><strong style='color:var(--teal)'>Observações:</strong> {ai_data.get('observacoes_adicionais','')}</div>" if ai_data.get("observacoes_adicionais") else ""}
-  {f"<div style='background:rgba(13,127,232,.05);border:1px solid rgba(13,127,232,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65;margin-top:.5rem'><strong style='color:var(--acc)'>Aprofundamento:</strong> {ai_data.get('metodologia_sugerida_aprofundamento','')}</div>" if ai_data.get("metodologia_sugerida_aprofundamento") else ""}
-</div>''', unsafe_allow_html=True)
+  {{f"<div style='font-size:.70rem;color:var(--t2);margin-bottom:.35rem'>Estruturas: {{', '.join(ai_data.get('elementos_identificados',[]))}}</div>" if ai_data.get("elementos_identificados") else ""}}
+  {{f"<div style='background:rgba(54,184,160,.05);border:1px solid rgba(54,184,160,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65'><strong style='color:var(--teal)'>Observações:</strong> {{ai_data.get('observacoes_adicionais','')}}</div>" if ai_data.get("observacoes_adicionais") else ""}}
+  {{f"<div style='background:rgba(13,127,232,.05);border:1px solid rgba(13,127,232,.12);border-radius:8px;padding:.5rem .7rem;font-size:.72rem;color:var(--t2);line-height:1.65;margin-top:.5rem'><strong style='color:var(--acc)'>Aprofundamento:</strong> {{ai_data.get('metodologia_sugerida_aprofundamento','')}}</div>" if ai_data.get("metodologia_sugerida_aprofundamento") else ""}}
+</div>''', unsafe_allow_html=True) # Corrected f-string here
 
         termos_busca_ia = ai_data.get("termos_busca_sugeridos", [])
         if termos_busca_ia:
-            st.markdown(f'<div style="font-size:.62rem;color:var(--t3);margin:.3rem 0 .5rem">Termos de busca sugeridos pela IA: <em>{", ".join(termos_busca_ia)}</em></div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:.62rem;color:var(--t3);margin:.3rem 0 .5rem">Termos de busca sugeridos pela IA: <em>{{", ".join(termos_busca_ia)}}</em></div>', unsafe_allow_html=True) # Corrected f-string here
             # Automatically populate search query with AI terms
             st.session_state.last_sq = ", ".join(termos_busca_ia)
 
@@ -1362,7 +1362,7 @@ def page_search():
         fldr=res.get("folders",[])
         web=ss+[x for x in cr if not any(x["title"].lower()==s["title"].lower() for s in ss)]
         total=len(neb)+len(web)+len(fldr)
-        st.markdown(f'<div style="font-size:.65rem;color:var(--t2);margin-bottom:.8rem">Encontrados: <strong style="color:var(--t0)">{total}</strong> resultados · {len(neb)} na plataforma · {len(fldr)} em pastas · {len(web)} na internet</div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:.65rem;color:var(--t2);margin-bottom:.8rem">Encontrados: <strong style="color:var(--t0)">{{total}}</strong> resultados · {{len(neb)}} na plataforma · {{len(fldr)}} em pastas · {{len(web)}} na internet</div>',unsafe_allow_html=True) # Corrected f-string here
         # Temporal analysis of results
         # Define all_years here to ensure it's always available for the chart
         years_neb=[p.get("date","")[:4] for p in neb if p.get("date")]
@@ -1380,7 +1380,7 @@ def page_search():
             st.markdown('<div class="chart-wrap">',unsafe_allow_html=True)
             st.plotly_chart(fig_t,use_container_width=True)
             st.markdown('</div>',unsafe_allow_html=True)
-        ta,tn,tf_tab,tw=st.tabs([f"  Todos ({total})  ",f"  Nebula ({len(neb)})  ",f"  Pastas ({len(fldr)})  ",f"  Internet ({len(web)})  "]) # Removed emojis
+        ta,tn,tf_tab,tw=st.tabs([f"  Todos ({{total}})  ",f"  Nebula ({{len(neb)}})  ",f"  Pastas ({{len(fldr)}})  ",f"  Internet ({{len(web)}})  "]) # Corrected f-string here
         with ta:
             if neb:
                 st.markdown(f'<div style="font-size:.58rem;color:var(--acc);font-weight:700;margin-bottom:.4rem;letter-spacing:.10em;text-transform:uppercase">● Pesquisas na plataforma</div>',unsafe_allow_html=True)
@@ -1389,7 +1389,7 @@ def page_search():
                 st.markdown(f'<div style="font-size:.58rem;color:var(--orn);font-weight:700;margin:.7rem 0 .4rem;letter-spacing:.10em;text-transform:uppercase">● Encontrado nas suas pastas</div>',unsafe_allow_html=True)
                 for fm in fldr[:4]:
                     kws=fm["analysis"].get("keywords",[]); rel=fm["analysis"].get("relevance_score",0)
-                    st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px"><span> </span><div style="flex:1"><div style="font-family:Syne,sans-serif;font-size:.84rem;font-weight:700;color:var(--t0)">{fm["file"]}</div><div style="font-size:.63rem;color:var(--t3)">em: {fm["folder"]} · relevância: {rel}%</div><div style="margin-top:.25rem">{tags_html(kws[:5])}</div></div></div></div>',unsafe_allow_html=True) # Removed emoji
+                    st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px"><span> </span><div style="flex:1"><div style="font-family:Syne,sans-serif;font-size:.84rem;font-weight:700;color:var(--t0)">{{fm["file"]}}</div><div style="font-size:.63rem;color:var(--t3)">em: {{fm["folder"]}} · relevância: {{rel}}%</div><div style="margin-top:.25rem">{{tags_html(kws[:5])}}</div></div></div></div>',unsafe_allow_html=True) # Corrected f-string here
             if web:
                 st.markdown(f'<div style="font-size:.58rem;color:var(--cya);font-weight:700;margin:.7rem 0 .4rem;letter-spacing:.10em;text-transform:uppercase">● Literatura científica</div>',unsafe_allow_html=True)
                 for idx,a in enumerate(web): render_article(a,idx=idx,ctx="all_w")
@@ -1398,9 +1398,9 @@ def page_search():
                 # Statistical analysis
                 avg_likes=sum(p["likes"] for p in neb)/len(neb); avg_cit=sum(p.get("citations",0) for p in neb)/len(neb)
                 c1s,c2s,c3s=st.columns(3)
-                with c1s: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(neb)}</div><div class="mlbl">Resultados</div></div>',unsafe_allow_html=True)
-                with c2s: st.markdown(f'<div class="mbox"><div class="mval-teal">{round(avg_likes,1)}</div><div class="mlbl">Média Curtidas</div></div>',unsafe_allow_html=True)
-                with c3s: st.markdown(f'<div class="mbox"><div class="mval-pur">{round(avg_cit,1)}</div><div class="mlbl">Média Citações</div></div>',unsafe_allow_html=True)
+                with c1s: st.markdown(f'<div class="mbox"><div class="mval-acc">{{len(neb)}}</div><div class="mlbl">Resultados</div></div>',unsafe_allow_html=True) # Corrected f-string here
+                with c2s: st.markdown(f'<div class="mbox"><div class="mval-teal">{{round(avg_likes,1)}}</div><div class="mlbl">Média Curtidas</div></div>',unsafe_allow_html=True) # Corrected f-string here
+                with c3s: st.markdown(f'<div class="mbox"><div class="mval-pur">{{round(avg_cit,1)}}</div><div class="mlbl">Média Citações</div></div>',unsafe_allow_html=True) # Corrected f-string here
                 st.markdown('<div style="font-size:.62rem;color:var(--t3);margin:.5rem 0">Ordenado por relevância + citações:</div>',unsafe_allow_html=True)
                 for p in sorted(neb,key=lambda x:x.get("citations",0)+x["likes"]*0.5,reverse=True): render_post(p,ctx="srch_neb",compact=True)
             else: st.info("Nenhuma pesquisa na plataforma.")
@@ -1408,16 +1408,16 @@ def page_search():
             if fldr:
                 for fm in fldr:
                     kws=fm["analysis"].get("keywords",[]); topics=fm["analysis"].get("topics",{})
-                    st.markdown(f'<div class="repo-card"><div style="font-size:.58rem;color:var(--orn);font-weight:700;margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.08em">📁 {fm["folder"]}</div><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0);margin-bottom:.2rem">{fm["file"]}</div><div style="margin:.3rem 0">{tags_html(kws[:8])}</div><div style="font-size:.65rem;color:var(--t3)">Temas: {", ".join(list(topics.keys())[:3])}</div></div>',unsafe_allow_html=True) # Removed emoji
+                    st.markdown(f'<div class="repo-card"><div style="font-size:.58rem;color:var(--orn);font-weight:700;margin-bottom:.3rem;text-transform:uppercase;letter-spacing:.08em">📁 {{fm["folder"]}}</div><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0);margin-bottom:.2rem">{{fm["file"]}}</div><div style="margin:.3rem 0">{{tags_html(kws[:8])}}</div><div style="font-size:.65rem;color:var(--t3)">Temas: {{", ".join(list(topics.keys())[:3])}}</div></div>',unsafe_allow_html=True) # Corrected f-string here
             else: st.markdown('<div style="color:var(--t3);padding:1rem">Nenhum arquivo em pastas corresponde à busca.</div>',unsafe_allow_html=True)
         with tw:
             if web:
                 # Citation stats
                 total_cit=sum(a.get("citations",0) for a in web); max_cit=max((a.get("citations",0) for a in web),default=0)
                 c1w,c2w,c3w=st.columns(3)
-                with c1w: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(web)}</div><div class="mlbl">Artigos</div></div>',unsafe_allow_html=True)
-                with c2w: st.markdown(f'<div class="mbox"><div class="mval-teal">{total_cit}</div><div class="mlbl">Total Citações</div></div>',unsafe_allow_html=True)
-                with c3w: st.markdown(f'<div class="mbox"><div class="mval-pur">{max_cit}</div><div class="mlbl">Máx. Citações</div></div>',unsafe_allow_html=True)
+                with c1w: st.markdown(f'<div class="mbox"><div class="mval-acc">{{len(web)}}</div><div class="mlbl">Artigos</div></div>',unsafe_allow_html=True) # Corrected f-string here
+                with c2w: st.markdown(f'<div class="mbox"><div class="mval-teal">{{total_cit}}</div><div class="mlbl">Total Citações</div></div>',unsafe_allow_html=True) # Corrected f-string here
+                with c3w: st.markdown(f'<div class="mbox"><div class="mval-pur">{{max_cit}}</div><div class="mlbl">Máx. Citações</div></div>',unsafe_allow_html=True) # Corrected f-string here
                 for idx,a in enumerate(sorted(web,key=lambda x:x.get("citations",0),reverse=True)): render_article(a,idx=idx,ctx="web_t")
             else: st.info("Nenhum artigo encontrado. Verifique conectividade.")
     st.markdown('</div>',unsafe_allow_html=True)
@@ -1477,7 +1477,7 @@ def page_knowledge():
         mode="markers+text",marker=dict(size=nsizes,color=ncolors,opacity=.9,line=dict(color="rgba(255,255,255,.08)",width=1.5)),
         text=[users.get(ue,{}).get("name","?").split()[0] for ue in rlist],textposition="top center",
         textfont=dict(color=TEXT_COLOR_DARK,size=9,family="DM Sans"),
-        hovertemplate=[f"<b>{users.get(ue,{{}}).get('name','?')}</b><br>{users.get(ue,{{}}).get('area','')}<br>Tags: {len(rtags.get(ue,set()))}<extra></extra>" for ue in rlist], # Corrected f-string here
+        hovertemplate=[f"<b>{{users.get(ue,{{}}).get('name','?')}}</b><br>{{users.get(ue,{{}}).get('area','')}}<br>Tags: {{len(rtags.get(ue,set()))}}<extra></extra>" for ue in rlist], # Corrected f-string here
         showlegend=False))
     fig.update_layout(height=420,
                       scene=dict(xaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
@@ -1487,13 +1487,13 @@ def page_knowledge():
     st.plotly_chart(fig,use_container_width=True)
 
     c1,c2,c3,c4=st.columns(4)
-    with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(rlist)}</div><div class="mlbl">Pesquisadores</div></div>',unsafe_allow_html=True)
-    with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{len(edges)}</div><div class="mlbl">Conexões</div></div>',unsafe_allow_html=True)
-    with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{len(st.session_state.followed)}</div><div class="mlbl">Seguindo</div></div>',unsafe_allow_html=True)
+    with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{{len(rlist)}}</div><div class="mlbl">Pesquisadores</div></div>',unsafe_allow_html=True) # Corrected f-string here
+    with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{{len(edges)}}</div><div class="mlbl">Conexões</div></div>',unsafe_allow_html=True) # Corrected f-string here
+    with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{{len(st.session_state.followed)}}</div><div class="mlbl">Seguindo</div></div>',unsafe_allow_html=True) # Corrected f-string here
     with c4:
         my_tags=rtags.get(email,set())
         potential=sum(1 for ue in rlist if ue!=email and len(my_tags&rtags.get(ue,set()))>0 and ue not in st.session_state.followed)
-        st.markdown(f'<div class="mbox"><div class="mval-red">{potential}</div><div class="mlbl">Potencial Colabs</div></div>',unsafe_allow_html=True)
+        st.markdown(f'<div class="mbox"><div class="mval-red">{{potential}}</div><div class="mlbl">Potencial Colabs</div></div>',unsafe_allow_html=True) # Corrected f-string here
     st.markdown("<hr>",unsafe_allow_html=True)
 
     tm,tsugg,tmat,tmy,tall=st.tabs(["  Conexões  ","  Sugestões  ","  Matriz  ","  Minhas  ","  Todos  "]) # Removed emojis
@@ -1506,13 +1506,13 @@ def page_knowledge():
             jac_color=SECONDARY_COLOR if jac>0.3 else (PRIMARY_COLOR if jac>0.1 else TEXT_COLOR_DARK)
             ts=tags_html(common[:5]) if common else f'<span style="color:var(--t3);font-size:.63rem">via seguimento</span>'
             st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">'
-                        f'{avh(ini(n1.get("name","?")),28,ugrad(e1))}'
-                        f'<span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{n1.get("name","?")}</span>'
+                        f'{{avh(ini(n1.get("name","?")),28,ugrad(e1))}}' # Corrected f-string here
+                        f'<span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{{n1.get("name","?")}}</span>' # Corrected f-string here
                         f'<span style="color:var(--t3);font-size:.7rem">↔</span>'
-                        f'<span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{n2.get("name","?")}</span>'
-                        f'{avh(ini(n2.get("name","?")),28,ugrad(e2))}'
-                        f'<div style="flex:1">{ts}</div>'
-                        f'<span style="font-size:.62rem;font-weight:700;color:{jac_color}">Jaccard {jac:.2f}</span>'
+                        f'<span style="font-size:.78rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{{n2.get("name","?")}}</span>' # Corrected f-string here
+                        f'{{avh(ini(n2.get("name","?")),28,ugrad(e2))}}' # Corrected f-string here
+                        f'<div style="flex:1">{{ts}}</div>' # Corrected f-string here
+                        f'<span style="font-size:.62rem;font-weight:700;color:{jac_color}">Jaccard {{jac:.2f}}</span>' # Corrected f-string here
                         f'</div></div>',unsafe_allow_html=True)
 
     with tsugg:
@@ -1541,27 +1541,27 @@ def page_knowledge():
             sc=sug["collab_score"]; is_fol=sue in st.session_state.followed
             sc_c=SECONDARY_COLOR if sc>=70 else (PRIMARY_COLOR if sc>=40 else WARNING_COLOR)
             reason_parts=[]
-            if sug["common_tags"]: reason_parts.append(f"{len(sug['common_tags'])} áreas em comum")
-            if sug["common_kws"]: reason_parts.append(f"{len(sug['common_kws'])} palavras-chave sobrepostas")
-            if sug["jac"]>0.2: reason_parts.append(f"alta similaridade temática ({sug['jac']:.0%})")
+            if sug["common_tags"]: reason_parts.append(f"{{len(sug['common_tags'])}} áreas em comum") # Corrected f-string here
+            if sug["common_kws"]: reason_parts.append(f"{{len(sug['common_kws'])}} palavras-chave sobrepostas") # Corrected f-string here
+            if sug["jac"]>0.2: reason_parts.append(f"alta similaridade temática ({{sug['jac']:.0%}})") # Corrected f-string here
             reason="; ".join(reason_parts) if reason_parts else "Áreas relacionadas"
             st.markdown(f'''<div class="conn-card">
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:.5rem">
-    {avh(ini(rn),38,rg)}
+    {{avh(ini(rn),38,rg)}}
     <div style="flex:1">
-      <div style="font-family:Syne,sans-serif;font-weight:700;font-size:.88rem;color:var(--t0)">{rn} {"✓" if sud.get("verified") else ""}</div>
-      <div style="font-size:.64rem;color:var(--t3)">{sud.get("area","")} · {sud.get("scholarship","")} · {sug["n_posts"]} pesquisas</div>
+      <div style="font-family:Syne,sans-serif;font-weight:700;font-size:.88rem;color:var(--t0)">{{rn}} {{ "✓" if sud.get("verified") else ""}}</div>
+      <div style="font-size:.64rem;color:var(--t3)">{{sud.get("area","")}} · {{sud.get("scholarship","")}} · {{sug["n_posts"]}} pesquisas</div>
     </div>
     <div style="text-align:center;background:rgba(0,0,0,.25);border-radius:10px;padding:.38rem .65rem;flex-shrink:0">
-      <div style="font-family:Syne,sans-serif;font-size:1.15rem;font-weight:900;color:{sc_c}">{sc}</div>
+      <div style="font-family:Syne,sans-serif;font-size:1.15rem;font-weight:900;color:{sc_c}">{{sc}}</div>
       <div style="font-size:.5rem;color:var(--t3);text-transform:uppercase;letter-spacing:.06em">score colab.</div>
     </div>
   </div>
   <div style="background:rgba(255,255,255,.03);border-radius:9px;padding:.5rem .75rem;font-size:.74rem;color:var(--t2);margin-bottom:.42rem;border:1px solid rgba(255,255,255,.06)">
-    {reason}
+    {{reason}}
   </div>
-  <div style="margin-bottom:.3rem">{tags_html(sug["common_tags"])}</div>
-</div>''',unsafe_allow_html=True)
+  <div style="margin-bottom:.3rem">{{tags_html(sug["common_tags"])}}</div>
+</div>''',unsafe_allow_html=True) # Corrected f-string here
             cf2,cp2,cc2=st.columns(3)
             with cf2:
                 if st.button("Seguindo" if is_fol else "Seguir",key=f"sugg_f_{sue}",use_container_width=True): # Removed emoji
@@ -1580,7 +1580,7 @@ def page_knowledge():
         matrix=[[round(jaccard(rtags[rlist[i]],rtags[rlist[j]]),2) for j in range(n)] for i in range(n)]
         fig_m=go.Figure(go.Heatmap(z=matrix,x=names,y=names,
                                     colorscale=[[0,BG_COLOR_DARK],[0.3,BG_COLOR_MEDIUM],[0.7,PRIMARY_COLOR],[1,SECONDARY_COLOR]],
-                                    zmin=0,zmax=1,text=[[f"{v:.2f}" for v in row] for row in matrix],
+                                    zmin=0,zmax=1,text=[[f"{{v:.2f}}" for v in row] for row in matrix], # Corrected f-string here
                                     texttemplate="%{{text}}",textfont=dict(size=8,color="rgba(255,255,255,.5)"))) # Corrected f-string here
         fig_m.update_layout(height=350,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
                              font=dict(color=TEXT_COLOR_DARK,size=9),margin=dict(l=80,r=10,t=10,b=80),
@@ -1605,7 +1605,7 @@ def page_knowledge():
         for e1,e2,common,jac,strength in sorted(mc,key=lambda x:-x[4]):
             oth=e2 if e1==email else e1; od=users.get(oth,{}); og=ugrad(oth)
             jac_c=SECONDARY_COLOR if jac>0.3 else PRIMARY_COLOR
-            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">{avh(ini(od.get("name","?")),34,og)}<div style="flex:1"><div style="font-weight:700;font-size:.82rem;font-family:Syne,sans-serif;color:var(--t0)">{od.get("name","?")}</div><div style="font-size:.65rem;color:var(--t3)">{od.get("area","")} · {od.get("scholarship","")}</div><div style="margin-top:.25rem">{tags_html(common[:4])}</div></div><span style="font-size:.62rem;color:{jac_c};font-weight:700">Jac {jac:.2f}</span></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">{{avh(ini(od.get("name","?")),34,og)}}<div style="flex:1"><div style="font-weight:700;font-size:.82rem;font-family:Syne,sans-serif;color:var(--t0)">{{od.get("name","?")}}</div><div style="font-size:.65rem;color:var(--t3)">{{od.get("area","")}} · {{od.get("scholarship","")}}</div><div style="margin-top:.25rem">{{tags_html(common[:4])}}</div></div><span style="font-size:.62rem;color:{jac_c};font-weight:700">Jac {{jac:.2f}}</span></div></div>',unsafe_allow_html=True) # Corrected f-string here
             cv2,cm2,_=st.columns([1,1,4])
             with cv2:
                 if st.button("Ver",key=f"kv_{oth}",use_container_width=True): st.session_state.profile_view=oth; st.rerun() # Removed emoji
@@ -1621,7 +1621,7 @@ def page_knowledge():
             if sq2 and sq2.lower() not in rn.lower() and sq2.lower() not in ua.lower(): continue
             is_fol=ue in st.session_state.followed; rg=ugrad(ue)
             common_t=rtags.get(email,set())&rtags.get(ue,set()); jac_s=jaccard(rtags.get(email,set()),rtags.get(ue,set()))
-            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{avh(ini(rn),34,rg)}<div style="flex:1"><div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{rn}</div><div style="font-size:.63rem;color:var(--t3)">{ua} · {ud.get("scholarship","")}</div>{f"<div style='margin-top:.2rem'>{tags_html(list(common_t)[:3])}</div>" if common_t else ""}</div><span style="font-size:.60rem;color:{SECONDARY_COLOR if jac_s>0.2 else TEXT_COLOR_DARK};font-weight:600">Sim. {jac_s:.0%}</span></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;gap:9px">{{avh(ini(rn),34,rg)}}<div style="flex:1"><div style="font-size:.82rem;font-weight:700;font-family:Syne,sans-serif;color:var(--t0)">{{rn}}</div><div style="font-size:.63rem;color:var(--t3)">{{ua}} · {{ud.get("scholarship","")}}</div>{{f"<div style='margin-top:.2rem'>{{tags_html(list(common_t)[:3])}}</div>" if common_t else ""}}</div><span style="font-size:.60rem;color:{SECONDARY_COLOR if jac_s>0.2 else TEXT_COLOR_DARK};font-weight:600">Sim. {{jac_s:.0%}}</span></div></div>',unsafe_allow_html=True) # Corrected f-string here
             ca2,cb2,cc2=st.columns(3)
             with ca2:
                 if st.button("Perfil",key=f"av_{ue}",use_container_width=True): st.session_state.profile_view=ue; st.rerun() # Removed emoji
@@ -1651,10 +1651,10 @@ def page_repository():
     all_an={f:an for fd in st.session_state.folders.values() if isinstance(fd,dict) for f,an in fd.get("analyses",{}).items()}
     all_kw=[kw for an in all_an.values() for kw in an.get("keywords",[])]
     c1s,c2s,c3s,c4s=st.columns(4)
-    with c1s: st.markdown(f'<div class="mbox"><div class="mval-acc">{tot_folders}</div><div class="mlbl">Repositórios</div></div>',unsafe_allow_html=True)
-    with c2s: st.markdown(f'<div class="mbox"><div class="mval-teal">{tot_files}</div><div class="mlbl">Arquivos</div></div>',unsafe_allow_html=True)
-    with c3s: st.markdown(f'<div class="mbox"><div class="mval-pur">{len(all_an)}</div><div class="mlbl">Analisados</div></div>',unsafe_allow_html=True)
-    with c4s: st.markdown(f'<div class="mbox"><div class="mval-red">{len(set(all_kw[:200]))}</div><div class="mlbl">Keywords</div></div>',unsafe_allow_html=True)
+    with c1s: st.markdown(f'<div class="mbox"><div class="mval-acc">{{tot_folders}}</div><div class="mlbl">Repositórios</div></div>',unsafe_allow_html=True) # Corrected f-string here
+    with c2s: st.markdown(f'<div class="mbox"><div class="mval-teal">{{tot_files}}</div><div class="mlbl">Arquivos</div></div>',unsafe_allow_html=True) # Corrected f-string here
+    with c3s: st.markdown(f'<div class="mbox"><div class="mval-pur">{{len(all_an)}}</div><div class="mlbl">Analisados</div></div>',unsafe_allow_html=True) # Corrected f-string here
+    with c4s: st.markdown(f'<div class="mbox"><div class="mval-red">{{len(set(all_kw[:200]))}}</div><div class="mlbl">Keywords</div></div>',unsafe_allow_html=True) # Corrected f-string here
     st.markdown("<hr>",unsafe_allow_html=True)
 
     # Create folder
@@ -1667,7 +1667,7 @@ def page_repository():
             if nfn.strip():
                 if nfn not in st.session_state.folders:
                     st.session_state.folders[nfn]={"desc":nfd,"type":nft,"files":[],"notes":"","analyses":{},"created":datetime.now().strftime("%Y-%m-%d"),"tags":[]}
-                    save_db(); st.success(f"Repositório '{nfn}' criado!") # Removed emoji
+                    save_db(); st.success(f"Repositório '{{nfn}}' criado!") # Corrected f-string here
                     st.rerun()
                 else: st.warning("Já existe.")
             else: st.warning("Digite um nome.")
@@ -1739,8 +1739,8 @@ def page_repository():
             badge_cls = badge_map.get(ftype_badge, "badge-acc")
             analyzed_count = len(analyses)
 
-            with st.expander(f"📁 {fn} — {len(files)} arq. · {analyzed_count} analisados"): # Removed emoji
-                st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.6rem"><span class="{badge_cls}">{ftype_badge}</span><span style="font-size:.65rem;color:var(--t3)">{fd.get("desc","")}</span><span style="font-size:.62rem;color:var(--t4);margin-left:auto">Criado: {created}</span></div>',unsafe_allow_html=True)
+            with st.expander(f"📁 {{fn}} — {{len(files)}} arq. · {{analyzed_count}} analisados"): # Corrected f-string here
+                st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.6rem"><span class="{badge_cls}">{{ftype_badge}}</span><span style="font-size:.65rem;color:var(--t3)">{{fd.get("desc","")}}</span><span style="font-size:.62rem;color:var(--t4);margin-left:auto">Criado: {{created}}</span></div>',unsafe_allow_html=True) # Corrected f-string here
 
                 # Upload
                 up=st.file_uploader("Carregar arquivos",type=None,key=f"up_{fn}",label_visibility="collapsed",accept_multiple_files=True) # Removed emoji
@@ -1749,7 +1749,7 @@ def page_repository():
                         if uf.name not in files: files.append(uf.name)
                         if fn not in st.session_state.folder_files_bytes: st.session_state.folder_files_bytes[fn]={}
                         uf.seek(0); st.session_state.folder_files_bytes[fn][uf.name]=uf.read()
-                    fd["files"]=files; save_db(); st.success(f" {len(up)} arquivo(s) adicionado(s)!") # Removed emoji
+                    fd["files"]=files; save_db(); st.success(f" {{len(up)}} arquivo(s) adicionado(s)!") # Corrected f-string here
                     st.rerun()
                 # File list
                 if files:
@@ -1759,8 +1759,8 @@ def page_repository():
                         an_badge=f'<span class="badge-teal" style="font-size:.55rem">analisado</span>' if ha else "" # Removed emoji
                         rel_score=analyses[f].get("relevance_score",0) if ha else ""
                         rel_bar=prog_bar(rel_score,SECONDARY_COLOR) if ha else ""
-                        rm_uid=re.sub(r'[^a-zA-Z0-9]','',f"rmf_{fn}_{f}")[:28]
-                        st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>{icon}</span><div style="flex:1"><div style="font-size:.74rem;color:var(--t1);font-weight:500">{f} {an_badge}</div>{rel_bar}</div></div>',unsafe_allow_html=True)
+                        rm_uid=re.sub(r'[^a-zA-Z0-9]','',f"rmf_{{fn}}_{{f}}")[:28] # Corrected f-string here
+                        st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)"><span>{{icon}}</span><div style="flex:1"><div style="font-size:.74rem;color:var(--t1);font-weight:500">{{f}} {{an_badge}}</div>{{rel_bar}}</div></div>',unsafe_allow_html=True) # Corrected f-string here
 
                 # Actions
                 ca2,cb2,cc2,cd2=st.columns(4)
@@ -1770,7 +1770,7 @@ def page_repository():
                             pb=st.progress(0,"Iniciando análise…")
                             fb=st.session_state.folder_files_bytes.get(fn,{})
                             for fi,f in enumerate(files):
-                                pb.progress((fi+1)/len(files),f"Analisando: {f[:25]}…")
+                                pb.progress((fi+1)/len(files),f"Analisando: {{f[:25]}}…") # Corrected f-string here
                                 fbytes=fb.get(f,b""); ft2=ftype(f)
                                 analyses[f]=_analyze_doc(f,fbytes,ft2,ra)
                             fd["analyses"]=analyses; save_db(); pb.empty(); st.success("Análise concluída!") # Removed emoji
@@ -1791,7 +1791,7 @@ def page_repository():
                     if st.button("Exportar",key=f"ex_{fn}",use_container_width=True): # Removed emoji
                         if analyses:
                             export_data={"repository":fn,"files":files,"analyses":{f:{k:v for k,v in an.items() if k!="topics"} for f,an in analyses.items()}}
-                            st.download_button("Baixar JSON",json.dumps(export_data,ensure_ascii=False,indent=2),file_name=f"{fn}_analysis.json",mime="application/json",key=f"dl_{fn}") # Removed emoji
+                            st.download_button("Baixar JSON",json.dumps(export_data,ensure_ascii=False,indent=2),file_name=f"{{fn}}_analysis.json",mime="application/json",key=f"dl_{fn}") # Corrected f-string here
                 with cd2:
                     if st.button("Excluir",key=f"df_{fn}",use_container_width=True): # Removed emoji
                         del st.session_state.folders[fn]; save_db(); st.rerun()
@@ -1800,24 +1800,24 @@ def page_repository():
                 folder_ai=st.session_state.deep_analysis_cache.get(f"folder_{fn}")
                 if folder_ai:
                     st.markdown(f'<div class="pbox-pur"><div style="font-size:.62rem;color:#B98FE8;font-weight:700;margin-bottom:.4rem"> Claude IA desta pasta</div>' # Removed emoji
-                                f'<div style="font-size:.75rem;color:var(--t2);line-height:1.7;margin-bottom:.4rem">{folder_ai.get("resumo_executivo","")}</div>'
-                                f'{"".join(f"<div style=\"font-size:.71rem;color:var(--t2);margin-bottom:.18rem\">→ {m}</div>" for m in folder_ai.get("pontos_melhoria",[]))}'
+                                f'<div style="font-size:.75rem;color:var(--t2);line-height:1.7;margin-bottom:.4rem">{{folder_ai.get("resumo_executivo","")}}</div>' # Corrected f-string here
+                                f'{{"".join(f"<div style=\"font-size:.71rem;color:var(--t2);margin-bottom:.18rem\">→ {{m}}</div>" for m in folder_ai.get("pontos_melhoria",[]))}}' # Corrected f-string here
                                 f'</div>',unsafe_allow_html=True)
 
                 # File analyses
                 if analyses:
                     st.markdown('<div class="dtxt">Análises de arquivos</div>',unsafe_allow_html=True)
                     for f,an in analyses.items():
-                        with st.expander(f" {f}"): # Removed emoji
+                        with st.expander(f" {{f}}"): # Corrected f-string here
                             kws=an.get("keywords",[]); topics=an.get("topics",{}); rel=an.get("relevance_score",0); wq=an.get("writing_quality",0)
                             rc=SECONDARY_COLOR if rel>=70 else (WARNING_COLOR if rel>=45 else ERROR_COLOR)
-                            st.markdown(f'<div class="abox"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.86rem;margin-bottom:.28rem">{f}</div>'
-                                        f'<div style="font-size:.74rem;color:var(--t2);margin-bottom:.45rem">{an.get("summary","")}</div>'
+                            st.markdown(f'<div class="abox"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.86rem;margin-bottom:.28rem">{{f}}</div>' # Corrected f-string here
+                                        f'<div style="font-size:.74rem;color:var(--t2);margin-bottom:.45rem">{{an.get("summary","")}}</div>' # Corrected f-string here
                                         f'<div style="display:flex;gap:1.4rem;margin-top:.4rem">'
-                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:{rc}">{rel}%</div><div class="mlbl">Relevância</div></div>'
-                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--cya)}">{wq}%</div><div class="mlbl">Qualidade</div></div>'
-                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--orn)}">{an.get("word_count",0)}</div><div class="mlbl">Palavras</div></div>'
-                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--pur)}">{an.get("reading_time",0)}min</div><div class="mlbl">Leitura</div></div>'
+                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:{rc}">{{rel}}%</div><div class="mlbl">Relevância</div></div>' # Corrected f-string here
+                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--cya)}">{{wq}}%</div><div class="mlbl">Qualidade</div></div>' # Corrected f-string here
+                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--orn)}">{{an.get("word_count",0)}}</div><div class="mlbl">Palavras</div></div>' # Corrected f-string here
+                                        f'<div style="text-align:center"><div style="font-family:Syne,sans-serif;font-size:1.1rem;font-weight:900;color:var(--pur)}">{{an.get("reading_time",0)}}min</div><div class="mlbl">Leitura</div></div>' # Corrected f-string here
                                         f'</div></div>',unsafe_allow_html=True)
                             if kws: st.markdown(tags_html(kws[:18]),unsafe_allow_html=True)
                             if topics:
@@ -1832,10 +1832,10 @@ def page_repository():
                                     # Improvements list
                                     imps=an.get("improvements",[])
                                     if imps:
-                                        st.markdown(f'<div class="pbox-orn"><div style="font-size:.60rem;color:var(--orn);font-weight:700;margin-bottom:.3rem"> Melhorias</div>{"".join(f"<div style=\"font-size:.70rem;color:var(--t2);margin-bottom:.15rem\">→ {imp}</div>" for imp in imps)}</div>',unsafe_allow_html=True) # Removed emoji
+                                        st.markdown(f'<div class="pbox-orn"><div style="font-size:.60rem;color:var(--orn);font-weight:700;margin-bottom:.3rem"> Melhorias</div>{{"".join(f"<div style=\"font-size:.70rem;color:var(--t2);margin-bottom:.15rem\">→ {{imp}}</div>" for imp in imps)}}</div>',unsafe_allow_html=True) # Corrected f-string here
                                     strs=an.get("strengths",[])
                                     if strs:
-                                        st.markdown(f'<div class="pbox-teal"><div style="font-size:.60rem;color:var(--teal);font-weight:700;margin-bottom:.3rem"> Pontos fortes</div>{"".join(f"<div style=\"font-size:.70rem;color:var(--t2);margin-bottom:.15rem\">✓ {s}</div>" for s in strs)}</div>',unsafe_allow_html=True) # Removed emoji
+                                        st.markdown(f'<div class="pbox-teal"><div style="font-size:.60rem;color:var(--teal);font-weight:700;margin-bottom:.3rem"> Pontos fortes</div>{{"".join(f"<div style=\"font-size:.70rem;color:var(--t2);margin-bottom:.15rem\">✓ {{s}}</div>" for s in strs)}}</div>',unsafe_allow_html=True) # Corrected f-string here
 
     st.markdown('</div>',unsafe_allow_html=True)
 
@@ -1855,14 +1855,14 @@ def _analyze_doc(fname,fbytes,ftype_str,area=""):
             aw=area.lower().split(); rel=sum(1 for w in aw if any(w in kw for kw in r["keywords"]))
             r["relevance_score"]=min(100,rel*15+45)
         else: r["relevance_score"]=60
-        r["strengths"]=[f"Vocabulário técnico rico ({len(r['keywords'])} termos-chave)"] if len(r["keywords"])>15 else []
+        r["strengths"]=[f"Vocabulário técnico rico ({{len(r['keywords'])}} termos-chave)"] if len(r["keywords"])>15 else [] # Corrected f-string here
         if words>2000: r["strengths"].append("Conteúdo extenso e detalhado")
         r["improvements"]=["Expandir o conteúdo com mais detalhes"] if words<500 else []
         if len(r["keywords"])<8: r["improvements"].append("Enriquecer com mais terminologia técnica")
         if r.get("relevance_score",0)<50: r["improvements"].append("Melhorar alinhamento com a área de pesquisa")
-        r["summary"]=f"{ftype_str} · {words} palavras · ~{r['reading_time']}min · {', '.join(list(r['topics'].keys())[:2])} · {', '.join(r['keywords'][:4])}"
+        r["summary"]=f"{{ftype_str}} · {{words}} palavras · ~{{r['reading_time']}}min · {{', '.join(list(r['topics'].keys())[:2])}} · {{', '.join(r['keywords'][:4])}}" # Corrected f-string here
     else:
-        r["summary"]=f"Arquivo {ftype_str}."; r["relevance_score"]=50
+        r["summary"]=f"Arquivo {{ftype_str}}."; r["relevance_score"]=50 # Corrected f-string here
         r["keywords"]=kw_extract(fname.lower(),5); r["topics"]=topic_dist(r["keywords"])
     return r
 
@@ -1883,27 +1883,27 @@ def page_analytics():
         if not my_posts: st.markdown(f'<div class="glass" style="text-align:center;padding:2.5rem;color:var(--t3)">Publique pesquisas para ver análises.</div>',unsafe_allow_html=True) # Removed emoji
         else:
             c1,c2,c3,c4=st.columns(4)
-            with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(my_posts)}</div><div class="mlbl">Pesquisas</div></div>',unsafe_allow_html=True)
-            with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{sum(p["likes"] for p in my_posts)}</div><div class="mlbl">Total Curtidas</div></div>',unsafe_allow_html=True)
-            with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{sum(p.get("citations",0) for p in my_posts)}</div><div class="mlbl">Total Citações</div></div>',unsafe_allow_html=True)
-            with c4: st.markdown(f'<div class="mbox"><div class="mval-red">{fmt_num(sum(p.get("views",0) for p in my_posts))}</div><div class="mlbl">Visualizações</div></div>',unsafe_allow_html=True)
+            with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{{len(my_posts)}}</div><div class="mlbl">Pesquisas</div></div>',unsafe_allow_html=True) # Corrected f-string here
+            with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{{sum(p["likes"] for p in my_posts)}}</div><div class="mlbl">Total Curtidas</div></div>',unsafe_allow_html=True) # Corrected f-string here
+            with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{{sum(p.get("citations",0) for p in my_posts)}}</div><div class="mlbl">Total Citações</div></div>',unsafe_allow_html=True) # Corrected f-string here
+            with c4: st.markdown(f'<div class="mbox"><div class="mval-red">{{fmt_num(sum(p.get("views",0) for p in my_posts))}}</div><div class="mlbl">Visualizações</div></div>',unsafe_allow_html=True) # Corrected f-string here
             # Engagement per post
             if len(my_posts)>0:
                 fig_eng=go.Figure(go.Bar(x=[p["title"][:30]+"…" if len(p["title"])>30 else p["title"] for p in my_posts],
                                           y=[p["likes"]+p.get("citations",0)*2+len(p.get("comments",[]))*3 for p in my_posts],
-                                          marker=dict(color=[PRIMARY_COLOR, SECONDARY_COLOR, TERTIARY_COLOR, WARNING_COLOR, ERROR_COLOR, PRIMARY_COLOR]),text=[f'{p["likes"]} ' for p in my_posts],textposition="outside",textfont=dict(color=TEXT_COLOR_DARK,size=8))) # Removed emoji
+                                          marker=dict(color=[PRIMARY_COLOR, SECONDARY_COLOR, TERTIARY_COLOR, WARNING_COLOR, ERROR_COLOR, PRIMARY_COLOR]),text=[f'{{p["likes"]}} ' for p in my_posts],textposition="outside",textfont=dict(color=TEXT_COLOR_DARK,size=8))) # Corrected f-string here
                 fig_eng.update_layout(**{**pc_dark(),'height':220,'xaxis':dict(tickangle=-30,tickfont=dict(size=8)),'title':dict(text="Score de engajamento por pesquisa",font=dict(color=TEXT_COLOR_LIGHT,family="Syne",size=10))})
                 st.markdown('<div class="chart-wrap">',unsafe_allow_html=True)
                 st.plotly_chart(fig_eng,use_container_width=True)
                 st.markdown('</div>',unsafe_allow_html=True)
             for p in sorted(my_posts,key=lambda x:x.get("date",""),reverse=True):
-                st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0)">{p["title"][:55]}</div>{badge(p["status"])}</div><div style="font-size:.67rem;color:var(--t3);margin-top:.32rem">{p.get("date","")} · {p["likes"]} · {p.get("citations",0)} · {len(p.get("comments",[]))} · {fmt_num(p.get("views",0))}</div></div>',unsafe_allow_html=True) # Removed emojis
+                st.markdown(f'<div class="scard"><div style="display:flex;align-items:center;justify-content:space-between"><div style="font-family:Syne,sans-serif;font-size:.85rem;font-weight:700;color:var(--t0)">{{p["title"][:55]}}</div>{{badge(p["status"])}}</div><div style="font-size:.67rem;color:var(--t3);margin-top:.32rem">{{p.get("date","")}} · {{p["likes"]}} · {{p.get("citations",0)}} · {{len(p.get("comments",[]))}} · {{fmt_num(p.get("views",0))}}</div></div>',unsafe_allow_html=True) # Corrected f-string here
 
     with tp: # Now "Impacto"
         c1,c2,c3=st.columns(3)
-        with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{d.get("h_index",7)}</div><div class="mlbl">Índice H</div></div>',unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{d.get("fator_impacto",4.2):.1f}</div><div class="mlbl">Fator Impacto</div></div>',unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{len(st.session_state.saved_articles)}</div><div class="mlbl">Artigos Salvos</div></div>',unsafe_allow_html=True)
+        with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{{d.get("h_index",7)}}</div><div class="mlbl">Índice H</div></div>',unsafe_allow_html=True) # Corrected f-string here
+        with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{{d.get("fator_impacto",4.2):.1f}}</div><div class="mlbl">Fator Impacto</div></div>',unsafe_allow_html=True) # Corrected f-string here
+        with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{{len(st.session_state.saved_articles)}}</div><div class="mlbl">Artigos Salvos</div></div>',unsafe_allow_html=True) # Corrected f-string here
         st.markdown("<hr>",unsafe_allow_html=True)
         nh=st.number_input("Índice H",0,200,d.get("h_index",7),key="e_h")
         nfi=st.number_input("Fator impacto",0.0,100.0,float(d.get("fator_impacto",4.2)),step=0.1,key="e_fi")
@@ -1914,7 +1914,7 @@ def page_analytics():
         en=ud.get("2fa_enabled",False)
         if st.button("Desativar 2FA" if en else "Ativar 2FA",key="cfg_2fa",use_container_width=True): # Removed emoji
             st.session_state.users[email]["2fa_enabled"]=not en; save_db(); st.rerun()
-        st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-top:.4rem">2FA: <strong style="color:{SECONDARY_COLOR if en else ERROR_COLOR}">{"Ativo" if en else "Inativo"}</strong></div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-top:.4rem">2FA: <strong style="color:{SECONDARY_COLOR if en else ERROR_COLOR}">{{"Ativo" if en else "Inativo"}}</strong></div>',unsafe_allow_html=True) # Corrected f-string here
         st.markdown("<hr>",unsafe_allow_html=True)
         st.markdown('<h2 style="margin-bottom:.5rem">Interesses de Pesquisa</h2>', unsafe_allow_html=True)
         prefs=st.session_state.user_prefs.get(email,{})
@@ -1929,7 +1929,7 @@ def page_analytics():
                 st.markdown('</div>',unsafe_allow_html=True)
             for t,s in top[:10]:
                 norm=s/mx*100
-                st.markdown(f'<div style="margin-bottom:.3rem"><div style="display:flex;justify-content:space-between;font-size:.71rem;margin-bottom:3px"><span style="color:var(--t1)">{t}</span><span style="color:var(--t3)">{round(norm)}%</span></div>{prog_bar(norm,PRIMARY_COLOR)}</div>',unsafe_allow_html=True)
+                st.markdown(f'<div style="margin-bottom:.3rem"><div style="display:flex;justify-content:space-between;font-size:.71rem;margin-bottom:3px"><span style="color:var(--t1)">{{t}}</span><span style="color:var(--t3)">{{round(norm)}}%</span></div>{{prog_bar(norm,PRIMARY_COLOR)}}</div>',unsafe_allow_html=True) # Corrected f-string here
         else: st.info("Interaja com pesquisas para mapear interesses.")
 
     with ttrends: # Now "Tendências"
@@ -1959,9 +1959,9 @@ def page_analytics():
                 st.plotly_chart(fig_areas,use_container_width=True)
                 st.markdown('</div>',unsafe_allow_html=True)
         c1m,c2m,c3m=st.columns(3)
-        with c1m: st.markdown(f'<div class="mbox"><div class="mval-acc">{rs.get("avg_likes",0)}</div><div class="mlbl">Média Curtidas</div></div>',unsafe_allow_html=True)
-        with c2m: st.markdown(f'<div class="mbox"><div class="mval-teal">{fmt_num(int(rs.get("avg_views",0)))}</div><div class="mlbl">Média Views</div></div>',unsafe_allow_html=True)
-        with c3m: st.markdown(f'<div class="mbox"><div class="mval-pur">{rs.get("total_citations",0)}</div><div class="mlbl">Total Citações</div></div>',unsafe_allow_html=True)
+        with c1m: st.markdown(f'<div class="mbox"><div class="mval-acc">{{rs.get("avg_likes",0)}}</div><div class="mlbl">Média Curtidas</div></div>',unsafe_allow_html=True) # Corrected f-string here
+        with c2m: st.markdown(f'<div class="mbox"><div class="mval-teal">{{fmt_num(int(rs.get("avg_views",0)))}}</div><div class="mlbl">Média Views</div></div>',unsafe_allow_html=True) # Corrected f-string here
+        with c3m: st.markdown(f'<div class="mbox"><div class="mval-pur">{{rs.get("total_citations",0)}}</div><div class="mlbl">Total Citações</div></div>',unsafe_allow_html=True) # Corrected f-string here
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ================================================
@@ -1988,7 +1988,7 @@ def page_chat():
             active=st.session_state.active_chat==ue; online=is_online(ue)
             dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
             bg=f"rgba(13,127,232,.1)" if active else "rgba(255,255,255,.04)"; bdr=f"rgba(13,127,232,.25)" if active else "rgba(255,255,255,.08)"
-            st.markdown(f'<div style="background:{bg};border:1px solid {bdr};border-radius:12px;padding:8px 10px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:7px">{avh(ui,30,ug)}<div style="overflow:hidden;flex:1"><div style="font-size:.75rem;font-weight:600;font-family:Syne,sans-serif;color:var(--t0)">{dot}{un}</div><div style="font-size:.62rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div style="background:{bg};border:1px solid {bdr};border-radius:12px;padding:8px 10px;margin-bottom:4px"><div style="display:flex;align-items:center;gap:7px">{{avh(ui,30,ug)}}<div style="overflow:hidden;flex:1"><div style="font-size:.75rem;font-weight:600;font-family:Syne,sans-serif;color:var(--t0)">{{dot}}{{un}}</div><div style="font-size:.62rem;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{last}}</div></div></div></div>',unsafe_allow_html=True) # Corrected f-string here
             if st.button("→",key=f"oc_{ue}",use_container_width=True): st.session_state.active_chat=ue; st.rerun()
         st.markdown("<hr>",unsafe_allow_html=True)
         nc2=st.text_input("",placeholder="E-mail do pesquisador…",key="new_ct",label_visibility="collapsed")
@@ -2001,12 +2001,12 @@ def page_chat():
             contact=st.session_state.active_chat; cd=users.get(contact,{})
             cn=cd.get("name","?"); ci=ini(cn); cg=ugrad(contact); msgs=st.session_state.chat_messages.get(contact,[])
             online=is_online(contact); dot='<span class="dot-on"></span>' if online else '<span class="dot-off"></span>'
-            st.markdown(f'<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px 14px;margin-bottom:.85rem;display:flex;align-items:center;gap:10px">{avh(ci,36,cg)}<div style="flex:1"><div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif;color:var(--t0)">{dot}{cn}</div><div style="font-size:.63rem;color:var(--teal)">Criptografado E2E</div></div>',unsafe_allow_html=True) # Removed emoji
+            st.markdown(f'<div style="background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.09);border-radius:14px;padding:10px 14px;margin-bottom:.85rem;display:flex;align-items:center;gap:10px">{{avh(ci,36,cg)}}<div style="flex:1"><div style="font-weight:700;font-size:.88rem;font-family:Syne,sans-serif;color:var(--t0)">{{dot}}{{cn}}</div><div style="font-size:.63rem;color:var(--teal)">Criptografado E2E</div></div>',unsafe_allow_html=True) # Corrected f-string here
             if st.button("Perfil",key="chat_profile",use_container_width=False): st.session_state.profile_view=contact; st.rerun() # Removed emoji
             st.markdown('</div>',unsafe_allow_html=True)
             for msg in msgs:
                 im=msg["from"]=="me"; cls="bme" if im else "bthem"
-                st.markdown(f'<div style="display:flex;{"justify-content:flex-end" if im else ""}"><div class="{cls}">{msg["text"]}<div style="font-size:.56rem;color:var(--t3);margin-top:2px;text-align:{"right" if im else "left"}">{msg["time"]}</div></div></div>',unsafe_allow_html=True)
+                st.markdown(f'<div style="display:flex;{{"justify-content:flex-end" if im else ""}}"><div class="{cls}">{{msg["text"]}}<div style="font-size:.56rem;color:var(--t3);margin-top:2px;text-align:{{"right" if im else "left"}}}}">{{msg["time"]}}</div></div></div>',unsafe_allow_html=True) # Corrected f-string here
             st.markdown("<br>",unsafe_allow_html=True)
             ci2,cb2=st.columns([5,1])
             with ci2: nm=st.text_input("",placeholder="Escreva uma mensagem…",key=f"mi_{contact}",label_visibility="collapsed")
@@ -2028,7 +2028,7 @@ def page_settings():
     email=st.session_state.current_user; ud=st.session_state.users.get(email,{})
     ts,tp,tsec=st.tabs(["  Conta  ","  Privacidade  ","  Segurança  "]) # Removed emojis
     with ts:
-        st.markdown(f'<div class="abox"><div style="font-size:.57rem;color:var(--t3);text-transform:uppercase;letter-spacing:.10em;margin-bottom:.4rem;font-weight:700">Conta ativa</div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.95rem;color:var(--acc)">{email}</div><div style="font-size:.68rem;color:var(--t3);margin-top:.2rem">Membro verificado · {ud.get("scholarship","")}</div></div>',unsafe_allow_html=True) # Changed to scholarship
+        st.markdown(f'<div class="abox"><div style="font-size:.57rem;color:var(--t3);text-transform:uppercase;letter-spacing:.10em;margin-bottom:.4rem;font-weight:700">Conta ativa</div><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.95rem;color:var(--acc)">{{email}}</div><div style="font-size:.68rem;color:var(--t3);margin-top:.2rem">Membro verificado · {{ud.get("scholarship","")}}</div></div>',unsafe_allow_html=True) # Corrected f-string here
         new_n=st.text_input("Nome",value=ud.get("name",""),key="s_n"); new_a=st.text_input("Área",value=ud.get("area",""),key="s_a")
         new_sch=st.text_input("Bolsa",value=ud.get("scholarship",""),key="s_sch"); new_b=st.text_area("Biografia",value=ud.get("bio",""),key="s_b",height=80) # Changed to scholarship
         c1,c2=st.columns(2)
@@ -2042,7 +2042,7 @@ def page_settings():
         en=ud.get("2fa_enabled",False)
         if st.button("Desativar 2FA" if en else "Ativar 2FA",key="cfg_2fa",use_container_width=True): # Removed emoji
             st.session_state.users[email]["2fa_enabled"]=not en; save_db(); st.rerun()
-        st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-top:.4rem">2FA: <strong style="color:{SECONDARY_COLOR if en else ERROR_COLOR}">{"Ativo" if en else "Inativo"}</strong></div>',unsafe_allow_html=True)
+        st.markdown(f'<div style="font-size:.72rem;color:var(--t2);margin-top:.4rem">2FA: <strong style="color:{SECONDARY_COLOR if en else ERROR_COLOR}">{{"Ativo" if en else "Inativo"}}</strong></div>',unsafe_allow_html=True) # Corrected f-string here
     with tsec:
         with st.form("cpw"):
             op=st.text_input("Senha atual",type="password"); np2=st.text_input("Nova senha",type="password"); nc3=st.text_input("Confirmar",type="password")
@@ -2053,7 +2053,7 @@ def page_settings():
                 else: st.session_state.users[email]["password"]=hp(np2); save_db(); st.success("Senha alterada!") # Removed emoji
         st.markdown("<hr>",unsafe_allow_html=True)
         for nm,ds,ic in [("AES-256","Mensagens end-to-end"," "),("SHA-256","Hash de senhas"," "),("TLS 1.3","Transmissão segura"," ")]: # Removed emojis
-            st.markdown(f'<div class="pbox-teal"><div style="display:flex;align-items:center;gap:9px"><span>{ic}</span><div><div style="font-weight:700;color:var(--teal);font-size:.78rem">{nm}</div><div style="font-size:.65rem;color:var(--t3)">{ds}</div></div><span class="badge-teal" style="margin-left:auto">Ativo</span></div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="pbox-teal"><div style="display:flex;align-items:center;gap:9px"><span>{{ic}}</span><div><div style="font-weight:700;color:var(--teal);font-size:.78rem">{{nm}}</div><div style="font-size:.65rem;color:var(--t3)">{{ds}}</div></div><span class="badge-teal" style="margin-left:auto">Ativo</span></div></div>',unsafe_allow_html=True) # Corrected f-string here
     st.markdown('</div>',unsafe_allow_html=True)
 
 # ================================================
