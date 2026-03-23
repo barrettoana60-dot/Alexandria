@@ -1,1762 +1,1779 @@
-diff --git a/dashboard_streamlit.py b/dashboard_streamlit.py
-index 0f952201f4a73ffca1fbfeb01dadde3c19092877..c5f7501791db9b756fb4de57a58989fdf9982db6 100644
---- a/dashboard_streamlit.py
-+++ b/dashboard_streamlit.py
-@@ -1,1079 +1,678 @@
--# dashboard_consumidia_updated.py
--# CONSUMIDIA — Dashboard completo (versão atualizada)
--# - CORREÇÃO: Corrigido o erro 'StreamlitAPIException' ao limpar o anexo após o envio da mensagem.
--# - MELHORIA VISUAL: Efeito Liquid-glass aprimorado, ícones integrados aos botões de navegação.
--# - MELHORIA FUNCIONAL: Nome do usuário de origem agora é salvo e exibido nos Favoritos.
--# - NOVO: Troca de arquivos (dropbox) integrada ao sistema de mensagens.
--
--import streamlit as st
--import pandas as pd
--import plotly.express as px
--import plotly.graph_objects as go
--import networkx as nx
--from networkx.readwrite import json_graph
--from fpdf import FPDF
--import json, os, io, re, random, string, time
--from pathlib import Path
--from datetime import datetime
--import glob
--import unicodedata
--
--# extra para ML/search (mantido para futura expansão)
--import joblib
--import numpy as np
--from sklearn.feature_extraction.text import TfidfVectorizer
--from sklearn.metrics.pairwise import cosine_similarity
--
--# -------------------------
--# Default CSS (liquid glass aprimorado)
--# -------------------------
--DEFAULT_CSS = r'''
--:root{
--  --glass-bg: rgba(255,255,255,0.05);
--  --glass-border: rgba(255,255,255,0.1);
--  --glass-highlight: rgba(255,255,255,0.06);
--  --accent: #8e44ad;
--  --muted-text: #d6d9dc;
--  --icon-color: #ffffff;
--}
--
--/* Global body fallback */
--.css-1d391kg { background: linear-gradient(180deg,#071428 0%, #031926 100%) !important; }
--
--/* Liquid glass boxes used by the app */
--.glass-box{
--  background: var(--glass-bg);
--  border: 1px solid var(--glass-border);
--  border-radius: 16px;
--  padding: 18px;
--  box-shadow: 0 8px 32px rgba(4,9,20,0.5);
--  backdrop-filter: blur(12px) saturate(1.2);
--}
--
--/* Small specular shine */
--.glass-box .specular{ position:absolute; right:12px; top:8px; width:80px; height:80px; background: linear-gradient(120deg, rgba(255,255,255,0.05), rgba(255,255,255,0)); transform:rotate(18deg); pointer-events:none; border-radius:50%; }
--.color-blob{ position:absolute; pointer-events:none; filter: blur(36px); opacity:0.55; }
--.color-blob.b1{ right:-80px; top:-20px; width:240px; height:140px; background: linear-gradient(90deg, rgba(142,68,173,0.28), rgba(41,121,255,0.18)); }
--.color-blob.b2{ left:-80px; bottom:-40px; width:220px; height:120px; background: linear-gradient(90deg, rgba(26,188,156,0.28), rgba(255,138,0,0.18)); }
--
--/* Buttons: translucent, sheen, focus, pressed states */
--.stButton>button, .stDownloadButton>button{
--  background: var(--glass-bg) !important;
--  color: var(--muted-text) !important;
--  border: 1px solid var(--glass-border) !important;
--  padding: 8px 14px !important;
--  border-radius: 12px !important;
--  box-shadow: 0 4px 12px rgba(3,7,15,0.45) !important;
--  backdrop-filter: blur(8px) saturate(1.1) !important;
--  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
--}
--.stButton>button:hover, .stDownloadButton>button:hover{ transform: translateY(-2px); box-shadow: 0 6px 18px rgba(3,7,15,0.6) !important; background: rgba(255,255,255,0.08) !important; }
--.stButton>button:active, .stDownloadButton>button:active{ transform: translateY(0); box-shadow: 0 2px 6px rgba(0,0,0,0.45); }
--
--/* Large icon container */
--.icon{ display:inline-flex; align-items:center; justify-content:center; }
--.icon svg{ width:100%; height:100%; stroke:currentColor; fill:none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
--.icon.animate svg .draw{ stroke-dashoffset:0; transition: stroke-dashoffset 0.6s ease-out; }
--
--/* Title animation gradient */
--.consumidia-title{ font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; font-weight:800; font-size:36px; background: linear-gradient(90deg, #8e44ad, #2979ff, #1abc9c, #ff8a00); -webkit-background-clip: text; background-clip: text; color:transparent; display:inline-block; animation: hue 6s linear infinite; }
--@keyframes hue{ 0%{ filter:hue-rotate(0deg);} 100%{ filter:hue-rotate(360deg);} }
--
--/* Make dataframes more readable */
--[data-testid='stDataFrameContainer']{ background:transparent !important; }
--
--/* Reduce red severity for Streamlit error boxes by tonalizing them (keeps accessibility) */
--.stAlert[data-alert='error']{ background: rgba(255,77,79,0.06); border-color: rgba(255,77,79,0.12); }
--'''
--
--# write default CSS file if missing so user can edit later
--try:
--    p = Path("style.css")
--    if not p.exists():
--        p.write_text(DEFAULT_CSS, encoding='utf-8')
--except Exception:
--    pass
--
--# -------------------------
--# Page config
--# -------------------------
--st.set_page_config(page_title="CONSUMIDIA", layout="wide", initial_sidebar_state="expanded")
--
--# load css (prefer file so user may edit)
--css_path = Path("style.css")
--if css_path.exists():
--    try:
--        st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
--    except Exception:
--        st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
--else:
--    st.markdown(f"<style>{DEFAULT_CSS}</style>", unsafe_allow_html=True)
--
--# -------------------------
--# Helpers: users + auth
--# -------------------------
--USERS_FILE = "users.json"
--
--def load_users():
--    if os.path.exists(USERS_FILE):
--        try:
--            with open(USERS_FILE, "r", encoding="utf-8") as f:
--                obj = json.load(f)
--                return obj if isinstance(obj, dict) else {}
--        except Exception:
--            return {}
--    return {}
--
--def save_users(users):
--    with open(USERS_FILE, "w", encoding="utf-8") as f:
--        json.dump(users, f, ensure_ascii=False, indent=2)
--
--def gen_password(length=8):
--    choices = string.ascii_letters + string.digits
--    return ''.join(random.choice(choices) for _ in range(length))
--
--# -------------------------
--# Sistema de Favoritos (Adicionado para a nova Busca)
--# -------------------------
--def get_session_favorites():
--    """Retorna a lista de favoritos da sessão atual."""
--    return st.session_state.get("favorites", [])
--
--def add_to_favorites(result_data):
--    """Adiciona um resultado aos favoritos na sessão."""
--    favorites = get_session_favorites()
--    result_id = f"{int(time.time())}_{random.randint(1000,9999)}"
--    favorite_item = {
--        "id": result_id,
--        "data": result_data,
--        "added_at": datetime.utcnow().isoformat()
--    }
--    # Checagem de duplicatas mais robusta, ignorando a chave de usuário na comparação
--    temp_data_to_check = result_data.copy()
--    temp_data_to_check.pop('_artemis_username', None)
--
--    existing_contents = []
--    for fav in favorites:
--        temp_existing = fav["data"].copy()
--        temp_existing.pop('_artemis_username', None)
--        existing_contents.append(json.dumps(temp_existing, sort_keys=True))
--
--    if json.dumps(temp_data_to_check, sort_keys=True) not in existing_contents:
--        favorites.append(favorite_item)
--        st.session_state.favorites = favorites
--        return True
--    return False
--
--def remove_from_favorites(favorite_id):
--    """Remove um favorito da lista na sessão."""
--    favorites = get_session_favorites()
--    new_favorites = [fav for fav in favorites if fav["id"] != favorite_id]
--    st.session_state.favorites = new_favorites
--    return len(new_favorites) != len(favorites)
--
--def clear_all_favorites():
--    """Remove todos os favoritos da sessão."""
--    st.session_state.favorites = []
--    return True
--
--# -------------------------
--# Color palette (pt -> hex)
--# -------------------------
--PALETA = {
--    "verde": "#00c853",
--    "laranja": "#ff8a00",
--    "amarelo": "#ffd600",
--    "vermelho": "#ff3d00",
--    "azul": "#2979ff",
--    "roxo": "#8e44ad",
--    "cinza": "#7f8c8d",
--    "preto": "#000000",
--    "turquesa": "#1abc9c"
--}
--
--def normalize_color(name_or_hex: str):
--    if not name_or_hex:
--        return None
--    s = str(name_or_hex).strip().lower()
--    if s in PALETA:
--        return PALETA[s]
--    if re.match(r"^#([0-9a-f]{3}|[0-9a-f]{6})$", s):
--        return s
--    return s
--
--# -------------------------
--# Session defaults
--# -------------------------
--for k, v in {
--    "authenticated": False,
--    "username": None,
--    "user_obj": None,
--    "df": None,
--    "G": nx.Graph(),
--    "notes": "",
--    "autosave": False,
--    "page": "planilha",
--    "restored_from_saved": False,
--    "favorites": [] # Adicionado para a nova Busca
--}.items():
--    if k not in st.session_state:
--        st.session_state[k] = v
--
--# -------------------------
--# Per-user state helpers
--# -------------------------
--def user_state_file(username):
--    return f"artemis_state_{username}.json"
--
--def user_backup_dir(username):
--    p = Path("backups") / username
--    p.mkdir(parents=True, exist_ok=True)
--    return p
--
--def save_state_for_user(username):
--    path = user_state_file(username)
--    backup_path = None
--    try:
--        if st.session_state.df is not None:
--            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
--            safe = re.sub(r"[^\w\-_.]", "_", st.session_state.get("uploaded_name") or "planilha")
--            backup_filename = f"{safe}_{ts}.csv"
--            backup_path = str((user_backup_dir(username) / backup_filename).resolve())
--            st.session_state.df.to_csv(backup_path, index=False, encoding="utf-8")
--    except Exception:
--        backup_path = None
--    data = {
--        "graph": json_graph.node_link_data(st.session_state.G),
--        "notes": st.session_state.notes,
--        "uploaded_name": st.session_state.get("uploaded_name", None),
--        "backup_csv": backup_path,
--        "saved_at": datetime.utcnow().isoformat(),
--        "favorites": st.session_state.get("favorites", []) # Adicionado para a nova Busca
--    }
--    with open(path, "w", encoding="utf-8") as f:
--        json.dump(data, f, indent=2, ensure_ascii=False)
--    return path
--
--def load_state_for_user(username, load_backup_csv=True):
--    path = user_state_file(username)
--    if not os.path.exists(path):
--        return False
--    with open(path, "r", encoding="utf-8") as f:
--        try:
--            meta = json.load(f)
--        except Exception:
--            return False
--    try:
--        st.session_state.G = json_graph.node_link_graph(meta.get("graph", {}))
--    except Exception:
--        st.session_state.G = nx.Graph()
--    st.session_state.notes = meta.get("notes", "")
--    st.session_state.uploaded_name = meta.get("uploaded_name", None)
--    st.session_state.favorites = meta.get("favorites", []) # Adicionado para a nova Busca
--    backup_csv = meta.get("backup_csv")
--    if load_backup_csv and backup_csv and os.path.exists(backup_csv):
--        try:
--            st.session_state.df = pd.read_csv(backup_csv, encoding="utf-8")
--        except Exception:
--            try:
--                st.session_state.df = pd.read_csv(backup_csv, encoding="latin1")
--            except Exception:
--                st.session_state.df = None
--    st.session_state.restored_from_saved = True
--    return True
--
--# -------------------------
--# Robust spreadsheet reader
--# -------------------------
--def read_spreadsheet(uploaded_file):
--    b = uploaded_file.read()
--    buf = io.BytesIO(b)
--    name = uploaded_file.name.lower()
--    if name.endswith(".csv"):
--        for enc in ("utf-8", "latin1", "cp1252"):
--            try:
--                buf.seek(0)
--                return pd.read_csv(buf, encoding=enc)
--            except Exception:
--                continue
--        buf.seek(0)
--        return pd.read_csv(buf, engine="python", on_bad_lines="skip")
--    else:
--        buf.seek(0)
--        return pd.read_excel(buf)
--
--# -------------------------
--# Graph creation + plotly 3D
--# -------------------------
--def criar_grafo(df):
--    G = nx.Graph()
--    if df is None:
--        return G
--    cols_lower = {c.lower(): c for c in df.columns}
--    for _, row in df.iterrows():
--        autor = str(row.get(cols_lower.get("autor", ""), "") or "").strip()
--        titulo = str(row.get(cols_lower.get("título", cols_lower.get("titulo", "")), "") or "").strip()
--        ano = str(row.get(cols_lower.get("ano", ""), "") or "").strip()
--        tema = str(row.get(cols_lower.get("tema", ""), "") or "").strip()
--        if autor:
--            k = f"Autor: {autor}"
--            G.add_node(k, tipo="Autor", label=autor)
--        if titulo:
--            k = f"Título: {titulo}"
--            G.add_node(k, tipo="Título", label=titulo)
--        if ano:
--            k = f"Ano: {ano}"
--            G.add_node(k, tipo="Ano", label=ano)
--        if tema:
--            k = f"Tema: {tema}"
--            G.add_node(k, tipo="Tema", label=tema)
--        if autor and titulo:
--            G.add_edge(f"Autor: {autor}", f"Título: {titulo}")
--        if titulo and ano:
--            G.add_edge(f"Título: {titulo}", f"Ano: {ano}")
--        if titulo and tema:
--            G.add_edge(f"Título: {titulo}", f"Tema: {tema}")
--    return G
--
--
--def graph_to_plotly_3d(G, show_labels=False, height=600):
--    if len(G.nodes()) == 0:
--        fig = go.Figure()
--        fig.update_layout(height=height, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
--        return fig
--    pos = nx.spring_layout(G, dim=3, seed=42)
--    degrees = dict(G.degree())
--    deg_values = [degrees.get(n, 1) for n in G.nodes()]
--    min_deg, max_deg = min(deg_values), max(deg_values)
--    node_sizes = [8 + ((d - min_deg) / (max_deg - min_deg + 1e-6)) * 18 for d in deg_values]
--    x_nodes = [pos[n][0] for n in G.nodes()]
--    y_nodes = [pos[n][1] for n in G.nodes()]
--    z_nodes = [pos[n][2] for n in G.nodes()]
--    x_edges, y_edges, z_edges = [], [], []
--    for e in G.edges():
--        x_edges += [pos[e[0]][0], pos[e[1]][0], None]
--        y_edges += [pos[e[0]][1], pos[e[1]][1], None]
--        z_edges += [pos[e[0]][2], pos[e[1]][2], None]
--    color_map = {"Autor": PALETA["verde"], "Título": PALETA["roxo"], "Ano": PALETA["azul"], "Tema": PALETA["laranja"]}
--    node_colors = [color_map.get(G.nodes[n].get("tipo", ""), PALETA["vermelho"]) for n in G.nodes()]
--    labels = [G.nodes[n].get("label", str(n)) for n in G.nodes()]
--    hover = [f"<b>{G.nodes[n].get('label','')}</b><br>Tipo: {G.nodes[n].get('tipo','')}" for n in G.nodes()]
--    edge_trace = go.Scatter3d(
--        x=x_edges, y=y_edges, z=z_edges, mode="lines",
--        line=dict(color="rgba(200,200,200,0.12)", width=1.2), hoverinfo="none"
--    )
--    node_trace = go.Scatter3d(
--        x=x_nodes, y=y_nodes, z=z_nodes,
--        mode="markers+text" if show_labels else "markers",
--        marker=dict(size=node_sizes, color=node_colors, opacity=0.95, line=dict(width=1)),
--        hovertext=hover, hoverinfo="text",
--        text=labels if show_labels else None, textposition="top center"
--    )
--    legend_items = []
--    for label, cor in [("Autor", PALETA["verde"]), ("Título", PALETA["roxo"]), ("Ano", PALETA["azul"]), ("Tema", PALETA["laranja"])]:
--        legend_items.append(go.Scatter3d(x=[None], y=[None], z=[None], mode="markers",
--                                        marker=dict(size=8, color=cor), name=label))
--    fig = go.Figure(data=[edge_trace, node_trace] + legend_items)
--    fig.update_layout(
--        scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False), bgcolor="rgba(0,0,0,0)"),
--        margin=dict(l=0, r=0, t=20, b=0), height=height,
--        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
--        legend=dict(font=dict(color="#d6d9dc"), orientation="h", y=1.05, x=0.02)
--    )
--    fig.update_layout(scene_camera=dict(eye=dict(x=1.2, y=1.2, z=1.2)))
--    return fig
--
--# -------------------------
--# PDF with highlights (returns bytes)
--# -------------------------
--def _safe_for_pdf(s: str):
--    if s is None:
--        return ""
--    s2 = s.replace("—", "-").replace("–", "-")
--    return s2.encode("latin-1", "replace").decode("latin-1")
--
--def generate_pdf_with_highlights(texto, highlight_hex="#ffd600"):
--    pdf = FPDF()
--    pdf.set_auto_page_break(auto=True, margin=12)
--    pdf.add_page()
--    pdf.set_font("Arial", size=12)
--    for linha in (texto or "").split("\n"):
--        parts = re.split(r"(==.*?==)", linha)
--        for part in parts:
--            if not part:
--                continue
--            if part.startswith("==") and part.endswith("=="):
--                inner = part[2:-2]
--                inner_safe = _safe_for_pdf(inner)
--                hexv = (highlight_hex or "#ffd600").lstrip("#")
--                if len(hexv) == 3:
--                    hexv = ''.join([c*2 for c in hexv])
--                try:
--                    r, g, b = int(hexv[0:2], 16), int(hexv[2:4], 16), int(hexv[4:6], 16)
--                except Exception:
--                    r, g, b = (255, 214, 0)
--                pdf.set_fill_color(r, g, b)
--                pdf.set_text_color(0, 0, 0)
--                w = pdf.get_string_width(inner_safe) + 2
--                pdf.cell(w, 6, txt=inner_safe, border=0, ln=0, fill=True)
--                pdf.set_text_color(0, 0, 0)
--            else:
--                if part:
--                    safe_part = _safe_for_pdf(part)
--                    pdf.set_text_color(0, 0, 0)
--                    pdf.cell(pdf.get_string_width(safe_part), 6, txt=safe_part, border=0, ln=0)
--        pdf.ln(6)
--    raw = pdf.output(dest="S")
--    if isinstance(raw, str):
--        return raw.encode("latin-1", "replace")
--    elif isinstance(raw, (bytes, bytearray)):
--        return bytes(raw)
--    else:
--        return str(raw).encode("latin-1", "replace")
--
--# -------------------------
--# ICONS + animation helper
--# -------------------------
--ICON_KEYS = [
--    "login","register","planilha","mapa","anotacoes","graficos",
--    "save","logout","restore","download_backup","upload_file","export",
--    "add_node","del_node","rename_node","down_pdf","busca",
--    "favoritos", "trash", "attachment"
--]
--for k in ICON_KEYS:
--    if f"anim_ts_{k}" not in st.session_state:
--        st.session_state[f"anim_ts_{k}"] = 0.0
--
--def _now():
--    return time.time()
--
--def mark_icon_animate(key):
--    st.session_state[f"anim_ts_{key}"] = _now()
--
--ICON_SVGS = {
--    "planilha": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect class="draw" x="2" y="3" width="20" height="18" rx="2"/><path class="draw" d="M7 8h10M7 12h10M7 16h10"/></svg>',
--    "anotacoes": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M3 21v-3a4 4 0 0 1 4-4h2l6-6 4 4-6 6" /><path class="draw pen" d="M14 7l3 3" /><path class="draw" d="M6 18l4-4"/></svg>',
--    "mapa": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline class="draw" points="3 6 9 3 15 6 21 3"/><polyline class="draw" points="3 18 9 15 15 18 21 15"/><line class="draw" x1="9" y1="3" x2="9" y2="15"/></svg>',
--    "graficos": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect class="draw" x="3" y="10" width="4" height="10" rx="1"/><rect class="draw" x="9" y="6" width="4" height="14" rx="1"/><rect class="draw" x="15" y="2" width="4" height="18" rx="1"/></svg>',
--    "save": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M5 21h14a1 1 0 0 0 1-1V7L16 3H8L4 7v13a1 1 0 0 0 1 1z"/><path class="draw" d="M9 9h6v6H9z"/></svg>',
--    "logout": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path class="draw" d="M16 17l5-5-5-5"/><path class="draw" d="M21 12H9"/></svg>',
--    "upload_file": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline class="draw" points="17 8 12 3 7 8"/><line class="draw" x1="12" y1="3" x2="12" y2="15"/></svg>',
--    "download_backup": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline class="draw" points="7 10 12 15 17 10"/><line class="draw" x1="12" y1="15" x2="12" y2="3"/></svg>',
--    "export": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M12 3v12"/><polyline class="draw" points="8 7 12 3 16 7"/><rect class="draw" x="3" y="15" width="18" height="6" rx="1"/></svg>',
--    "add_node": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle class="draw" cx="12" cy="12" r="9"/><line class="draw" x1="12" y1="8" x2="12" y2="16"/><line class="draw" x1="8" y1="12" x2="16" y2="12"/></svg>',
--    "del_node": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle class="draw" cx="12" cy="12" r="9"/><line class="draw" x1="9" y1="9" x2="15" y2="15"/><line class="draw" x1="15" y1="9" x2="9" y2="15"/></svg>',
--    "rename_node": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M3 21v-3a4 4 0 0 1 4-4h2"/><path class="draw" d="M14 7l3 3"/><path class="draw" d="M10 14l6-6"/></svg>',
--    "down_pdf": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline class="draw" points="7 10 12 15 17 10"/></svg>',
--    "login": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M12 2a5 5 0 0 1 5 5v3"/><path class="draw" d="M21 21v-6a4 4 0 0 0-4-4H7"/></svg>',
--    "register": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle class="draw" cx="12" cy="8" r="3"/><path class="draw" d="M21 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/></svg>',
--    "restore": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 12a9 9 0 1 1-3-6.7"/><polyline class="draw" points="21 6 21 12 15 12"/></svg>',
--    "busca": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="6"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
--    "favoritos": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
--    "trash": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
--    "attachment": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>'
--}
--
--def icon_html_svg(key, extra_class="", size=36, color=None):
--    svg = ICON_SVGS.get(key, "")
--    ts = st.session_state.get(f"anim_ts_{key}", 0.0)
--    animate = (_now() - ts) < 1.8
--    classes = f"icon {key}"
--    if extra_class: classes += " " + extra_class
--    if animate: classes += " animate"
--    col = color or "var(--icon-color)"
--    style = f"color:{col}; width:{size}px; height:{size}px; display:inline-block; vertical-align:middle;"
--    return f'<span class="{classes}" style="{style}">{svg}</span>'
--
--# -------------------------
--# Unified action button helper
--# -------------------------
--def action_button(label, icon_key, st_key, expanded_label=None, wide=False):
--    c_icon, c_btn = st.columns([0.15, 0.85])
--    with c_icon:
--        st.markdown(f"<div style='margin-top:6px'>{icon_html_svg(icon_key, size=28)}</div>", unsafe_allow_html=True)
--    with c_btn:
--        clicked = st.button(expanded_label or label, key=st_key, use_container_width=True)
--    if clicked:
--        mark_icon_animate(icon_key)
--    return clicked
--
--# -------------------------
--# NAV and UI
--# -------------------------
--st.markdown("<div style='display:flex; justify-content:center;'><h1 class='consumidia-title'>CONSUMIDIA</h1></div>", unsafe_allow_html=True)
--
--users = load_users()
--
--if not st.session_state.authenticated:
--    st.markdown("<div class='glass-box auth' style='max-width:1100px;margin:0 auto; position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
--    st.subheader("Acesso — Faça login ou cadastre-se")
--    tabs = st.tabs(["Entrar", "Cadastrar"])
--    with tabs[0]:
--        login_user = st.text_input("Usuário", key="ui_login_user")
--        login_pass = st.text_input("Senha", type="password", key="ui_login_pass")
--        if st.button("Entrar", "btn_login_main"):
--            if login_user and login_user in users and users[login_user].get("password") == login_pass:
--                st.session_state.authenticated = True
--                st.session_state.username = login_user
--                st.session_state.user_obj = users[login_user]
--                st.rerun()
--            else:
--                st.warning("Usuário ou senha incorretos.")
--    with tabs[1]:
--        reg_name = st.text_input("Nome completo", key="ui_reg_name")
--        reg_bolsa = st.selectbox("Tipo de bolsa", ["IC - Iniciação Científica", "BIA - Bolsa de Incentivo Acadêmico", "Extensão", "Doutorado"], key="ui_reg_bolsa")
--        reg_user = st.text_input("Escolha um username", key="ui_reg_user")
--        if st.button("Cadastrar", "btn_register_main"):
--            if not reg_user or not reg_user.strip():
--                st.warning("Escolha um username válido.")
--            elif reg_user in users:
--                st.warning("Username já existe.")
--            else:
--                pwd = gen_password(8)
--                users[reg_user] = {"name": reg_name or reg_user, "scholarship": reg_bolsa, "password": pwd, "created_at": datetime.utcnow().isoformat()}
--                save_users(users)
--                st.success(f"Usuário criado. Username: **{reg_user}** — Senha gerada: **{pwd}**")
--                st.info("Anote a senha.")
--    st.markdown("</div>", unsafe_allow_html=True)
--    st.stop()
--
--
--# -------------------------
--# After auth: per-user variables
--# -------------------------
--USERNAME = st.session_state.username
--USER_OBJ = st.session_state.user_obj or users.get(USERNAME, {})
--USER_STATE = user_state_file(USERNAME)
--
--# try auto restore
--if not st.session_state.restored_from_saved and os.path.exists(USER_STATE):
--    try:
--        load_state_for_user(USERNAME)
--        st.success("Estado salvo do usuário restaurado automaticamente.")
--    except Exception:
--        pass
--
--# -------------------------
--# Módulo de Mensagens (Carregamento inicial para notificação)
--# -------------------------
--MESSAGES_PATH = Path("messages.json")
--UNREAD_COUNT = 0
--try:
--    if MESSAGES_PATH.exists():
--        with open(MESSAGES_PATH, "r", encoding="utf-8") as mf:
--            all_msgs = json.load(mf)
--            UNREAD_COUNT = sum(1 for m in all_msgs if m.get("to") == USERNAME and not m.get("read"))
--except Exception:
--    UNREAD_COUNT = 0
--
--if "last_unread_count" not in st.session_state:
--    st.session_state.last_unread_count = 0
--if UNREAD_COUNT > st.session_state.last_unread_count:
--    try:
--        st.toast(f"Você tem {UNREAD_COUNT} nova(s) mensagem(ns) não lida(s).", icon="✉️")
--    except Exception:
--        pass
--st.session_state.last_unread_count = UNREAD_COUNT
--
--mens_label = f"✉️ Mensagens ({UNREAD_COUNT})" if UNREAD_COUNT > 0 else "✉️ Mensagens"
--
--# -------------------------
--# Top controls + nav
--# -------------------------
--st.markdown("<div class='glass-box' style='padding-top:10px; padding-bottom:10px;'><div class='specular'></div>", unsafe_allow_html=True)
--
--top1, top2 = st.columns([0.6, 0.4])
--with top1:
--    st.markdown(f"<div style='color:var(--muted-text);font-weight:700; padding-top:8px;'>Usuário: {USER_OBJ.get('name','')} — {USER_OBJ.get('scholarship','')}</div>", unsafe_allow_html=True)
--with top2:
--    nav_right1, nav_right2, nav_right3 = st.columns([1,1,1])
--    with nav_right1:
--        ui_aut = st.checkbox("Auto-save", value=st.session_state.autosave, key="ui_autosave")
--        st.session_state.autosave = ui_aut
--    with nav_right2:
--        if st.button("💾 Salvar", key=f"btn_save_now", use_container_width=True):
--            p = save_state_for_user(USERNAME)
--            st.success(f"Progresso salvo.")
--    with nav_right3:
--        if st.button("🚪 Sair", key=f"btn_logout", use_container_width=True):
--            for key in list(st.session_state.keys()): del st.session_state[key]
--            st.rerun()
--
--st.markdown("<div style='margin-top:-20px'>", unsafe_allow_html=True)
--nav1, nav2, nav3, nav4, nav5, nav6 = st.columns(6)
--with nav1:
--    if st.button("📄 Planilha", key="nav_planilha", use_container_width=True):
--        st.session_state.page = "planilha"
--        st.rerun()
--with nav2:
--    if st.button("🗺️ Mapa", key="nav_mapa", use_container_width=True):
--        st.session_state.page = "mapa"
--        st.rerun()
--with nav3:
--    if st.button("📝 Anotações", key="nav_anotacoes", use_container_width=True):
--        st.session_state.page = "anotacoes"
--        st.rerun()
--with nav4:
--    if st.button("📊 Gráficos", key="nav_graficos", use_container_width=True):
--        st.session_state.page = "graficos"
--        st.rerun()
--with nav5:
--    if st.button("🔍 Busca", key="nav_busca", use_container_width=True):
--        st.session_state.page = "busca"
--        st.rerun()
--with nav6:
--    if st.button(mens_label, key="nav_mensagens", use_container_width=True):
--        st.session_state.page = "mensagens"
--        st.rerun()
--st.markdown("</div></div>", unsafe_allow_html=True)
--st.markdown("---")
--
--
--# -------------------------
--# Page content dispatcher
--# -------------------------
--if st.session_state.page == "planilha":
--    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
--    st.subheader("Planilha / Backup")
--    col1, col2 = st.columns([1,3])
--    with col1:
--        if st.button("Restaurar estado salvo", key="btn_restore_state"):
--            ok = load_state_for_user(USERNAME)
--            if ok:
--                st.success("Estado salvo restaurado (grafo + anotações).")
--            else:
--                st.info("Nenhum estado salvo encontrado.")
--    with col2:
--        meta = None
--        if os.path.exists(USER_STATE):
--            try:
--                with open(USER_STATE, "r", encoding="utf-8") as f:
--                    meta = json.load(f)
--            except Exception:
--                meta = None
--        if meta and meta.get("backup_csv") and os.path.exists(meta.get("backup_csv")):
--            st.write("Backup CSV encontrado:")
--            st.text(meta.get("backup_csv"))
--            with open(meta.get("backup_csv"), "rb") as fp:
--                st.download_button("⬇ Baixar backup CSV", data=fp, file_name=os.path.basename(meta.get("backup_csv")), mime="text/csv")
--        else:
--            st.write("Nenhum backup CSV automático encontrado ainda.")
--
--    uploaded = st.file_uploader("Carregue .csv ou .xlsx (cada linha será um nó)", type=["csv", "xlsx"], key=f"u_{USERNAME}")
--    if uploaded:
--        try:
--            df = read_spreadsheet(uploaded)
--            st.session_state.df = df
--            st.session_state.uploaded_name = uploaded.name
--            st.session_state.G = criar_grafo(df)
--            st.success("Planilha carregada com sucesso.")
--            if st.session_state.autosave:
--                save_state_for_user(USERNAME)
--        except Exception as e:
--            st.error(f"Erro ao ler planilha: {e}")
--
--    if st.session_state.df is not None:
--        st.write("Visualização da planilha:")
--        st.dataframe(st.session_state.df, use_container_width=True)
--    st.markdown("</div>", unsafe_allow_html=True)
--
--elif st.session_state.page == "mapa":
--    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
--    st.subheader("Mapa Mental 3D — Editor")
--
--    if st.session_state.G.nodes():
--        with st.expander("Editar Nós do Mapa"):
--            left, right = st.columns([2,1])
--            with left:
--                new_node = st.text_input("Nome do novo nó", value="", key=f"nm_name_{USERNAME}")
--                new_tipo = st.selectbox("Tipo", ["Outro", "Autor", "Título", "Ano", "Tema"], index=0, key=f"nm_tipo_{USERNAME}")
--                connect_to = st.selectbox("Conectar a (opcional)", options=["Nenhum"] + list(st.session_state.G.nodes), index=0, key=f"nm_connect_{USERNAME}")
--                if st.button("Adicionar nó", key=f"btn_add_{USERNAME}"):
--                    n = new_node.strip()
--                    if not n: st.warning("Nome inválido.")
--                    elif n in st.session_state.G.nodes: st.warning("Nó já existe.")
--                    else:
--                        st.session_state.G.add_node(n, tipo=new_tipo, label=n)
--                        if connect_to != "Nenhum":
--                            st.session_state.G.add_edge(n, connect_to)
--                        st.success(f"Nó '{n}' adicionado.")
--                        if st.session_state.autosave: save_state_for_user(USERNAME)
--                        st.rerun()
--            with right:
--                del_n = st.selectbox("Excluir nó", options=[""] + list(st.session_state.G.nodes), key=f"del_{USERNAME}")
--                if st.button("Excluir nó", key=f"btn_del_{USERNAME}"):
--                    if del_n and del_n in st.session_state.G:
--                        st.session_state.G.remove_node(del_n)
--                        st.success(f"Nó '{del_n}' removido.")
--                        if st.session_state.autosave: save_state_for_user(USERNAME)
--                        st.rerun()
--                st.markdown("---")
--                r_old = st.selectbox("Renomear: selecione nó", options=[""] + list(st.session_state.G.nodes), key=f"r_old_{USERNAME}")
--                r_new = st.text_input("Novo nome", key=f"r_new_{USERNAME}")
--                if st.button("Renomear", key=f"btn_ren_{USERNAME}"):
--                    if r_old and r_new and r_old in st.session_state.G and r_new not in st.session_state.G:
--                        nx.relabel_nodes(st.session_state.G, {r_old: r_new}, copy=False)
--                        st.success(f"'{r_old}' → '{r_new}'")
--                        if st.session_state.autosave: save_state_for_user(USERNAME)
--                        st.rerun()
--
--    st.markdown("### Visualização 3D")
--    try:
--        fig = graph_to_plotly_3d(st.session_state.G, show_labels=False, height=700)
--        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
--    except Exception as e:
--        st.error(f"Erro ao renderizar grafo: {e}")
--    st.markdown("</div>", unsafe_allow_html=True)
--
--elif st.session_state.page == "anotacoes":
--    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
--    st.subheader("Anotações com Marca-texto")
--    st.info("Use ==texto== para marcar (destacar) trechos que serão realçados no PDF.")
--    notes = st.text_area("Digite suas anotações (use ==texto== para destacar)", value=st.session_state.notes, height=260, key=f"notes_{USERNAME}")
--    st.session_state.notes = notes
--
--    pdf_bytes = generate_pdf_with_highlights(st.session_state.notes)
--    st.download_button("Baixar Anotações (PDF)", data=pdf_bytes, file_name="anotacoes_consumidia.pdf", mime="application/pdf")
--
--    st.markdown("</div>", unsafe_allow_html=True)
--
--elif st.session_state.page == "graficos":
--    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
--    st.subheader("Gráficos Personalizados")
--    if st.session_state.df is None:
--        st.warning("Carregue uma planilha na aba 'Planilha' para gerar gráficos.")
--    else:
--        df = st.session_state.df.copy()
--        cols = df.columns.tolist()
--        c1, c2 = st.columns(2)
--        with c1:
--            eixo_x = st.selectbox("Eixo X", options=cols, index=0, key=f"x_{USERNAME}")
--        with c2:
--            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
--            eixo_y = st.selectbox("Eixo Y (Opcional)", options=[None] + numeric_cols, key=f"y_{USERNAME}")
--
--        if st.button("Gerar Gráfico"):
--            try:
--                if eixo_y:
--                    fig = px.bar(df, x=eixo_x, y=eixo_y, title=f"{eixo_y} por {eixo_x}")
--                else:
--                    fig = px.histogram(df, x=eixo_x, title=f"Contagem por {eixo_x}")
--
--                fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#d6d9dc"))
--                st.plotly_chart(fig, use_container_width=True)
--            except Exception as e:
--                st.error(f"Erro ao gerar gráficos: {e}")
--    st.markdown("</div>", unsafe_allow_html=True)
--
--elif st.session_state.page == "busca":
--    st.markdown("<div class='glass-box' style='position:relative; padding:12px;'><div class='specular'></div>", unsafe_allow_html=True)
--
--    tab_busca, tab_favoritos = st.tabs(["🔍 Busca Inteligente", f"⭐ Favoritos ({len(get_session_favorites())})"])
--
--    with tab_busca:
--        st.header("Busca Inteligente")
--
--        @st.cache_data(ttl=300)
--        def collect_latest_backups():
--            base = Path("backups")
--            if not base.exists():
--                return None
--            dfs = []
--            for user_dir in sorted(base.iterdir()):
--                if not user_dir.is_dir(): continue
--                csvs = sorted(user_dir.glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
--                if not csvs: continue
--                latest = csvs[0]
--                try:
--                    df = pd.read_csv(latest, encoding="utf-8", on_bad_lines='skip')
--                    df["_artemis_username"] = user_dir.name
--                    dfs.append(df)
--                except Exception:
--                    continue
--            return pd.concat(dfs, ignore_index=True) if dfs else None
--
--        backups_df = collect_latest_backups()
--
--        if backups_df is None:
--            st.warning("Nenhum backup de usuário encontrado para a busca. Salve seu progresso para criar um.")
--        else:
--            all_cols = [c for c in backups_df.columns if c != '_artemis_username']
--
--            col1, col2, col3 = st.columns([0.6, 0.25, 0.15])
--            with col1:
--                query = st.text_input("Termo de busca", key="ui_query_search", placeholder="Digite palavras-chave...")
--            with col2:
--                search_col = st.selectbox("Buscar em", options=all_cols, label_visibility="visible")
--            with col3:
--                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
--                search_clicked = st.button("Buscar", use_container_width=True)
--
--            if 'search_results' not in st.session_state:
--                st.session_state.search_results = pd.DataFrame()
--
--            if search_clicked:
--                if query and search_col:
--                    results = backups_df[backups_df[search_col].astype(str).str.contains(query, case=False, na=False)]
--                    st.session_state.search_results = results
--                else:
--                    st.session_state.search_results = pd.DataFrame()
--
--            results_df = st.session_state.search_results
--            if not results_df.empty:
--                st.markdown(f"**{len(results_df)} resultado(s) encontrado(s).** Exibindo os 20 primeiros.")
--                st.markdown("---")
--
--                for idx, row in results_df.head(20).iterrows():
--                    with st.container(border=True):
--                        result_data = row.to_dict()
--                        username = result_data.get('_artemis_username', 'N/A')
--                        col_info, col_action = st.columns([0.8, 0.2])
--                        with col_info:
--                            user_icon_svg = icon_html_svg('register', size=18, color='var(--muted-text)')
--                            st.markdown(f"""
--                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--muted-text);">
--                                {user_icon_svg}
--                                <span>Encontrado no trabalho de <strong style="color: #e1e3e6;">{username}</strong></span>
--                            </div>
--                            """, unsafe_allow_html=True)
--                            display_data = result_data.copy()
--                            display_data.pop('_artemis_username', None)
--                            for k, v in display_data.items():
--                                st.markdown(f"**{str(k).capitalize()}:** {v}")
--
--                        with col_action:
--                            if action_button("Favoritar", "favoritos", f"fav_{idx}", wide=True):
--                                if add_to_favorites(result_data):
--                                    st.toast("Adicionado!", icon="⭐")
--                                    save_state_for_user(USERNAME)
--                                else:
--                                    st.toast("Já está nos favoritos.")
--            elif search_clicked:
--                st.info("Nenhum resultado encontrado para a sua busca.")
--
--    with tab_favoritos:
--        st.header("Seus Resultados Salvos")
--        favorites = get_session_favorites()
--
--        if not favorites:
--            st.info("Você ainda não favoritou nenhum resultado.")
--        else:
--            _, col_clear = st.columns([0.7, 0.3])
--            with col_clear:
--                if action_button("Limpar Todos", "trash", "clear_favs", wide=True):
--                    clear_all_favorites()
--                    save_state_for_user(USERNAME)
--                    st.rerun()
--
--            st.markdown("---")
--            sorted_favorites = sorted(favorites, key=lambda x: x['added_at'], reverse=True)
--
--            for fav in sorted_favorites:
--                with st.container(border=True):
--                    col_info, col_action = st.columns([0.8, 0.2])
--                    with col_info:
--                        fav_data = fav['data'].copy()
--                        source_user = fav_data.pop('_artemis_username', 'N/A')
--
--                        user_icon_svg = icon_html_svg('register', size=18, color='var(--muted-text)')
--                        st.markdown(f"""
--                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--muted-text);">
--                            {user_icon_svg}
--                            <span>Proveniente do trabalho de <strong style="color: #e1e3e6;">{source_user}</strong></span>
--                        </div>
--                        """, unsafe_allow_html=True)
--                        for k, v in fav_data.items():
--                            st.markdown(f"**{k.capitalize()}:** {v}")
--                    with col_action:
--                        if action_button("Remover", "trash", f"del_fav_{fav['id']}", wide=True):
--                            remove_from_favorites(fav['id'])
--                            save_state_for_user(USERNAME)
--                            st.rerun()
--
--    st.markdown("</div>", unsafe_allow_html=True)
--
--# --- [INÍCIO DO MÓDULO DE MENSAGENS CORRIGIDO] ---
--elif st.session_state.page == "mensagens":
--    MESSAGES_FILE = "messages.json"
--    ATTACHMENTS_DIR = Path("user_files")
--    ATTACHMENTS_DIR.mkdir(exist_ok=True)
--
--    def load_all_messages():
--        if os.path.exists(MESSAGES_FILE):
--            try:
--                with open(MESSAGES_FILE, "r", encoding="utf-8") as f:
--                    return json.load(f)
--            except Exception:
--                return []
--        return []
--
--    def save_all_messages(msgs):
--        with open(MESSAGES_FILE, "w", encoding="utf-8") as f:
--            json.dump(msgs, f, ensure_ascii=False, indent=2)
--
--    def send_message(sender, recipient, subject, body, attachment_file=None):
--        msgs = load_all_messages()
--        mid = f"m_{int(time.time())}_{random.randint(1000,9999)}"
--        entry = {
--            "id": mid,
--            "from": sender,
--            "to": recipient,
--            "subject": subject or "(sem assunto)",
--            "body": body,
--            "ts": datetime.utcnow().isoformat(),
--            "read": False,
--            "attachment": None
--        }
--        
--        if attachment_file:
--            safe_filename = re.sub(r'[^\w\.\-]', '_', attachment_file.name)
--            unique_filename = f"{int(time.time())}_{sender}_{safe_filename}"
--            save_path = ATTACHMENTS_DIR / unique_filename
--            
--            with open(save_path, "wb") as f:
--                f.write(attachment_file.getbuffer())
--            entry["attachment"] = {"name": attachment_file.name, "path": str(save_path)}
--
--        msgs.append(entry)
--        save_all_messages(msgs)
--        return entry
--
--    def get_user_messages(username, box_type='inbox'):
--        msgs = load_all_messages()
--        key = "to" if box_type == 'inbox' else "from"
--        user_msgs = [m for m in msgs if m.get(key) == username]
--        user_msgs.sort(key=lambda x: x.get("ts", ""), reverse=True)
--        return user_msgs
--
--    def mark_message_read(message_id, username):
--        msgs = load_all_messages()
--        changed = False
--        for m in msgs:
--            if m.get("id") == message_id and m.get("to") == username:
--                if not m.get("read"):
--                    m["read"] = True
--                    changed = True
--                break
--        if changed:
--            save_all_messages(msgs)
--        return changed
--
--    def delete_message(message_id, username):
--        msgs = load_all_messages()
--        msg_to_delete = None
--        for m in msgs:
--            if m.get("id") == message_id and (m.get("to") == username or m.get("from") == username):
--                msg_to_delete = m
--                break
--        
--        if msg_to_delete:
--            if msg_to_delete.get("attachment"):
--                try:
--                    os.remove(msg_to_delete["attachment"]["path"])
--                except OSError:
--                    pass
--            
--            new_msgs = [m for m in msgs if m.get("id") != message_id]
--            save_all_messages(new_msgs)
--            return True
--        return False
--
--    st.markdown("<div class='glass-box' style='position:relative; padding:12px;'><div class='specular'></div>", unsafe_allow_html=True)
--    st.subheader("Central de Mensagens")
--
--    inbox = get_user_messages(USERNAME, 'inbox')
--    outbox = get_user_messages(USERNAME, 'outbox')
--
--    tab_inbox, tab_compose, tab_sent = st.tabs([f"📥 Caixa de Entrada ({UNREAD_COUNT})", "✍️ Escrever Nova", f"📤 Enviadas ({len(outbox)})"])
--
--    with tab_inbox:
--        if not inbox:
--            st.info("Sua caixa de entrada está vazia.")
--        else:
--            for m in inbox:
--                is_read = m.get("read", False)
--                expander_label = f"{'✅' if is_read else '🔵'} De: **{m.get('from')}** | Assunto: **{m.get('subject')}**"
--                with st.expander(expander_label):
--                    st.markdown(f"**Recebido em:** `{m.get('ts')}`")
--                    st.markdown("---")
--                    st.markdown(m.get("body"))
--                    
--                    if not is_read:
--                        mark_message_read(m.get('id'), USERNAME)
--                        st.rerun()
--
--                    if m.get("attachment"):
--                        attachment_info = m["attachment"]
--                        st.markdown("---")
--                        try:
--                            with open(attachment_info["path"], "rb") as fp:
--                                st.download_button(
--                                    label=f"⬇️ Baixar Anexo: {attachment_info['name']}",
--                                    data=fp,
--                                    file_name=attachment_info["name"],
--                                    key=f"dl_{m.get('id')}"
--                                )
--                        except FileNotFoundError:
--                            st.warning("O anexo não foi encontrado no servidor.")
--                    
--                    c1, c2 = st.columns(2)
--                    with c1:
--                        if st.button("Responder", key=f"reply_{m.get('id')}", use_container_width=True):
--                            st.session_state.compose_to = m.get('from')
--                            st.session_state.compose_subject = f"Re: {m.get('subject')}"
--                            st.rerun()
--                    with c2:
--                        if st.button("Apagar", key=f"del_inbox_{m.get('id')}", use_container_width=True):
--                            delete_message(m.get('id'), USERNAME)
--                            st.toast("Mensagem apagada.")
--                            st.rerun()
--
--    with tab_compose:
--        with st.form(key="compose_form", clear_on_submit=True):
--            all_usernames = list(load_users().keys())
--            if USERNAME in all_usernames:
--                all_usernames.remove(USERNAME)
--
--            # Define default index for recipient
--            default_recipient = st.session_state.get('compose_to', '')
--            try:
--                recipient_index = all_usernames.index(default_recipient) if default_recipient in all_usernames else 0
--            except (ValueError, IndexError):
--                 recipient_index = 0
--
--            to_user = st.selectbox("Para:", options=all_usernames, index=recipient_index, key='ui_msg_to')
--            subj = st.text_input("Assunto:", value=st.session_state.get('compose_subject',''), key='ui_msg_subj')
--            body = st.text_area("Mensagem:", value="", height=200, key='ui_msg_body')
--            attachment = st.file_uploader("Anexar arquivo (Dropbox):", key="ui_msg_attachment")
--            
--            submitted = st.form_submit_button("✉️ Enviar Mensagem", use_container_width=True)
--
--            if submitted:
--                if not to_user:
--                    st.error("Destinatário inválido.")
--                else:
--                    send_message(USERNAME, to_user, subj, body, attachment_file=attachment)
--                    st.success(f"Mensagem enviada para {to_user}.")
--                    st.session_state.compose_to = ''
--                    st.session_state.compose_subject = ''
--                    if st.session_state.autosave:
--                        save_state_for_user(USERNAME)
--                    st.rerun()
--
--    with tab_sent:
--        if not outbox:
--            st.info("Você ainda não enviou mensagens.")
--        else:
--            for m in outbox:
--                with st.expander(f"Para: **{m.get('to')}** | Assunto: **{m.get('subject')}**"):
--                    st.markdown(f"**Enviado em:** `{m.get('ts')}`")
--                    st.markdown("---")
--                    st.markdown(m.get("body"))
--                    if m.get("attachment"):
--                        st.info(f"Anexo enviado: {m['attachment']['name']}")
--                    if st.button("Apagar", key=f"del_outbox_{m.get('id')}", use_container_width=True):
--                        delete_message(m.get('id'), USERNAME)
--                        st.toast("Mensagem apagada.")
--                        st.rerun()
--
--    st.markdown("</div>", unsafe_allow_html=True)
-+import io
-+import json
-+import os
-+import random
-+import re
-+import string
-+import unicodedata
-+from datetime import datetime
-+from pathlib import Path
-+from urllib.parse import quote_plus
-+from urllib.request import urlopen
-+import xml.etree.ElementTree as ET
-+
-+import networkx as nx
-+import numpy as np
-+import pandas as pd
-+import plotly.express as px
-+import plotly.graph_objects as go
-+import streamlit as st
-+from fpdf import FPDF
-+from PIL import Image
-+from sklearn.feature_extraction.text import TfidfVectorizer
-+from sklearn.metrics.pairwise import cosine_similarity
-+
-+# -------------------------
-+# Tema visual moderno (liquid glass)
-+# -------------------------
-+DEFAULT_CSS = r'''
-+:root{
-+  --glass-bg: rgba(255,255,255,0.06);
-+  --glass-border: rgba(255,255,255,0.16);
-+  --muted-text: #dfe6ee;
-+  --accent: #77a7ff;
-+}
-+
-+[data-testid="stAppViewContainer"]{
-+  background: radial-gradient(1200px 600px at 10% 0%, #1a2f4f 0%, #081522 45%, #050d16 100%);
-+}
-+
-+.glass-box{
-+  background: var(--glass-bg);
-+  border: 1px solid var(--glass-border);
-+  border-radius: 18px;
-+  padding: 18px;
-+  backdrop-filter: blur(13px) saturate(1.15);
-+  box-shadow: 0 10px 32px rgba(0,0,0,0.35);
-+}
-+
-+.stButton>button, .stDownloadButton>button, .stFileUploader button{
-+  border-radius: 12px !important;
-+  border: 1px solid rgba(255,255,255,0.18) !important;
-+  background: rgba(255,255,255,0.08) !important;
-+  color: var(--muted-text) !important;
-+  backdrop-filter: blur(10px);
-+}
-+
-+h1, h2, h3, h4, label, p, span, div { color: var(--muted-text); }
-+'''
-+
-+p = Path("style.css")
-+if not p.exists():
-+    p.write_text(DEFAULT_CSS, encoding="utf-8")
-+
-+st.set_page_config(page_title="ARTEMIS", layout="wide")
-+st.markdown(f"<style>{Path('style.css').read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
-+
-+# -------------------------
-+# Persistência
-+# -------------------------
-+USERS_FILE = "users.json"
-+STATE_PREFIX = "artemis_state_"
-+IMAGES_DIR = Path("user_files")
-+IMAGES_DIR.mkdir(exist_ok=True)
-+
-+
-+def load_users():
-+    if not Path(USERS_FILE).exists():
-+        return {}
-+    try:
-+        return json.loads(Path(USERS_FILE).read_text(encoding="utf-8"))
-+    except Exception:
-+        return {}
-+
-+
-+def save_users(users):
-+    Path(USERS_FILE).write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
-+
-+
-+def user_state_file(username):
-+    return Path(f"{STATE_PREFIX}{username}.json")
-+
-+
-+def user_backup_dir(username):
-+    p = Path("backups") / username
-+    p.mkdir(parents=True, exist_ok=True)
-+    return p
-+
-+
-+def gen_password(length=8):
-+    choices = string.ascii_letters + string.digits
-+    return ''.join(random.choice(choices) for _ in range(length))
-+
-+
-+for k, v in {
-+    "authenticated": False,
-+    "username": None,
-+    "user_obj": None,
-+    "page": "repositorio",
-+    "df": None,
-+    "notes": "",
-+    "favorites": [],
-+    "uploaded_name": None,
-+}.items():
-+    if k not in st.session_state:
-+        st.session_state[k] = v
-+
-+
-+def save_state_for_user(username):
-+    backup_csv = None
-+    if st.session_state.df is not None:
-+        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-+        safe = re.sub(r"[^\w\-.]", "_", st.session_state.uploaded_name or "planilha")
-+        backup_csv = user_backup_dir(username) / f"{safe}_{ts}.csv"
-+        st.session_state.df.to_csv(backup_csv, index=False, encoding="utf-8")
-+
-+    payload = {
-+        "backup_csv": str(backup_csv) if backup_csv else None,
-+        "favorites": st.session_state.favorites,
-+        "notes": st.session_state.notes,
-+        "uploaded_name": st.session_state.uploaded_name,
-+        "saved_at": datetime.utcnow().isoformat(),
-+    }
-+    user_state_file(username).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-+
-+
-+def load_state_for_user(username):
-+    f = user_state_file(username)
-+    if not f.exists():
-+        return False
-+    try:
-+        meta = json.loads(f.read_text(encoding="utf-8"))
-+    except Exception:
-+        return False
-+
-+    st.session_state.favorites = meta.get("favorites", [])
-+    st.session_state.notes = meta.get("notes", "")
-+    st.session_state.uploaded_name = meta.get("uploaded_name")
-+    backup_csv = meta.get("backup_csv")
-+    if backup_csv and Path(backup_csv).exists():
-+        st.session_state.df = pd.read_csv(backup_csv)
-+    return True
-+
-+
-+# -------------------------
-+# Utilitários de IA/pesquisa
-+# -------------------------
-+def normalize_text(value):
-+    text = str(value or "").lower().strip()
-+    text = ''.join(ch for ch in unicodedata.normalize('NFD', text) if unicodedata.category(ch) != 'Mn')
-+    return re.sub(r"\s+", " ", text)
-+
-+
-+def read_spreadsheet(uploaded_file):
-+    data = uploaded_file.read()
-+    buffer = io.BytesIO(data)
-+    if uploaded_file.name.lower().endswith(".csv"):
-+        for enc in ("utf-8", "latin1", "cp1252"):
-+            try:
-+                buffer.seek(0)
-+                return pd.read_csv(buffer, encoding=enc)
-+            except Exception:
-+                pass
-+        buffer.seek(0)
-+        return pd.read_csv(buffer, engine="python", on_bad_lines="skip")
-+    buffer.seek(0)
-+    return pd.read_excel(buffer)
-+
-+
-+def collect_latest_backups():
-+    base = Path("backups")
-+    if not base.exists():
-+        return None
-+    all_frames = []
-+    for user_dir in base.iterdir():
-+        if not user_dir.is_dir():
-+            continue
-+        csvs = sorted(user_dir.glob("*.csv"), key=lambda x: x.stat().st_mtime, reverse=True)
-+        if not csvs:
-+            continue
-+        try:
-+            df = pd.read_csv(csvs[0], on_bad_lines="skip")
-+            df["_artemis_username"] = user_dir.name
-+            all_frames.append(df)
-+        except Exception:
-+            continue
-+    if not all_frames:
-+        return None
-+    return pd.concat(all_frames, ignore_index=True)
-+
-+
-+def build_semantic_search(df, query, focus_col):
-+    if df is None or not query:
-+        return pd.DataFrame(), []
-+    content_cols = [c for c in df.columns if not c.startswith("_")]
-+    corpus = df[content_cols].fillna("").astype(str).agg(" ".join, axis=1)
-+    vectorizer = TfidfVectorizer(ngram_range=(1, 2), min_df=1)
-+    matrix = vectorizer.fit_transform(corpus)
-+    q_vec = vectorizer.transform([query])
-+    sims = cosine_similarity(q_vec, matrix).flatten()
-+
-+    focus_hits = df[focus_col].astype(str).str.contains(query, case=False, na=False).astype(float).values if focus_col else 0
-+    score = 0.75 * sims + 0.25 * focus_hits
-+
-+    ranked = df.copy()
-+    ranked["score_busca"] = score
-+    ranked = ranked.sort_values("score_busca", ascending=False)
-+    ranked = ranked[ranked["score_busca"] > 0.01]
-+
-+    vocab = np.array(vectorizer.get_feature_names_out())
-+    q_tokens = normalize_text(query).split()
-+    token_scores = {}
-+    for token in q_tokens:
-+        idx = np.where(vocab == token)[0]
-+        if len(idx) > 0:
-+            token_scores[token] = float(matrix[:, idx[0]].mean())
-+    suggestions = sorted(token_scores, key=token_scores.get, reverse=True)
-+    return ranked.head(30), suggestions[:8]
-+
-+
-+def fetch_arxiv_articles(query, max_results=5):
-+    if not query:
-+        return []
-+    url = f"http://export.arxiv.org/api/query?search_query=all:{quote_plus(query)}&start=0&max_results={max_results}"
-+    try:
-+        with urlopen(url, timeout=6) as resp:
-+            raw = resp.read().decode("utf-8", errors="ignore")
-+        root = ET.fromstring(raw)
-+    except Exception:
-+        return []
-+
-+    ns = {"atom": "http://www.w3.org/2005/Atom"}
-+    papers = []
-+    for entry in root.findall("atom:entry", ns):
-+        title = (entry.findtext("atom:title", default="", namespaces=ns) or "").strip().replace("\n", " ")
-+        link = entry.findtext("atom:id", default="", namespaces=ns)
-+        summary = (entry.findtext("atom:summary", default="", namespaces=ns) or "").strip().replace("\n", " ")
-+        papers.append({"title": title, "link": link, "summary": summary[:220] + "..." if len(summary) > 220 else summary})
-+    return papers
-+
-+
-+def country_to_latlon(country):
-+    mapping = {
-+        "brasil": (-14.2, -51.9), "portugal": (39.6, -8.0), "estados unidos": (37.1, -95.7),
-+        "usa": (37.1, -95.7), "argentina": (-38.4, -63.6), "mexico": (23.6, -102.5),
-+        "franca": (46.2, 2.2), "alemanha": (51.2, 10.4), "espanha": (40.4, -3.7),
-+        "italia": (41.8, 12.5), "reino unido": (55.3, -3.4), "china": (35.8, 104.2),
-+        "japao": (36.2, 138.2), "india": (21.1, 78.9), "canada": (56.1, -106.3)
-+    }
-+    key = normalize_text(country)
-+    return mapping.get(key)
-+
-+
-+def latlon_to_xyz(lat, lon, r=1.0):
-+    lat_r = np.deg2rad(lat)
-+    lon_r = np.deg2rad(lon)
-+    x = r * np.cos(lat_r) * np.cos(lon_r)
-+    y = r * np.cos(lat_r) * np.sin(lon_r)
-+    z = r * np.sin(lat_r)
-+    return x, y, z
-+
-+
-+def create_nationality_3d_map(df):
-+    if df is None:
-+        return go.Figure()
-+    cols = {normalize_text(c): c for c in df.columns}
-+    nat_col = cols.get("nacionalidade")
-+    aut_col = cols.get("autor")
-+    if not nat_col:
-+        return go.Figure()
-+
-+    points = []
-+    for _, row in df.iterrows():
-+        nat = str(row.get(nat_col, "")).strip()
-+        coord = country_to_latlon(nat)
-+        if not coord:
-+            continue
-+        lat, lon = coord
-+        x, y, z = latlon_to_xyz(lat, lon, 1.03)
-+        points.append((x, y, z, row.get(aut_col, "Autor não informado"), nat))
-+
-+    fig = go.Figure()
-+
-+    # esfera wireframe simples
-+    u = np.linspace(0, 2 * np.pi, 36)
-+    v = np.linspace(0, np.pi, 18)
-+    xs = np.outer(np.cos(u), np.sin(v))
-+    ys = np.outer(np.sin(u), np.sin(v))
-+    zs = np.outer(np.ones_like(u), np.cos(v))
-+    fig.add_surface(x=xs, y=ys, z=zs, opacity=0.25, showscale=False, colorscale=[[0, "#2d4c74"], [1, "#77a7ff"]])
-+
-+    if points:
-+        x, y, z, aut, nat = zip(*points)
-+        fig.add_trace(go.Scatter3d(
-+            x=x, y=y, z=z, mode="markers+text",
-+            text=[str(a) for a in aut], textposition="top center",
-+            marker=dict(size=7, color="#ffd166"),
-+            hovertext=[f"{a} - {n}" for a, n in zip(aut, nat)],
-+            hoverinfo="text",
-+            name="Autores por nacionalidade"
-+        ))
-+
-+    fig.update_layout(
-+        margin=dict(l=0, r=0, t=20, b=0),
-+        scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False)),
-+        paper_bgcolor="rgba(0,0,0,0)",
-+        height=620,
-+    )
-+    return fig
-+
-+
-+def image_hash(filepath, size=8):
-+    try:
-+        img = Image.open(filepath).convert("L").resize((size, size))
-+        arr = np.array(img)
-+        avg = arr.mean()
-+        bits = (arr > avg).astype(int).flatten()
-+        return bits
-+    except Exception:
-+        return None
-+
-+
-+def hamming_distance(a, b):
-+    if a is None or b is None:
-+        return 999
-+    return int(np.sum(a != b))
-+
-+
-+def local_image_search(uploaded_img):
-+    if uploaded_img is None:
-+        return []
-+    tmp = IMAGES_DIR / f"query_{int(datetime.utcnow().timestamp())}_{uploaded_img.name}"
-+    with open(tmp, "wb") as f:
-+        f.write(uploaded_img.getbuffer())
-+
-+    q_hash = image_hash(tmp)
-+    results = []
-+    for fp in IMAGES_DIR.glob("*"):
-+        if fp.suffix.lower() not in {".png", ".jpg", ".jpeg", ".webp", ".bmp"}:
-+            continue
-+        if fp == tmp:
-+            continue
-+        dist = hamming_distance(q_hash, image_hash(fp))
-+        if dist < 28:
-+            sim = round((1 - dist / 64) * 100, 1)
-+            results.append((sim, fp))
-+    results.sort(key=lambda x: x[0], reverse=True)
-+    return results[:12]
-+
-+
-+def suggest_similar_queries(query):
-+    seed = normalize_text(query)
-+    if not seed:
-+        return []
-+    words = [w for w in seed.split() if len(w) > 2]
-+    if not words:
-+        return []
-+    base = " ".join(words[:2])
-+    return [
-+        f"estado da arte em {base}",
-+        f"revisao sistematica sobre {base}",
-+        f"metodos e aplicacoes de {base}",
-+        f"desafios atuais de {base}",
-+    ]
-+
-+
-+# -------------------------
-+# Auth
-+# -------------------------
-+st.markdown("<div style='display:flex;justify-content:center'><h1>ARTEMIS</h1></div>", unsafe_allow_html=True)
-+users = load_users()
-+
-+if not st.session_state.authenticated:
-+    st.markdown("<div class='glass-box' style='max-width:900px;margin:0 auto'>", unsafe_allow_html=True)
-+    st.subheader("Acesso")
-+    tab_login, tab_register = st.tabs(["Entrar", "Criar conta"])
-+
-+    with tab_login:
-+        login_user = st.text_input("Usuario", key="login_user")
-+        login_pass = st.text_input("Senha", type="password", key="login_pass")
-+        if st.button("Entrar", key="btn_login"):
-+            if login_user in users and users[login_user].get("password") == login_pass:
-+                st.session_state.authenticated = True
-+                st.session_state.username = login_user
-+                st.session_state.user_obj = users[login_user]
-+                st.rerun()
-+            st.warning("Credenciais invalidas.")
-+
-+    with tab_register:
-+        reg_name = st.text_input("Nome completo", key="reg_name")
-+        reg_user = st.text_input("Escolha seu usuario", key="reg_user")
-+        if st.button("Criar conta", key="btn_register"):
-+            if not reg_user.strip():
-+                st.warning("Informe um usuario valido.")
-+            elif reg_user in users:
-+                st.warning("Usuario ja existe.")
-+            else:
-+                pwd = gen_password(8)
-+                users[reg_user] = {
-+                    "name": reg_name or reg_user,
-+                    "password": pwd,
-+                    "created_at": datetime.utcnow().isoformat(),
-+                }
-+                save_users(users)
-+                st.success(f"Conta criada com sucesso. Usuario: {reg_user} | Senha: {pwd}")
-+
-+    st.markdown("</div>", unsafe_allow_html=True)
-+    st.stop()
-+
-+USERNAME = st.session_state.username
-+USER_OBJ = users.get(USERNAME, {})
-+if st.session_state.df is None:
-+    load_state_for_user(USERNAME)
-+
-+# -------------------------
-+# Navegação (sem feed/rede social)
-+# -------------------------
-+st.markdown("<div class='glass-box'>", unsafe_allow_html=True)
-+left, right = st.columns([0.7, 0.3])
-+with left:
-+    st.markdown(f"**Usuario:** {USER_OBJ.get('name', USERNAME)}")
-+with right:
-+    c1, c2 = st.columns(2)
-+    with c1:
-+        if st.button("Salvar estado", use_container_width=True):
-+            save_state_for_user(USERNAME)
-+            st.success("Estado salvo.")
-+    with c2:
-+        if st.button("Sair", use_container_width=True):
-+            for key in list(st.session_state.keys()):
-+                del st.session_state[key]
-+            st.rerun()
-+
-+n1, n2, n3 = st.columns(3)
-+with n1:
-+    if st.button("Repositorio", use_container_width=True):
-+        st.session_state.page = "repositorio"
-+with n2:
-+    if st.button("Busca IA Unificada", use_container_width=True):
-+        st.session_state.page = "busca"
-+with n3:
-+    if st.button("Analise", use_container_width=True):
-+        st.session_state.page = "analise"
-+st.markdown("</div>", unsafe_allow_html=True)
-+
-+
-+# -------------------------
-+# Página: repositório
-+# -------------------------
-+if st.session_state.page == "repositorio":
-+    st.markdown("<div class='glass-box'>", unsafe_allow_html=True)
-+    st.subheader("Repositorio de pesquisas")
-+
-+    uploaded = st.file_uploader("Carregue CSV ou XLSX com artigos", type=["csv", "xlsx"])
-+    if uploaded:
-+        df = read_spreadsheet(uploaded)
-+        st.session_state.df = df
-+        st.session_state.uploaded_name = uploaded.name
-+        save_state_for_user(USERNAME)
-+        st.success("Arquivo carregado e salvo no repositório.")
-+
-+    img_upload = st.file_uploader("Adicionar imagens de referencia ao repositorio", type=["png", "jpg", "jpeg", "webp", "bmp"], accept_multiple_files=True)
-+    if img_upload:
-+        for img in img_upload:
-+            dest = IMAGES_DIR / f"{USERNAME}_{int(datetime.utcnow().timestamp())}_{img.name}"
-+            with open(dest, "wb") as f:
-+                f.write(img.getbuffer())
-+        st.success("Imagens adicionadas no repositorio de usuarios.")
-+
-+    if st.session_state.df is not None:
-+        st.dataframe(st.session_state.df, use_container_width=True)
-+    else:
-+        st.info("Carregue um arquivo para iniciar.")
-+
-+    st.markdown("</div>", unsafe_allow_html=True)
-+
-+# -------------------------
-+# Página: busca unificada IA + busca + visão
-+# -------------------------
-+elif st.session_state.page == "busca":
-+    st.markdown("<div class='glass-box'>", unsafe_allow_html=True)
-+    st.subheader("Busca unificada: base local + internet + imagens")
-+
-+    data = collect_latest_backups()
-+    if data is None:
-+        st.warning("Ainda nao ha backups para busca local. Use a pagina Repositorio e salve um arquivo.")
-+    else:
-+        visible_cols = [c for c in data.columns if not c.startswith("_")]
-+        c1, c2 = st.columns([0.7, 0.3])
-+        with c1:
-+            query = st.text_input("Pesquisa do usuario", placeholder="Digite um tema, problema ou pergunta")
-+        with c2:
-+            focus_col = st.selectbox("Priorizar coluna", options=visible_cols)
-+
-+        if st.button("Executar busca inteligente", use_container_width=True):
-+            results, suggestions = build_semantic_search(data, query, focus_col)
-+            st.session_state.search_results = results
-+            st.session_state.query_suggestions = suggestions
-+
-+        results = st.session_state.get("search_results", pd.DataFrame())
-+        if isinstance(results, pd.DataFrame) and not results.empty:
-+            st.markdown(f"**Resultados locais:** {len(results)}")
-+            st.dataframe(results, use_container_width=True)
-+
-+            st.markdown("**Sugestoes de refinamento automatico:**")
-+            for s in suggest_similar_queries(query):
-+                st.write(f"- {s}")
-+
-+            for tok in st.session_state.get("query_suggestions", []):
-+                st.caption(f"Termo relevante detectado: {tok}")
-+
-+            # conexoes entre pesquisas semelhantes
-+            content_cols = [c for c in results.columns if c not in {"score_busca", "_artemis_username"}]
-+            corpus = results[content_cols].fillna("").astype(str).agg(" ".join, axis=1)
-+            if len(corpus) >= 2:
-+                vec = TfidfVectorizer(min_df=1).fit_transform(corpus)
-+                sim = cosine_similarity(vec)
-+                G = nx.Graph()
-+                for idx in results.index:
-+                    G.add_node(str(idx), label=f"Artigo {idx}")
-+                for i in range(sim.shape[0]):
-+                    for j in range(i + 1, sim.shape[1]):
-+                        if sim[i, j] > 0.28:
-+                            G.add_edge(str(results.index[i]), str(results.index[j]), weight=float(sim[i, j]))
-+                st.caption("Conexoes de similaridade entre pesquisas")
-+                pos = nx.spring_layout(G, seed=42)
-+                if len(pos) > 0:
-+                    ex, ey = [], []
-+                    for e in G.edges():
-+                        ex += [pos[e[0]][0], pos[e[1]][0], None]
-+                        ey += [pos[e[0]][1], pos[e[1]][1], None]
-+                    nx_fig = go.Figure([
-+                        go.Scatter(x=ex, y=ey, mode="lines", line=dict(color="#8ec5ff", width=1), hoverinfo="none"),
-+                        go.Scatter(
-+                            x=[pos[n][0] for n in G.nodes()], y=[pos[n][1] for n in G.nodes()],
-+                            mode="markers+text", text=[n for n in G.nodes()], textposition="top center",
-+                            marker=dict(size=10, color="#ffd166")
-+                        )
-+                    ])
-+                    nx_fig.update_layout(height=360, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-+                    st.plotly_chart(nx_fig, use_container_width=True)
-+
-+        if query:
-+            st.markdown("---")
-+            st.markdown("### Sugestoes de artigos na internet")
-+            for item in fetch_arxiv_articles(query, max_results=6):
-+                st.markdown(f"- [{item['title']}]({item['link']})")
-+                st.caption(item["summary"])
-+
-+            st.markdown("### Busca de imagens (visao + internet)")
-+            st.write(f"Pesquisa web de imagens: https://commons.wikimedia.org/w/index.php?search={quote_plus(query)}&title=Special:MediaSearch&go=Go&type=image")
-+
-+    st.markdown("---")
-+    st.markdown("### Busca por imagem semelhante")
-+    query_img = st.file_uploader("Envie uma imagem para comparar", type=["png", "jpg", "jpeg", "webp", "bmp"], key="img_query")
-+    if query_img:
-+        similar = local_image_search(query_img)
-+        if not similar:
-+            st.info("Nao foram encontradas imagens semelhantes no repositorio local.")
-+        else:
-+            cols = st.columns(3)
-+            for i, (sim, fp) in enumerate(similar):
-+                with cols[i % 3]:
-+                    st.image(str(fp), caption=f"{fp.name} | similaridade {sim}%", use_container_width=True)
-+
-+    st.markdown("</div>", unsafe_allow_html=True)
-+
-+# -------------------------
-+# Página: análise completa
-+# -------------------------
-+elif st.session_state.page == "analise":
-+    st.markdown("<div class='glass-box'>", unsafe_allow_html=True)
-+    st.subheader("Analise completa da pesquisa")
-+
-+    df = st.session_state.df
-+    if df is None:
-+        st.warning("Carregue uma planilha na aba Repositorio para gerar analises.")
-+    else:
-+        ndf = df.copy()
-+        cols_norm = {normalize_text(c): c for c in ndf.columns}
-+
-+        # heurística de colunas
-+        ano_col = cols_norm.get("ano")
-+        tema_col = cols_norm.get("tema")
-+        autor_col = cols_norm.get("autor")
-+        nat_col = cols_norm.get("nacionalidade")
-+        resumo_col = cols_norm.get("resumo")
-+
-+        top1, top2, top3 = st.columns(3)
-+        with top1:
-+            st.metric("Total de registros", len(ndf))
-+        with top2:
-+            st.metric("Total de autores", int(ndf[autor_col].nunique()) if autor_col else 0)
-+        with top3:
-+            st.metric("Total de temas", int(ndf[tema_col].nunique()) if tema_col else 0)
-+
-+        if ano_col:
-+            year_series = pd.to_numeric(ndf[ano_col], errors="coerce").dropna().astype(int)
-+            if not year_series.empty:
-+                fig_year = px.histogram(year_series, nbins=min(20, year_series.nunique()), title="Distribuicao por ano")
-+                fig_year.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-+                st.plotly_chart(fig_year, use_container_width=True)
-+
-+        c1, c2 = st.columns(2)
-+        with c1:
-+            if tema_col:
-+                top_temas = ndf[tema_col].astype(str).value_counts().head(12).reset_index()
-+                top_temas.columns = ["Tema", "Quantidade"]
-+                fig_tema = px.bar(top_temas, x="Tema", y="Quantidade", title="Temas mais frequentes")
-+                fig_tema.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-+                st.plotly_chart(fig_tema, use_container_width=True)
-+        with c2:
-+            if autor_col:
-+                top_aut = ndf[autor_col].astype(str).value_counts().head(12).reset_index()
-+                top_aut.columns = ["Autor", "Quantidade"]
-+                fig_aut = px.bar(top_aut, x="Autor", y="Quantidade", title="Autores com mais publicacoes")
-+                fig_aut.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-+                st.plotly_chart(fig_aut, use_container_width=True)
-+
-+        if nat_col:
-+            st.markdown("### Mapa 3D de nacionalidade dos autores")
-+            st.plotly_chart(create_nationality_3d_map(ndf), use_container_width=True)
-+
-+        st.markdown("### Resumo automatico da base")
-+        if resumo_col:
-+            joined = " ".join(ndf[resumo_col].dropna().astype(str).head(80).tolist())
-+            sentences = re.split(r"(?<=[.!?])\s+", joined)
-+            preview = " ".join(sentences[:5]) if sentences else "Sem texto suficiente para resumo."
-+            st.info(preview[:1400])
-+        else:
-+            joined = " ".join(ndf.fillna("").astype(str).agg(" ".join, axis=1).head(60).tolist())
-+            tokens = [t for t in re.findall(r"\w+", normalize_text(joined)) if len(t) > 4]
-+            freq = pd.Series(tokens).value_counts().head(25)
-+            st.write("Palavras-chave mais recorrentes:")
-+            st.dataframe(freq.rename_axis("termo").reset_index(name="frequencia"), use_container_width=True)
-+
-+        # ligação entre pesquisas em comum por similaridade
-+        st.markdown("### Ligacao entre pesquisas semelhantes")
-+        text_rows = ndf.fillna("").astype(str).agg(" ".join, axis=1)
-+        if len(text_rows) > 1:
-+            vec = TfidfVectorizer(min_df=1).fit_transform(text_rows)
-+            sim = cosine_similarity(vec)
-+            sim_edges = []
-+            for i in range(sim.shape[0]):
-+                for j in range(i + 1, sim.shape[1]):
-+                    if sim[i, j] >= 0.25:
-+                        sim_edges.append((i, j, round(float(sim[i, j]), 3)))
-+            if sim_edges:
-+                conn_df = pd.DataFrame(sim_edges, columns=["artigo_a", "artigo_b", "similaridade"])
-+                st.dataframe(conn_df.head(80), use_container_width=True)
-+            else:
-+                st.info("Nao foram encontradas ligacoes fortes com o limite atual de similaridade.")
-+
-+    st.markdown("</div>", unsafe_allow_html=True)
-+
-+# -------------------------
-+# Export PDF de anotações
-+# -------------------------
-+with st.expander("Anotacoes e exportacao em PDF"):
-+    st.session_state.notes = st.text_area("Notas", value=st.session_state.notes, height=180)
-+    pdf = FPDF()
-+    pdf.add_page()
-+    pdf.set_font("Arial", size=12)
-+    for line in st.session_state.notes.split("\n"):
-+        pdf.multi_cell(0, 7, txt=line)
-+    data = pdf.output(dest="S")
-+    if isinstance(data, str):
-+        data = data.encode("latin-1", "replace")
-+    st.download_button("Baixar anotacoes em PDF", data=data, file_name="anotacoes_artemis.pdf", mime="application/pdf")
+import os, sys, subprocess, io, json, hashlib, base64, re, random, math
+from datetime import datetime
+from collections import defaultdict, Counter
+
+def _pip(*pkgs):
+    for p in pkgs:
+        try: subprocess.check_call([sys.executable,"-m","pip","install",p,"-q"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        except: pass
+
+try: import plotly.graph_objects as go
+except: _pip("plotly"); import plotly.graph_objects as go
+try: import numpy as np; from PIL import Image as PILImage
+except: _pip("pillow","numpy"); import numpy as np; from PIL import Image as PILImage
+try: import requests
+except: _pip("requests"); import requests
+try: import PyPDF2
+except: PyPDF2=None
+SKIMAGE_OK=False
+try:
+    from skimage import filters as sk_f, feature as sk_fe
+    from skimage.feature import graycomatrix, graycoprops
+    SKIMAGE_OK=True
+except:
+    try: _pip("scikit-image"); from skimage import filters as sk_f; from skimage.feature import graycomatrix, graycoprops; SKIMAGE_OK=True
+    except: pass
+SKLEARN_OK=False
+try: from sklearn.cluster import KMeans; SKLEARN_OK=True
+except:
+    try: _pip("scikit-learn"); from sklearn.cluster import KMeans; SKLEARN_OK=True
+    except: pass
+
+import streamlit as st
+st.set_page_config(page_title="Nebula Research",page_icon="N",layout="wide",initial_sidebar_state="expanded")
+
+DB_FILE="nebula_research.json"
+
+def load_db():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE,"r",encoding="utf-8") as f: return json.load(f)
+        except: return {}
+    return {}
+
+def hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
+def ini(n):
+    if not isinstance(n,str): n=str(n)
+    p=n.strip().split(); return ''.join(w[0].upper() for w in p[:2]) if p else "?"
+def time_ago(ds):
+    try:
+        d=(datetime.now()-datetime.strptime(ds,"%Y-%m-%d")).days
+        if d==0: return "hoje"
+        if d==1: return "ontem"
+        if d<7: return f"{d}d"
+        if d<30: return f"{d//7}sem"
+        return f"{d//30}m"
+    except: return ds
+def fmt_num(n):
+    try: n=int(n); return f"{n/1000:.1f}k" if n>=1000 else str(n)
+    except: return str(n)
+def guser():
+    if not isinstance(st.session_state.get("users"),dict): return {}
+    return st.session_state.users.get(st.session_state.current_user,{})
+
+STOPWORDS={"de","a","o","que","e","do","da","em","um","para","é","com","uma","os","no","se","na","por",
+ "mais","as","dos","como","mas","foi","ao","ele","das","tem","à","seu","sua","ou","ser","quando",
+ "muito","há","nos","já","está","eu","também","só","pelo","pela","até","isso","ela","entre","era",
+ "the","of","and","to","in","is","it","that","was","for","on","are","with","they","at","be","this",
+ "from","or","had","by","not","what","all","were","we","when","your","can","use","an","which","do",
+ "how","their","if","will","up","other","about","out","many","then","them","these","so","also","have",
+ "been","between","after","before","during","while","through","its","than","has","into","after","each"}
+
+NATIONALITY_COORDS={
+    "Brasil":(-14.2,-51.9),"Estados Unidos":(37.1,-95.7),"Alemanha":(51.2,10.4),
+    "Reino Unido":(55.4,-3.4),"França":(46.2,2.2),"China":(35.9,104.2),
+    "Japão":(36.2,138.3),"Índia":(20.6,79.0),"Canadá":(56.1,-106.3),
+    "Austrália":(-25.3,133.8),"México":(23.6,-102.6),"Argentina":(-38.4,-63.6),
+    "Portugal":(39.4,-8.2),"Espanha":(40.5,-3.7),"Itália":(41.9,12.6),
+    "Países Baixos":(52.1,5.3),"Suécia":(60.1,18.6),"Suíça":(46.8,8.2),
+    "Coreia do Sul":(35.9,127.8),"Rússia":(61.5,105.3),"Chile":(-35.7,-71.5),
+    "Colômbia":(4.6,-74.1),"Peru":(-9.2,-75.0),"África do Sul":(-30.6,22.9),
+    "Israel":(31.0,34.9),"Irã":(32.4,53.7),"Turquia":(38.9,35.2),
+}
+
+TOPIC_MAP={
+    "Saúde & Medicina":["saúde","medicina","clínico","health","medical","therapy","disease","clinical","patient","hospital","diagnóstico","treatment"],
+    "Biologia & Genômica":["biologia","genômica","gene","dna","rna","proteína","célula","crispr","molecular","genome","protein","celular"],
+    "Neurociência":["neurociência","neural","cérebro","cognição","memória","sono","brain","sináptico","neuron","hippocampus","cortex","fmri"],
+    "Computação & IA":["algoritmo","machine","learning","inteligência","dados","computação","deep","quantum","llm","neural","model","rede","software"],
+    "Física & Astronomia":["física","quântica","partícula","energia","galáxia","astrofísica","cosmologia","lensing","matter","relatividade","telescope"],
+    "Química":["química","molécula","síntese","reação","polímero","composto","chemical","reaction","catalyst","substância"],
+    "Engenharia":["engenharia","sistema","robótica","automação","sensor","protocolo","engineering","system","design","mecânica"],
+    "Ciências Sociais":["sociedade","cultura","educação","política","psicologia","comportamento","cognitivo","social","behavior","educação"],
+    "Ecologia & Ambiente":["ecologia","clima","ambiente","biodiversidade","carbono","sustentável","climate","ecology","meio","ambiental"],
+    "Matemática & Estatística":["matemática","estatística","probabilidade","equação","teorema","variance","bayesian","cálculo","álgebra"],
+}
+
+SEED_USERS={
+    "demo@nebula.ai":{"name":"Ana Pesquisadora","password":hp("demo123"),"bio":"Pesquisadora em IA e Ciências Cognitivas","area":"Inteligência Artificial","verified":True,"nationality":"Brasil"},
+    "carlos@nebula.ai":{"name":"Carlos Mendez","password":hp("nebula123"),"bio":"Neurocientista, plasticidade sináptica e sono","area":"Neurociência","verified":True,"nationality":"México"},
+    "luana@nebula.ai":{"name":"Luana Freitas","password":hp("nebula123"),"bio":"Biomédica, CRISPR e terapia gênica","area":"Biomedicina","verified":True,"nationality":"Brasil"},
+    "rafael@nebula.ai":{"name":"Rafael Souza","password":hp("nebula123"),"bio":"Computação Quântica, algoritmos híbridos","area":"Computação","verified":True,"nationality":"Brasil"},
+    "priya@nebula.ai":{"name":"Priya Nair","password":hp("nebula123"),"bio":"Astrofísica, dark matter & gravitational lensing","area":"Astrofísica","verified":True,"nationality":"Índia"},
+}
+
+SEED_RESEARCH=[
+    {"id":1,"author":"Carlos Mendez","author_email":"carlos@nebula.ai","area":"Neurociência","nationality":"México","year":2026,
+     "title":"Efeitos da Privação de Sono na Plasticidade Sináptica",
+     "abstract":"Investigamos como 24h de privação de sono afetam espinhas dendríticas em ratos Wistar, com redução de 34% na plasticidade hipocampal. Microscopia confocal e Western Blot para quantificação proteica.",
+     "tags":["neurociência","sono","memória","hipocampo","plasticidade"],"methodology":"experimental",
+     "citations":8,"views":312,"likes":47,"liked_by":[],"saved_by":[],"date":"2026-02-10","status":"Em andamento"},
+    {"id":2,"author":"Luana Freitas","author_email":"luana@nebula.ai","area":"Biomedicina","nationality":"Brasil","year":2026,
+     "title":"CRISPR-Cas9 no Tratamento de Distrofias Musculares Raras",
+     "abstract":"Vetor AAV9 modificado para entrega de CRISPR no gene DMD com eficiência de 78% em modelos mdx. Resultados promissores para trials clínicos.",
+     "tags":["CRISPR","gene terapia","músculo","AAV9","DMD"],"methodology":"experimental",
+     "citations":24,"views":891,"likes":93,"liked_by":[],"saved_by":[],"date":"2026-01-28","status":"Publicado"},
+    {"id":3,"author":"Rafael Souza","author_email":"rafael@nebula.ai","area":"Computação","nationality":"Brasil","year":2026,
+     "title":"Redes Neurais Quântico-Clássicas para Otimização Combinatória",
+     "abstract":"Arquitetura híbrida variacional combinando qubits supercondutores com camadas densas clássicas. TSP resolvido com 40% menos iterações.",
+     "tags":["quantum ML","otimização","TSP","computação quântica"],"methodology":"computacional",
+     "citations":31,"views":1240,"likes":201,"liked_by":[],"saved_by":[],"date":"2026-02-15","status":"Em andamento"},
+    {"id":4,"author":"Priya Nair","author_email":"priya@nebula.ai","area":"Astrofísica","nationality":"Índia","year":2026,
+     "title":"Detecção de Matéria Escura via Lentes Gravitacionais Fracas",
+     "abstract":"Mapeamento com 100M de galáxias do DES Y3. Tensão de 2.8σ com ΛCDM em escalas < 1 Mpc.",
+     "tags":["astrofísica","matéria escura","cosmologia","DES"],"methodology":"observacional",
+     "citations":67,"views":2180,"likes":312,"liked_by":[],"saved_by":[],"date":"2026-02-01","status":"Publicado"},
+]
+
+VIB=["#0A84FF","#30D158","#FF9F0A","#BF5AF2","#FF453A","#32ADE6","#FFD60A","#FF6B35","#64D2FF","#5E5CE6"]
+
+# ── DB ────────────────────────────────────────────────────────────
+def save_db():
+    try:
+        with open(DB_FILE,"w",encoding="utf-8") as f:
+            json.dump({"users":st.session_state.users,"research_items":st.session_state.research_items,
+                       "folders":st.session_state.folders,
+                       "user_prefs":{k:dict(v) for k,v in st.session_state.user_prefs.items()},
+                       "saved_articles":st.session_state.saved_articles,
+                       "chat_messages":st.session_state.chat_messages},f,ensure_ascii=False,indent=2)
+    except: pass
+
+def init():
+    if "initialized" in st.session_state: return
+    st.session_state.initialized=True
+    disk=load_db(); du=disk.get("users",{})
+    if not isinstance(du,dict): du={}
+    st.session_state.setdefault("users",{**SEED_USERS,**du})
+    st.session_state.setdefault("logged_in",False)
+    st.session_state.setdefault("current_user",None)
+    st.session_state.setdefault("page","login")
+    st.session_state.setdefault("profile_view",None)
+    dp=disk.get("user_prefs",{})
+    st.session_state.setdefault("user_prefs",{k:defaultdict(float,v) for k,v in dp.items()})
+    rp=disk.get("research_items",[dict(p) for p in SEED_RESEARCH])
+    for p in rp:
+        p.setdefault("liked_by",[]); p.setdefault("saved_by",[]); p.setdefault("comments",[])
+        p.setdefault("views",200); p.setdefault("citations",random.randint(0,30))
+        p.setdefault("nationality","Brasil"); p.setdefault("year",2026)
+    st.session_state.setdefault("research_items",rp)
+    st.session_state.setdefault("folders",disk.get("folders",{}))
+    st.session_state.setdefault("folder_bytes",{})
+    st.session_state.setdefault("saved_articles",disk.get("saved_articles",[]))
+    st.session_state.setdefault("scholar_cache",{})
+    st.session_state.setdefault("search_results",None)
+    st.session_state.setdefault("last_sq","")
+    st.session_state.setdefault("api_key","")
+    st.session_state.setdefault("img_result",None)
+    st.session_state.setdefault("chat_messages",disk.get("chat_messages",{}))
+    st.session_state.setdefault("active_chat",None)
+    st.session_state.setdefault("view_research",None)
+
+init()
+
+# ══════════════════════════════════════════════════
+#  USER INTELLIGENCE ENGINE
+# ══════════════════════════════════════════════════
+def update_profile(tags, w=1.0):
+    e=st.session_state.get("current_user")
+    if not e or not tags: return
+    p=st.session_state.user_prefs.setdefault(e,defaultdict(float))
+    for k in list(p.keys()): p[k]*=0.97  # time decay
+    for t in tags: p[t.lower().strip()]+=w
+
+def get_interests(email=None, n=20):
+    if not email: email=st.session_state.get("current_user")
+    p=st.session_state.user_prefs.get(email,{})
+    return [k for k,_ in sorted(p.items(),key=lambda x:-x[1])[:n]] if p else []
+
+def get_recommendations(email=None, n=6):
+    if not email: email=st.session_state.get("current_user")
+    u=st.session_state.users.get(email,{})
+    interests=set(get_interests(email,25))
+    area_kws=set(w.lower() for w in re.split(r'[\s,]+',u.get("area","")) if len(w)>3)
+    interests|=area_kws
+    scored=[]
+    for item in st.session_state.research_items:
+        if item.get("author_email")==email: continue
+        tags=set(t.lower() for t in item.get("tags",[]))
+        kws=set(k.lower() for k in kw_extract(item.get("abstract",""),10))
+        all_terms=tags|kws
+        overlap=len(interests&all_terms)
+        score=overlap*10+item.get("citations",0)*0.4+item.get("likes",0)*0.2
+        scored.append((score,item))
+    scored.sort(key=lambda x:-x[0])
+    return [item for s,item in scored if s>0][:n]
+
+def similarity(item1, item2):
+    t1=set(t.lower() for t in item1.get("tags",[])+kw_extract(item1.get("abstract",""),8))
+    t2=set(t.lower() for t in item2.get("tags",[])+kw_extract(item2.get("abstract",""),8))
+    if not t1 or not t2: return 0.0
+    jac=len(t1&t2)/len(t1|t2)
+    area_b=0.2 if item1.get("area","")==item2.get("area","") else 0.0
+    meth_b=0.1 if item1.get("methodology","")==item2.get("methodology","") and item1.get("methodology") else 0.0
+    return min(1.0,jac+area_b+meth_b)
+
+def find_similar(target, threshold=0.1, n=5):
+    results=[]
+    for item in st.session_state.research_items:
+        if item["id"]==target["id"]: continue
+        sim=similarity(target,item)
+        if sim>=threshold: results.append((sim,item))
+    results.sort(key=lambda x:-x[0])
+    return results[:n]
+
+def folder_similarity(folder_analyses):
+    """Find similar research in the system based on folder content."""
+    all_kws=set()
+    for an in folder_analyses.values():
+        all_kws.update(an.get("keywords",[])[:8])
+    if not all_kws: return []
+    scored=[]
+    for item in st.session_state.research_items:
+        item_kws=set(t.lower() for t in item.get("tags",[])+kw_extract(item.get("abstract",""),8))
+        overlap=len(all_kws&item_kws)
+        if overlap>0: scored.append((overlap,item))
+    scored.sort(key=lambda x:-x[0])
+    return [item for _,item in scored[:5]]
+
+# ══════════════════════════════════════════════════
+#  DOCUMENT ANALYSIS
+# ══════════════════════════════════════════════════
+@st.cache_data(show_spinner=False)
+def extract_pdf(b):
+    if not PyPDF2: return ""
+    try:
+        r=PyPDF2.PdfReader(io.BytesIO(b)); t=""
+        for pg in r.pages[:20]:
+            try: t+=pg.extract_text()+"\n"
+            except: pass
+        return t[:40000]
+    except: return ""
+
+@st.cache_data(show_spinner=False)
+def kw_extract(text, n=20):
+    if not text: return []
+    words=re.findall(r'\b[a-záàâãéêíóôõúüçA-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ]{4,}\b',text.lower())
+    words=[w for w in words if w not in STOPWORDS]
+    if not words: return []
+    tf=Counter(words); tot=max(1,sum(tf.values()))
+    return [w for w,_ in sorted(tf.items(),key=lambda x:-x[1]/tot)[:n]]
+
+def extract_year_from_text(text):
+    years=re.findall(r'\b(19[5-9]\d|20[0-3]\d)\b',text)
+    if years: return int(Counter(years).most_common(1)[0][0])
+    return None
+
+def extract_authors_from_text(text):
+    patterns=[r'(?:Autor(?:es)?|Author(?:s)?)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+){1,3})',
+              r'(?:Por|By)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+){1,2})']
+    authors=[]
+    for pat in patterns: authors.extend(re.findall(pat,text[:3000])[:3])
+    return list(set(a.strip() for a in authors if len(a)>5))[:5]
+
+def extract_nationality_from_text(text):
+    text_lower=text.lower()
+    for nat in NATIONALITY_COORDS.keys():
+        if nat.lower() in text_lower: return nat
+    country_hints={"brasil":"Brasil","brazil":"Brasil","usa":"Estados Unidos","united states":"Estados Unidos",
+                   "germany":"Alemanha","france":"França","china":"China","japan":"Japão",
+                   "india":"Índia","canada":"Canadá","australia":"Austrália","uk":"Reino Unido",
+                   "england":"Reino Unido","mexico":"México","argentina":"Argentina",
+                   "portugal":"Portugal","spain":"Espanha","italy":"Itália"}
+    for hint,nat in country_hints.items():
+        if hint in text_lower: return nat
+    return None
+
+def topics_from_kws(kws):
+    s=defaultdict(int)
+    for kw in kws:
+        for tp,terms in TOPIC_MAP.items():
+            if any(t in kw or kw in t for t in terms): s[tp]+=1
+    return dict(sorted(s.items(),key=lambda x:-x[1])) if s else {"Pesquisa Geral":1}
+
+@st.cache_data(show_spinner=False)
+def analyze_document(fname, fbytes, ftype_str, area=""):
+    r={"file":fname,"type":ftype_str,"keywords":[],"topics":{},"relevance_score":0,"summary":"",
+       "strengths":[],"improvements":[],"word_count":0,"authors":[],"year":None,
+       "nationality":None,"estimated_year":None,"key_sentences":[]}
+    text=""
+    if ftype_str=="PDF" and fbytes and PyPDF2:
+        text=extract_pdf(fbytes)
+    elif fbytes:
+        try: text=fbytes.decode("utf-8",errors="ignore")[:40000]
+        except: pass
+    if text:
+        r["keywords"]=kw_extract(text,25); r["topics"]=topics_from_kws(r["keywords"])
+        wc=len(text.split()); r["word_count"]=wc
+        r["authors"]=extract_authors_from_text(text)
+        r["year"]=extract_year_from_text(text)
+        r["nationality"]=extract_nationality_from_text(text)
+        sents=[s.strip() for s in re.split(r'[.!?]+',text) if 40<len(s.strip())<250]
+        r["key_sentences"]=sents[:4]
+        if area:
+            aw=area.lower().split()
+            rel=sum(1 for w in aw if any(w in kw for kw in r["keywords"]))
+            r["relevance_score"]=min(100,rel*15+45)
+        else: r["relevance_score"]=60
+        if len(r["keywords"])>15: r["strengths"].append(f"Vocabulário técnico rico ({len(r['keywords'])} termos)")
+        if wc>2000: r["strengths"].append("Documento extenso e detalhado")
+        if len(r["topics"])>3: r["strengths"].append("Multidisciplinar")
+        if r["authors"]: r["strengths"].append(f"Autoria identificada: {', '.join(r['authors'][:2])}")
+        if wc<300: r["improvements"].append("Expandir conteúdo")
+        if len(r["keywords"])<8: r["improvements"].append("Enriquecer vocabulário técnico")
+        r["summary"]=f"{ftype_str} · {wc:,} palavras · {', '.join(list(r['topics'].keys())[:2])} · {', '.join(r['keywords'][:4])}"
+    else:
+        r["summary"]=f"Arquivo {ftype_str}"; r["relevance_score"]=50
+        r["keywords"]=kw_extract(fname.lower().replace("_"," "),5)
+        r["topics"]=topics_from_kws(r["keywords"])
+    return r
+
+# ══════════════════════════════════════════════════
+#  ML IMAGE PIPELINE
+# ══════════════════════════════════════════════════
+def sobel_ml(gray):
+    kx=np.array([[-1,0,1],[-2,0,2],[-1,0,1]],dtype=np.float32)/8.0
+    def conv2d(im,k):
+        ph,pw=k.shape[0]//2,k.shape[1]//2
+        p=np.pad(im,((ph,ph),(pw,pw)),mode='edge'); out=np.zeros_like(im)
+        for i in range(k.shape[0]):
+            for j in range(k.shape[1]): out+=k[i,j]*p[i:i+im.shape[0],j:j+im.shape[1]]
+        return out
+    sx=conv2d(gray.astype(np.float32),kx); sy=conv2d(gray.astype(np.float32),kx.T)
+    mag=np.sqrt(sx**2+sy**2)
+    return {"mean":float(mag.mean()),"max":float(mag.max()),
+            "density":float((mag>mag.mean()*1.5).mean()),
+            "hist":np.histogram(mag,bins=16,range=(0,mag.max()+1e-5))[0].tolist()}
+
+def fft_ml(gray):
+    fft=np.fft.fftshift(np.abs(np.fft.fft2(gray))); h,w=fft.shape
+    total=fft.sum()+1e-5; r=min(h,w)//2; Y,X=np.ogrid[:h,:w]; dist=np.sqrt((X-w//2)**2+(Y-h//2)**2)
+    lf=float(fft[dist<r*0.1].sum()/total); mf=float(fft[(dist>=r*0.1)&(dist<r*0.4)].sum()/total)
+    outer=float(np.percentile(fft[dist>r*0.5],99))/(float(fft[dist>r*0.5].mean())+1e-5)
+    return {"lf":round(lf,3),"mf":round(mf,3),"hf":round(1-lf-mf,3),"periodic_score":round(outer,1),"is_periodic":outer>12}
+
+def texture_ml(gray_u8):
+    g=gray_u8.astype(np.float32)/255.0; gx=np.gradient(g,axis=1); gy=np.gradient(g,axis=0)
+    contrast=float(np.sqrt(gx**2+gy**2).mean()*100)
+    hom=1.0/(1.0+contrast/50.0); energy=float(np.var(g))
+    tt="homogênea" if hom>0.7 else ("texturizada" if contrast>50 else "estruturada")
+    return {"contrast":round(contrast,3),"homogeneity":round(hom,3),"energy":round(energy,4),"texture_type":tt}
+
+def palette_ml(arr, k=6):
+    if not SKLEARN_OK: return []
+    try:
+        step=max(1,(arr.shape[0]*arr.shape[1])//3000)
+        flat=arr.reshape(-1,3)[::step].astype(np.float32)
+        km=KMeans(n_clusters=k,random_state=42,n_init=5,max_iter=80).fit(flat)
+        cnt=Counter(km.labels_); tot=sum(cnt.values())
+        pal=[]
+        for i in np.argsort([-cnt[j] for j in range(k)]):
+            r2,g2,b2=km.cluster_centers_[i].astype(int)
+            pal.append({"rgb":(int(r2),int(g2),int(b2)),"hex":"#{:02x}{:02x}{:02x}".format(int(r2),int(g2),int(b2)),"pct":round(cnt[i]/tot*100,1)})
+        return pal
+    except: return []
+
+def classify_img(sobel_r, texture_r, color, fft_r):
+    mr,mg,mb=color["r"],color["g"],color["b"]; ei=sobel_r["mean"]; hom=texture_r["homogeneity"]
+    scores={"Histopatologia H&E":int(mr>140 and mb>100)*30+int(ei>0.05)*20+int(texture_r["contrast"]>30)*20,
+            "Fluorescência DAPI":int(mb>150 and mb>mr+30)*45+int(ei>0.08)*20,
+            "Fluorescência GFP":int(mg>150 and mg>mr+30)*45+int(ei>0.08)*20,
+            "Gel/Western Blot":int(texture_r["contrast"]<15 and hom>0.8)*30+int(abs(mr-mg)<20 and abs(mg-mb)<20)*25,
+            "Gráfico/Diagrama":int(texture_r["energy"]>0.15)*30+int(hom>0.85)*25+int(fft_r["lf"]>0.5)*20,
+            "Microscopia Confocal":int(ei>0.05)*20+int(sobel_r["density"]>0.10)*25,
+            "Imagem Astronômica":int(color.get("brightness",128)<60)*35+int(hom>0.7)*20,
+            "Estrutura Molecular":int(fft_r["is_periodic"])*30+int(hom>0.75)*25}
+    best=max(scores,key=scores.get); conf=min(94,38+scores[best]*0.55)
+    search_map={"Histopatologia H&E":"hematoxylin eosin staining histopathology tissue",
+                "Fluorescência DAPI":"DAPI nuclear staining fluorescence microscopy",
+                "Fluorescência GFP":"GFP green fluorescent protein confocal imaging",
+                "Gel/Western Blot":"western blot gel electrophoresis protein analysis",
+                "Gráfico/Diagrama":"scientific data visualization chart",
+                "Microscopia Confocal":"confocal microscopy fluorescence multichannel",
+                "Imagem Astronômica":"astronomy telescope deep field observation",
+                "Estrutura Molecular":"molecular structure crystal protein visualization"}
+    return {"category":best,"confidence":round(conf,1),"search_kw":search_map.get(best,best+" scientific"),"all_scores":dict(sorted(scores.items(),key=lambda x:-x[1])[:5])}
+
+@st.cache_data(show_spinner=False,ttl=3600)
+def run_ml(img_bytes):
+    try:
+        img=PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
+        orig=img.size; w,h=img.size; s=min(384/w,384/h)
+        img_r=img.resize((int(w*s),int(h*s)),PILImage.LANCZOS)
+        arr=np.array(img_r,dtype=np.float32)
+        r_ch,g_ch,b_ch=arr[:,:,0],arr[:,:,1],arr[:,:,2]
+        gray=0.2989*r_ch+0.5870*g_ch+0.1140*b_ch; gray_u8=gray.astype(np.uint8)
+        mr,mg,mb=float(r_ch.mean()),float(g_ch.mean()),float(b_ch.mean())
+        hst=np.histogram(gray,bins=64,range=(0,255))[0]; hn=hst/(hst.sum()+1e-9); hn=hn[hn>0]
+        entropy=float(-np.sum(hn*np.log2(hn+1e-12)))
+        color={"r":round(mr,1),"g":round(mg,1),"b":round(mb,1),"entropy":round(entropy,3),
+               "brightness":round(float(gray.mean()),1),"warm":mr>mb+15,"cool":mb>mr+15}
+        sobel_r=sobel_ml(gray/255.0); texture_r=texture_ml(gray_u8); fft_r=fft_ml(gray/255.0)
+        pal=palette_ml(arr.astype(np.uint8),6)
+        cls=classify_img(sobel_r,texture_r,color,fft_r)
+        rh=np.histogram(r_ch.ravel(),bins=32,range=(0,255))[0].tolist()
+        gh=np.histogram(g_ch.ravel(),bins=32,range=(0,255))[0].tolist()
+        bh=np.histogram(b_ch.ravel(),bins=32,range=(0,255))[0].tolist()
+        return {"ok":True,"size":orig,"color":color,"sobel":sobel_r,"texture":texture_r,
+                "fft":fft_r,"palette":pal,"histograms":{"r":rh,"g":gh,"b":bh},"classification":cls}
+    except Exception as e: return {"ok":False,"error":str(e)}
+
+# ══════════════════════════════════════════════════
+#  API — CLAUDE VISION
+# ══════════════════════════════════════════════════
+VISION_PROMPT="""Analise esta imagem científica. Responda APENAS em JSON puro sem markdown:
+{
+  "tipo": "<tipo>",
+  "origem": "<área científica>",
+  "descricao": "<descrição detalhada>",
+  "estruturas": ["<s1>","<s2>","<s3>"],
+  "tecnica": "<técnica experimental>",
+  "qualidade": "<Alta/Média/Baixa>",
+  "confianca": <0-100>,
+  "termos_busca": "<4-6 termos para busca acadêmica>",
+  "interpretacao": "<interpretação científica>",
+  "aviso": "Análise por IA — validar com especialista."
+}"""
+
+def call_vision(img_bytes, api_key):
+    if not api_key or not api_key.startswith("sk-"): return None,"API key inválida."
+    try:
+        img=PILImage.open(io.BytesIO(img_bytes)); buf=io.BytesIO()
+        img.convert("RGB").save(buf,format="JPEG",quality=82)
+        b64=base64.b64encode(buf.getvalue()).decode()
+        resp=requests.post("https://api.anthropic.com/v1/messages",
+            headers={"x-api-key":api_key,"anthropic-version":"2023-06-01","content-type":"application/json"},
+            json={"model":"claude-opus-4-5","max_tokens":1200,
+                  "messages":[{"role":"user","content":[
+                      {"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":b64}},
+                      {"type":"text","text":VISION_PROMPT}]}]},timeout=30)
+        if resp.status_code==200: return resp.json()["content"][0]["text"],None
+        return None,resp.json().get("error",{}).get("message",f"HTTP {resp.status_code}")
+    except Exception as e: return None,str(e)
+
+# ══════════════════════════════════════════════════
+#  ACADEMIC SEARCH
+# ══════════════════════════════════════════════════
+@st.cache_data(show_spinner=False,ttl=1800)
+def search_ss(q, lim=8):
+    try:
+        r=requests.get("https://api.semanticscholar.org/graph/v1/paper/search",
+            params={"query":q,"limit":lim,"fields":"title,authors,year,abstract,venue,externalIds,openAccessPdf,citationCount"},timeout=9)
+        if r.status_code==200:
+            out=[]
+            for p in r.json().get("data",[]):
+                ext=p.get("externalIds",{}) or {}; doi=ext.get("DOI",""); arx=ext.get("ArXiv","")
+                pdf=(p.get("openAccessPdf") or {}).get("url","")
+                link=pdf or(f"https://arxiv.org/abs/{arx}" if arx else(f"https://doi.org/{doi}" if doi else ""))
+                al=p.get("authors",[]) or []; au=", ".join(a.get("name","") for a in al[:3])
+                if len(al)>3: au+=" et al."
+                out.append({"title":p.get("title","Sem título"),"authors":au or "—","year":p.get("year","?"),
+                            "source":p.get("venue","") or "Semantic Scholar","doi":doi or arx or "—",
+                            "abstract":(p.get("abstract","") or "")[:300],"url":link,
+                            "citations":p.get("citationCount",0),"origin":"semantic"})
+            return out
+    except: pass
+    return []
+
+@st.cache_data(show_spinner=False,ttl=1800)
+def search_cr(q, lim=4):
+    try:
+        r=requests.get("https://api.crossref.org/works",
+            params={"query":q,"rows":lim,"select":"title,author,issued,abstract,DOI,container-title,is-referenced-by-count"},timeout=8)
+        if r.status_code==200:
+            out=[]
+            for p in r.json().get("message",{}).get("items",[]):
+                title=(p.get("title") or["?"])[0]; ars=p.get("author",[]) or []
+                au=", ".join(f'{a.get("given","").split()[0] if a.get("given") else ""} {a.get("family","")}'.strip() for a in ars[:3])
+                if len(ars)>3: au+=" et al."
+                yr=(p.get("issued",{}).get("date-parts") or[[None]])[0][0]
+                doi=p.get("DOI",""); ab=re.sub(r'<[^>]+>','',p.get("abstract","") or "")[:300]
+                out.append({"title":title,"authors":au or "—","year":yr or "?",
+                            "source":(p.get("container-title") or["CrossRef"])[0],"doi":doi,
+                            "abstract":ab,"url":f"https://doi.org/{doi}" if doi else "","citations":p.get("is-referenced-by-count",0),"origin":"crossref"})
+            return out
+    except: pass
+    return []
+
+FTYPE_MAP={"pdf":"PDF","docx":"Word","xlsx":"Planilha","csv":"Dados","txt":"Texto","py":"Código","md":"Markdown","png":"Imagem","jpg":"Imagem","jpeg":"Imagem","tiff":"Imagem","ipynb":"Notebook"}
+def ftype(fname): return FTYPE_MAP.get(fname.split(".")[-1].lower() if "." in fname else "","Arquivo")
+
+# ══════════════════════════════════════════════════
+#  CSS — DARK BLUE LIQUID GLASS
+# ══════════════════════════════════════════════════
+def inject_css():
+    st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
+:root{
+  --bg:#03060E;--s1:#060B18;--s2:#0A1020;--s3:#0D1528;
+  --acc:#0A84FF;--acc2:#1A6EC9;
+  --teal:#30D158;--teal2:#25A244;
+  --orn:#FF9F0A;--pur:#BF5AF2;--red:#FF453A;--cya:#32ADE6;--gold:#FFD60A;
+  --t0:#FFFFFF;--t1:#D8E4F5;--t2:#7A8FAD;--t3:#3A4D6A;--t4:#1A2840;
+  --gb1:rgba(255,255,255,.06);--gb2:rgba(255,255,255,.11);--gb3:rgba(255,255,255,.17);
+  --acc-a:rgba(10,132,255,.10);--acc-ab:rgba(10,132,255,.18);--acc-ac:rgba(10,132,255,.28);
+  --r8:8px;--r12:12px;--r16:16px;--r20:20px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body,.stApp{background:var(--bg)!important;color:var(--t1)!important;font-family:'Inter',-apple-system,sans-serif!important;}
+.stApp::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse 65% 50% at -10% -5%,rgba(10,132,255,.055) 0%,transparent 60%),
+    radial-gradient(ellipse 55% 45% at 110% -5%,rgba(48,209,88,.045) 0%,transparent 55%),
+    radial-gradient(ellipse 45% 55% at 50% 110%,rgba(191,90,242,.035) 0%,transparent 60%);}
+header[data-testid="stHeader"],#MainMenu,footer,.stDeployButton,[data-testid="stToolbar"],[data-testid="stDecoration"]{display:none!important}
+[data-testid="stSidebarCollapseButton"],[data-testid="collapsedControl"]{display:none!important}
+section[data-testid="stSidebar"]{
+  display:block!important;transform:translateX(0)!important;visibility:visible!important;
+  background:rgba(3,6,14,.97)!important;border-right:1px solid rgba(255,255,255,.055)!important;
+  box-shadow:4px 0 40px rgba(0,0,0,.7)!important;
+  width:216px!important;min-width:216px!important;max-width:216px!important;
+  padding:1.3rem .9rem 1rem!important;}
+section[data-testid="stSidebar"]>div{width:216px!important;padding:0!important;}
+.block-container{padding-top:.35rem!important;padding-bottom:4rem!important;max-width:1460px!important;position:relative;z-index:1;padding-left:.75rem!important;padding-right:.75rem!important;}
+
+/* ── LIQUID GLASS BUTTONS ── */
+.stButton>button{
+  position:relative;overflow:hidden;
+  background:linear-gradient(145deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.025) 100%)!important;
+  border:1px solid rgba(255,255,255,.09)!important;
+  border-top-color:rgba(255,255,255,.16)!important;
+  border-left-color:rgba(255,255,255,.11)!important;
+  border-radius:12px!important;
+  box-shadow:0 2px 14px rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.06) inset!important;
+  color:#8090B0!important;-webkit-text-fill-color:#8090B0!important;
+  font-family:'Inter',sans-serif!important;font-weight:500!important;font-size:.82rem!important;
+  padding:.46rem .88rem!important;
+  transition:all .17s cubic-bezier(.4,0,.2,1)!important;
+  width:100%!important;margin-bottom:.18rem!important;text-align:left!important;
+}
+.stButton>button::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);pointer-events:none;}
+.stButton>button:hover{
+  background:linear-gradient(145deg,var(--acc-ab) 0%,rgba(10,132,255,.07) 100%)!important;
+  border-color:var(--acc-ac)!important;border-top-color:rgba(10,132,255,.45)!important;
+  box-shadow:0 6px 22px rgba(10,132,255,.18),0 1px 0 rgba(255,255,255,.1) inset!important;
+  color:var(--t0)!important;-webkit-text-fill-color:var(--t0)!important;
+  transform:translateY(-1px)!important;}
+.stButton>button:active{transform:scale(.98)!important;box-shadow:0 2px 8px rgba(0,0,0,.3)!important;}
+.stButton>button p,.stButton>button span{color:inherit!important;-webkit-text-fill-color:inherit!important;}
+section[data-testid="stSidebar"] .stButton>button{padding:.48rem .8rem!important;font-size:.83rem!important;}
+
+/* ── INPUTS ── */
+.stTextInput input,.stTextArea textarea{
+  background:rgba(255,255,255,.035)!important;border:1px solid rgba(255,255,255,.08)!important;
+  border-top-color:rgba(255,255,255,.12)!important;border-radius:12px!important;
+  color:var(--t1)!important;font-family:'Inter',sans-serif!important;font-size:.83rem!important;
+  box-shadow:inset 0 2px 8px rgba(0,0,0,.25)!important;}
+.stTextInput input:focus,.stTextArea textarea:focus{
+  border-color:rgba(10,132,255,.45)!important;
+  box-shadow:0 0 0 3px rgba(10,132,255,.09),inset 0 2px 8px rgba(0,0,0,.2)!important;}
+.stTextInput label,.stTextArea label,.stSelectbox label,.stFileUploader label,.stNumberInput label{
+  color:var(--t3)!important;font-size:.57rem!important;letter-spacing:.12em!important;
+  text-transform:uppercase!important;font-weight:700!important;}
+
+/* ── SIDEBAR LOGO ── */
+.sb-logo{display:flex;align-items:center;gap:9px;margin-bottom:1.4rem;padding:.1rem .2rem}
+.sb-logo-icon{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#0A84FF,#30D158);
+  display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;
+  box-shadow:0 0 18px rgba(10,132,255,.3)}
+.sb-logo-txt{font-family:'Syne',sans-serif;font-weight:900;font-size:1.2rem;letter-spacing:-.05em;
+  background:linear-gradient(135deg,#0A84FF,#30D158);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.sb-lbl{font-size:.52rem;font-weight:700;color:var(--t3);letter-spacing:.14em;text-transform:uppercase;
+  padding:0 .15rem;margin-bottom:.32rem;margin-top:.75rem}
+
+/* ── GLASS CARDS ── */
+.glass-card{
+  background:linear-gradient(145deg,rgba(255,255,255,.05) 0%,rgba(255,255,255,.018) 100%);
+  border:1px solid rgba(255,255,255,.075);border-top-color:rgba(255,255,255,.13);
+  border-radius:20px;box-shadow:0 8px 40px rgba(0,0,0,.45);position:relative;overflow:hidden;}
+.glass-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent);pointer-events:none;}
+.research-card{
+  background:linear-gradient(145deg,rgba(255,255,255,.045) 0%,rgba(255,255,255,.016) 100%);
+  border:1px solid rgba(255,255,255,.065);border-top-color:rgba(255,255,255,.11);
+  border-radius:16px;margin-bottom:.5rem;overflow:hidden;
+  box-shadow:0 4px 24px rgba(0,0,0,.35);
+  transition:border-color .17s,transform .17s,box-shadow .17s;position:relative;}
+.research-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(10,132,255,.1),transparent);}
+.research-card:hover{border-color:rgba(10,132,255,.25);transform:translateY(-2px);box-shadow:0 12px 38px rgba(10,132,255,.1);}
+.sc{background:rgba(255,255,255,.038);border:1px solid rgba(255,255,255,.065);border-radius:16px;
+  padding:.85rem .95rem;margin-bottom:.5rem;position:relative;}
+.sc::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent);}
+.scard{background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.058);border-radius:13px;
+  padding:.72rem .92rem;margin-bottom:.38rem;transition:border-color .14s,transform .12s;}
+.scard:hover{border-color:rgba(10,132,255,.22);transform:translateY(-1px);}
+.mbox{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.065);border-radius:13px;padding:.82rem;text-align:center;}
+.abox{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);border-radius:13px;padding:.9rem;margin-bottom:.5rem;}
+.chart-wrap{background:rgba(255,255,255,.018);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:.55rem;margin-bottom:.5rem;}
+
+/* ── COLORED BOXES ── */
+.pbox-acc{background:rgba(10,132,255,.05);border:1px solid rgba(10,132,255,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
+.pbox-teal{background:rgba(48,209,88,.05);border:1px solid rgba(48,209,88,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
+.pbox-pur{background:rgba(191,90,242,.05);border:1px solid rgba(191,90,242,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
+.pbox-orn{background:rgba(255,159,10,.05);border:1px solid rgba(255,159,10,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
+.pbox-red{background:rgba(255,69,58,.05);border:1px solid rgba(255,69,58,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
+.ai-card{background:linear-gradient(135deg,rgba(10,132,255,.065),rgba(48,209,88,.04));
+  border:1px solid rgba(10,132,255,.18);border-radius:15px;padding:1rem;margin-bottom:.6rem;position:relative;overflow:hidden;}
+.ai-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(10,132,255,.32),transparent);}
+.conn-card{background:linear-gradient(135deg,rgba(48,209,88,.055),rgba(10,132,255,.035));
+  border:1px solid rgba(48,209,88,.18);border-radius:13px;padding:.9rem;margin-bottom:.5rem;position:relative;}
+.sim-card{background:linear-gradient(135deg,rgba(191,90,242,.045),rgba(10,132,255,.028));
+  border:1px solid rgba(191,90,242,.15);border-radius:13px;padding:.85rem;margin-bottom:.45rem;}
+.ai-disc{background:rgba(255,159,10,.04);border:1px solid rgba(255,159,10,.14);border-radius:10px;
+  padding:.55rem .8rem;margin-bottom:.55rem;}
+
+/* ── METRIC VALS ── */
+.mval-acc{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:900;
+  background:linear-gradient(135deg,#0A84FF,#32ADE6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.mval-teal{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:900;
+  background:linear-gradient(135deg,#30D158,#32ADE6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.mval-pur{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:900;
+  background:linear-gradient(135deg,#BF5AF2,#0A84FF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.mval-orn{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:900;
+  background:linear-gradient(135deg,#FF9F0A,#FF453A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
+.mlbl{font-size:.55rem;color:var(--t3);margin-top:4px;letter-spacing:.10em;text-transform:uppercase;font-weight:700}
+
+/* ── BADGES & TAGS ── */
+.tag{display:inline-block;background:rgba(10,132,255,.07);border:1px solid rgba(10,132,255,.16);
+  border-radius:50px;padding:2px 8px;font-size:.60rem;color:#6AACFF;margin:2px;font-weight:500;}
+.tag-teal{display:inline-block;background:rgba(48,209,88,.07);border:1px solid rgba(48,209,88,.16);
+  border-radius:50px;padding:2px 8px;font-size:.60rem;color:#5AE07A;margin:2px;font-weight:500;}
+.tag-pur{display:inline-block;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.16);
+  border-radius:50px;padding:2px 8px;font-size:.60rem;color:#CF9AFF;margin:2px;font-weight:500;}
+.badge-acc{display:inline-block;background:rgba(10,132,255,.10);border:1px solid rgba(10,132,255,.22);
+  border-radius:50px;padding:2px 9px;font-size:.60rem;font-weight:700;color:#0A84FF;}
+.badge-teal{display:inline-block;background:rgba(48,209,88,.10);border:1px solid rgba(48,209,88,.22);
+  border-radius:50px;padding:2px 9px;font-size:.60rem;font-weight:700;color:#30D158;}
+.badge-orn{display:inline-block;background:rgba(255,159,10,.10);border:1px solid rgba(255,159,10,.22);
+  border-radius:50px;padding:2px 9px;font-size:.60rem;font-weight:700;color:#FF9F0A;}
+.badge-pur{display:inline-block;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.22);
+  border-radius:50px;padding:2px 9px;font-size:.60rem;font-weight:700;color:#BF5AF2;}
+
+/* ── TABS ── */
+.stTabs [data-baseweb="tab-list"]{background:rgba(255,255,255,.025)!important;
+  border:1px solid rgba(255,255,255,.06)!important;border-radius:12px!important;padding:3px!important;gap:2px!important;}
+.stTabs [data-baseweb="tab"]{background:transparent!important;color:var(--t3)!important;
+  border-radius:9px!important;font-size:.73rem!important;font-family:'Inter',sans-serif!important;font-weight:500!important;}
+.stTabs [aria-selected="true"]{background:var(--acc-ab)!important;color:var(--acc)!important;
+  border:1px solid var(--acc-ac)!important;font-weight:700!important;}
+.stTabs [data-baseweb="tab-panel"]{background:transparent!important;padding-top:.75rem!important;}
+
+/* ── PROFILE HERO ── */
+.prof-hero{background:linear-gradient(145deg,rgba(255,255,255,.045) 0%,rgba(255,255,255,.015) 100%);
+  border:1px solid rgba(255,255,255,.075);border-top-color:rgba(255,255,255,.12);
+  border-radius:22px;padding:1.5rem;display:flex;gap:1.2rem;align-items:flex-start;
+  box-shadow:0 8px 40px rgba(0,0,0,.45);margin-bottom:.9rem;}
+.av{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-family:'Syne',sans-serif;font-weight:800;font-size:1.5rem;color:white;flex-shrink:0;
+  border:2px solid rgba(10,132,255,.2);}
+
+/* ── CHAT ── */
+.bme{background:linear-gradient(135deg,rgba(10,132,255,.16),rgba(10,132,255,.08));
+  border:1px solid rgba(10,132,255,.22);border-radius:18px 18px 4px 18px;
+  padding:.52rem .85rem;max-width:70%;margin-left:auto;margin-bottom:4px;font-size:.81rem;line-height:1.6;}
+.bthem{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);
+  border-radius:18px 18px 18px 4px;padding:.52rem .85rem;max-width:70%;margin-bottom:4px;
+  font-size:.81rem;line-height:1.6;}
+
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+.dot-on{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--teal);
+  animation:pulse 2.5s infinite;margin-right:4px;vertical-align:middle;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.pw{animation:fadeUp .16s ease both;}
+hr{border:none;border-top:1px solid rgba(255,255,255,.06)!important;margin:.7rem 0;}
+.dtxt{display:flex;align-items:center;gap:.65rem;margin:.65rem 0;font-size:.54rem;color:var(--t3);
+  letter-spacing:.10em;text-transform:uppercase;font-weight:700;}
+.dtxt::before,.dtxt::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.055);}
+h1{font-family:'Syne',sans-serif!important;font-size:1.5rem!important;font-weight:800!important;
+  letter-spacing:-.03em;color:var(--t0)!important;}
+h2{font-family:'Syne',sans-serif!important;font-size:.98rem!important;font-weight:700!important;color:var(--t0)!important;}
+label{color:var(--t2)!important;}
+.stCheckbox label,.stRadio label{color:var(--t1)!important;}
+.stRadio>div{display:flex!important;gap:3px!important;flex-wrap:wrap!important;}
+.stRadio>div>label{background:rgba(255,255,255,.04)!important;border:1px solid rgba(255,255,255,.07)!important;
+  border-radius:50px!important;padding:.24rem .7rem!important;font-size:.72rem!important;cursor:pointer!important;color:var(--t2)!important;}
+.stSelectbox [data-baseweb="select"]{background:rgba(255,255,255,.035)!important;
+  border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;}
+.stFileUploader section{background:rgba(255,255,255,.025)!important;
+  border:1.5px dashed rgba(10,132,255,.2)!important;border-radius:14px!important;}
+.stExpander{background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.06);border-radius:14px;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:rgba(10,132,255,.2);border-radius:4px;}
+.stAlert{background:rgba(255,255,255,.035)!important;border:1px solid rgba(255,255,255,.07)!important;border-radius:14px!important;}
+input[type="number"]{background:rgba(255,255,255,.035)!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;color:var(--t1)!important;}
+</style>""",unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+#  HTML HELPERS
+# ══════════════════════════════════════════════════
+GRADS=["135deg,#0e3a6e,#0A84FF","135deg,#065f46,#30D158","135deg,#4a1d96,#BF5AF2",
+       "135deg,#78350f,#FF9F0A","135deg,#7f1d1d,#FF453A","135deg,#134e4a,#32ADE6",
+       "135deg,#1e3a8a,#5E5CE6","135deg,#3b1f6e,#BF5AF2"]
+def ugrad(e): return f"linear-gradient({GRADS[hash(e or '')%len(GRADS)]})"
+def avh(initials, sz=40, grad=None):
+    fs=max(sz//3,8); bg=grad or "linear-gradient(135deg,#0A84FF,#30D158)"
+    return(f'<div style="width:{sz}px;height:{sz}px;border-radius:50%;background:{bg};'
+           f'display:flex;align-items:center;justify-content:center;'
+           f'font-family:Syne,sans-serif;font-weight:800;font-size:{fs}px;color:white;'
+           f'flex-shrink:0;border:1.5px solid rgba(255,255,255,.12)">{initials}</div>')
+def tags_html(tags,cls="tag"): return ''.join(f'<span class="{cls}">{t}</span>' for t in(tags or []))
+def badge(s):
+    m={"Publicado":"badge-teal","Concluído":"badge-pur"}
+    return f'<span class="{m.get(s,"badge-orn")}">{s}</span>'
+def pc_dark(title=""):
+    t={"text":title,"font":{"color":"#D8E4F5","family":"Syne","size":11}} if title else {}
+    return dict(plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#3A4D6A",family="Inter",size=10),
+                title=t,margin=dict(l=10,r=10,t=36 if title else 10,b=10),
+                xaxis=dict(showgrid=False,color="#3A4D6A",tickfont=dict(size=9)),
+                yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.03)",color="#3A4D6A",tickfont=dict(size=9)))
+
+# ══════════════════════════════════════════════════
+#  AUTH
+# ══════════════════════════════════════════════════
+def page_login():
+    _,col,_=st.columns([1,1.1,1])
+    with col:
+        st.markdown("<br><br>",unsafe_allow_html=True)
+        st.markdown("""<div style="text-align:center;margin-bottom:2.5rem">
+  <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:.75rem">
+    <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#0A84FF,#30D158);
+      display:flex;align-items:center;justify-content:center;font-size:1.3rem;
+      box-shadow:0 0 24px rgba(10,132,255,.35)">N</div>
+    <div style="font-family:Syne,sans-serif;font-size:2.5rem;font-weight:900;letter-spacing:-.07em;
+      background:linear-gradient(135deg,#0A84FF,#30D158);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">Nebula</div>
+  </div>
+  <div style="color:#3A4D6A;font-size:.58rem;letter-spacing:.28em;text-transform:uppercase;font-weight:700">Plataforma de Pesquisa Científica</div>
+</div>""",unsafe_allow_html=True)
+        t_in,t_up=st.tabs(["  Entrar  ","  Criar conta  "])
+        with t_in:
+            with st.form("lf",clear_on_submit=False):
+                em=st.text_input("E-mail",placeholder="seu@email.com",key="li_e")
+                pw=st.text_input("Senha",placeholder="••••••••",type="password",key="li_p")
+                sub=st.form_submit_button("Entrar",use_container_width=True)
+                if sub:
+                    u=st.session_state.users.get(em)
+                    if not u: st.error("E-mail não encontrado.")
+                    elif u["password"]!=hp(pw): st.error("Senha incorreta.")
+                    else:
+                        st.session_state.logged_in=True; st.session_state.current_user=em
+                        area=u.get("area","")
+                        update_profile([w.lower() for w in re.split(r'[\s,]+',area) if len(w)>3],2.0)
+                        st.session_state.page="repository"; st.rerun()
+            st.markdown('<div style="text-align:center;color:#3A4D6A;font-size:.64rem;margin-top:.6rem">Demo: demo@nebula.ai / demo123</div>',unsafe_allow_html=True)
+        with t_up:
+            with st.form("sf",clear_on_submit=False):
+                nn=st.text_input("Nome completo",key="su_n")
+                ne=st.text_input("E-mail",key="su_e")
+                na=st.text_input("Área de pesquisa",key="su_a",placeholder="Ex: Neurociência Computacional")
+                n_nat=st.selectbox("Nacionalidade",["Brasil"]+sorted([k for k in NATIONALITY_COORDS if k!="Brasil"]),key="su_nat")
+                c1,c2=st.columns(2)
+                with c1: np_=st.text_input("Senha",type="password",key="su_p")
+                with c2: np2=st.text_input("Confirmar",type="password",key="su_p2")
+                sub2=st.form_submit_button("Criar conta",use_container_width=True)
+                if sub2:
+                    if not all([nn,ne,na,np_,np2]): st.error("Preencha todos os campos.")
+                    elif np_!=np2: st.error("Senhas não coincidem.")
+                    elif len(np_)<6: st.error("Mínimo 6 caracteres.")
+                    elif ne in st.session_state.users: st.error("E-mail já cadastrado.")
+                    else:
+                        st.session_state.users[ne]={"name":nn,"password":hp(np_),"bio":"","area":na,
+                                                    "verified":True,"nationality":n_nat}
+                        save_db(); st.session_state.logged_in=True; st.session_state.current_user=ne
+                        update_profile([w.lower() for w in re.split(r'[\s,]+',na) if len(w)>3],3.0)
+                        st.session_state.page="repository"; st.rerun()
+
+# ══════════════════════════════════════════════════
+#  SIDEBAR NAV
+# ══════════════════════════════════════════════════
+NAV=[("repository","Repositório","acc"),("search","Busca & Visao IA","teal"),
+     ("folders","Pastas","orn"),("analysis","Análises","pur"),
+     ("connections","Conexoes","teal"),("chat","Chat","acc"),("settings","Config","orn")]
+
+def render_nav():
+    email=st.session_state.current_user; u=guser(); cur=st.session_state.page
+    g=ugrad(email); in_=ini(u.get("name","?"))
+    with st.sidebar:
+        st.markdown('<div class="sb-logo"><div class="sb-logo-icon">N</div><div class="sb-logo-txt">Nebula</div></div>',unsafe_allow_html=True)
+        ak=st.session_state.get("api_key","")
+        st.markdown('<div class="sb-lbl">Menu</div>',unsafe_allow_html=True)
+        nav_labels={"repository":"Repositorio","search":"Busca & Visao","folders":"Pastas",
+                    "analysis":"Analises","connections":"Conexoes","chat":"Chat","settings":"Configuracoes"}
+        act_css=""
+        colors={"acc":"#0A84FF","teal":"#30D158","orn":"#FF9F0A","pur":"#BF5AF2"}
+        for i,(key,label,col) in enumerate(NAV):
+            if cur==key and not st.session_state.profile_view:
+                c=colors.get(col,"#0A84FF")
+                act_css+=(f'section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]'
+                          f' > [data-testid="stVerticalBlock"]:nth-child({i+3}) .stButton>button'
+                          f'{{color:{c}!important;-webkit-text-fill-color:{c}!important;'
+                          f'background:rgba(10,132,255,.12)!important;'
+                          f'border-color:{c}40!important;font-weight:700!important;}}')
+        if act_css: st.markdown(f'<style>{act_css}</style>',unsafe_allow_html=True)
+        for key,label,_ in NAV:
+            if st.button(label,key=f"sb_{key}",use_container_width=True):
+                st.session_state.profile_view=None; st.session_state.page=key; st.rerun()
+        st.markdown("<hr>",unsafe_allow_html=True)
+        st.markdown('<div class="sb-lbl">Anthropic API</div>',unsafe_allow_html=True)
+        new_ak=st.text_input("",placeholder="sk-ant-...",type="password",key="sb_api",
+                             label_visibility="collapsed",value=ak)
+        if new_ak!=ak: st.session_state.api_key=new_ak
+        if new_ak and new_ak.startswith("sk-"):
+            st.markdown('<div style="font-size:.52rem;color:#30D158;padding:.05rem .15rem">Claude Vision ativo</div>',unsafe_allow_html=True)
+        else:
+            st.markdown('<div style="font-size:.52rem;color:#3A4D6A;padding:.05rem .15rem">Insira chave para Claude Vision</div>',unsafe_allow_html=True)
+        st.markdown("<hr>",unsafe_allow_html=True)
+        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.1rem .1rem">'
+                    f'{avh(in_,28,g)}<div><div style="font-weight:700;font-size:.73rem;color:#D8E4F5;'
+                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:116px">{u.get("name","?")}</div>'
+                    f'<div style="font-size:.55rem;color:#3A4D6A">{u.get("area","")[:20]}</div></div></div>',unsafe_allow_html=True)
+        if st.button("Meu Perfil",key="sb_me",use_container_width=True):
+            st.session_state.profile_view=email; st.rerun()
+
+# ══════════════════════════════════════════════════
+#  PROFILE
+# ══════════════════════════════════════════════════
+def page_profile(target_email):
+    tu=st.session_state.users.get(target_email,{})
+    if not tu: st.error("Perfil não encontrado."); return
+    tname=tu.get("name","?"); is_me=st.session_state.current_user==target_email
+    g=ugrad(target_email); in_t=ini(tname)
+    user_research=[r for r in st.session_state.research_items if r.get("author_email")==target_email]
+    total_cit=sum(r.get("citations",0) for r in user_research)
+    vb=f' <span class="badge-teal" style="font-size:.57rem">Verificado</span>' if tu.get("verified") else ""
+    st.markdown(f"""<div class="prof-hero">
+  <div class="av" style="background:{g}">{in_t}</div>
+  <div style="flex:1">
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:.2rem">
+      <span style="font-family:Syne,sans-serif;font-weight:800;font-size:1.3rem;color:#fff">{tname}</span>{vb}
+    </div>
+    <div style="color:#0A84FF;font-size:.78rem;font-weight:600;margin-bottom:.3rem">{tu.get("area","")}</div>
+    <div style="color:#7A8FAD;font-size:.75rem;line-height:1.7;margin-bottom:.7rem">{tu.get("bio","Sem bio.")}</div>
+    <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
+      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:.97rem;color:#fff">{len(user_research)}</span>
+      <span style="color:#3A4D6A;font-size:.63rem"> pesquisas</span></div>
+      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:.97rem;color:#30D158">{total_cit}</span>
+      <span style="color:#3A4D6A;font-size:.63rem"> citações</span></div>
+      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:.97rem;color:#BF5AF2">{tu.get("nationality","")}</span></div>
+    </div>
+  </div>
+</div>""",unsafe_allow_html=True)
+    if st.button("Voltar",key="pf_back",use_container_width=False): st.session_state.profile_view=None; st.rerun()
+    if is_me:
+        with st.form("pf_f"):
+            n_name=st.text_input("Nome",value=tu.get("name",""))
+            n_area=st.text_input("Area",value=tu.get("area",""))
+            n_bio=st.text_area("Bio",value=tu.get("bio",""),height=70)
+            if st.form_submit_button("Salvar",use_container_width=True):
+                st.session_state.users[target_email].update({"name":n_name,"area":n_area,"bio":n_bio})
+                save_db(); st.success("Salvo!"); st.rerun()
+        if st.button("Sair da conta",key="logout2"): 
+            st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
+    for r in sorted(user_research,key=lambda x:x.get("date",""),reverse=True):
+        render_research_card(r,show_author=False,ctx="prof")
+
+# ══════════════════════════════════════════════════
+#  RESEARCH CARD
+# ══════════════════════════════════════════════════
+def render_research_card(item, show_author=True, ctx="repo", compact=False):
+    email=st.session_state.current_user; iid=item["id"]
+    saved=email in item.get("saved_by",[]); liked=email in item.get("liked_by",[])
+    aemail=item.get("author_email",""); aname=item.get("author","?")
+    dt=time_ago(item.get("date","")); g=ugrad(aemail)
+    ab=item.get("abstract","")
+    if compact and len(ab)>180: ab=ab[:180]+"..."
+    nat=item.get("nationality",""); yr=item.get("year",""); cit=item.get("citations",0)
+    if show_author:
+        hdr=(f'<div style="padding:.72rem 1rem .48rem;display:flex;align-items:center;gap:8px;'
+             f'border-bottom:1px solid rgba(255,255,255,.04)">'
+             f'{avh(ini(aname),34,g)}<div style="flex:1;min-width:0">'
+             f'<div style="font-weight:700;font-size:.82rem;color:#fff">{aname}</div>'
+             f'<div style="color:#3A4D6A;font-size:.60rem">{item.get("area","")} · {nat} · {dt}</div>'
+             f'</div>{badge(item["status"])}</div>')
+    else:
+        hdr=f'<div style="padding:.28rem 1rem .1rem;display:flex;justify-content:space-between;align-items:center"><span style="color:#3A4D6A;font-size:.59rem">{dt} · {nat}</span>{badge(item["status"])}</div>'
+    st.markdown(f'<div class="research-card">{hdr}'
+                f'<div style="padding:.58rem 1rem">'
+                f'<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.92rem;margin-bottom:.26rem;color:#fff;line-height:1.42">{item["title"]}</div>'
+                f'<div style="color:#7A8FAD;font-size:.77rem;line-height:1.63;margin-bottom:.45rem">{ab}</div>'
+                f'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">'
+                f'{tags_html(item.get("tags",[])[:4])}'
+                f'<span style="margin-left:auto;font-size:.60rem;color:#3A4D6A">{yr} · {cit} cit.</span>'
+                f'</div></div></div>',unsafe_allow_html=True)
+    c1,c2,c3,c4=st.columns([1,1,1,1])
+    with c1:
+        lbl_l=f"Salvo" if saved else "Salvar"
+        if st.button(lbl_l,key=f"sv_{ctx}_{iid}",use_container_width=True):
+            if saved: item["saved_by"].remove(email)
+            else: item["saved_by"].append(email); update_profile(item.get("tags",[]),1.2)
+            save_db(); st.rerun()
+    with c2:
+        if st.button(f"Like {item['likes']}",key=f"lk_{ctx}_{iid}",use_container_width=True):
+            if liked: item["liked_by"].remove(email); item["likes"]=max(0,item["likes"]-1)
+            else: item["liked_by"].append(email); item["likes"]+=1; update_profile(item.get("tags",[]),1.5)
+            save_db(); st.rerun()
+    with c3:
+        if st.button("Similares",key=f"sim_{ctx}_{iid}",use_container_width=True):
+            st.session_state.view_research=item; st.session_state.page="connections"; st.rerun()
+    with c4:
+        if show_author and aemail:
+            if st.button("Perfil",key=f"vp_{ctx}_{iid}",use_container_width=True):
+                st.session_state.profile_view=aemail; st.rerun()
+
+# ══════════════════════════════════════════════════
+#  REPOSITORY — main page
+# ══════════════════════════════════════════════════
+def page_repository():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.25rem">Repositorio de Pesquisa</h1>',unsafe_allow_html=True)
+    email=st.session_state.current_user; u=guser()
+    recs=get_recommendations(email,4); interests=get_interests(email,8)
+    col_main,col_side=st.columns([2.2,.9],gap="medium")
+    with col_main:
+        # Publish new research
+        with st.expander("Publicar nova pesquisa"):
+            with st.form("pub_form"):
+                title=st.text_input("Titulo",placeholder="Titulo da pesquisa...")
+                abstract=st.text_area("Resumo / Abstract",height=90,placeholder="Descreva sua pesquisa, metodologia e resultados...")
+                c1,c2,c3=st.columns(3)
+                with c1: tags_in=st.text_input("Tags",placeholder="tag1, tag2, tag3")
+                with c2: meth=st.selectbox("Metodologia",["experimental","computacional","observacional","revisao sistematica","estudo clinico","outro"])
+                with c3: status=st.selectbox("Status",["Em andamento","Publicado","Concluido"])
+                c4,c5=st.columns(2)
+                with c4: year_in=st.number_input("Ano",min_value=1900,max_value=2030,value=datetime.now().year)
+                with c5: nat_in=st.selectbox("Nacionalidade",["Brasil"]+sorted([k for k in NATIONALITY_COORDS if k!="Brasil"]))
+                sub=st.form_submit_button("Publicar",use_container_width=True)
+                if sub and title and abstract:
+                    tags=[t.strip() for t in tags_in.split(",") if t.strip()] if tags_in else []
+                    new_r={"id":int(datetime.now().timestamp())+random.randint(0,999),
+                           "author":u.get("name","?"),"author_email":email,"area":u.get("area",""),
+                           "nationality":nat_in,"year":int(year_in),"title":title,"abstract":abstract,
+                           "tags":tags,"methodology":meth,"citations":0,"views":1,"likes":0,
+                           "liked_by":[],"saved_by":[],"date":datetime.now().strftime("%Y-%m-%d"),
+                           "status":status}
+                    st.session_state.research_items.insert(0,new_r)
+                    update_profile(tags,2.5); save_db(); st.success("Publicado!"); st.rerun()
+        # Filter
+        ff=st.radio("",["Todos","Minhas","Salvos","Por area","Recomendados"],horizontal=True,key="rf",label_visibility="collapsed")
+        items=list(st.session_state.research_items)
+        if "Minhas" in ff: items=[r for r in items if r.get("author_email")==email]
+        elif "Salvos" in ff: items=[r for r in items if email in r.get("saved_by",[])]
+        elif "area" in ff: area=u.get("area",""); items=[r for r in items if area.lower() in r.get("area","").lower() or any(area.lower() in t.lower() for t in r.get("tags",[]))]
+        elif "Recomendados" in ff: items=recs if recs else items
+        else: items=sorted(items,key=lambda x:x.get("date",""),reverse=True)
+        if not items:
+            st.markdown('<div class="glass-card" style="padding:3.5rem;text-align:center;color:#3A4D6A">Nenhuma pesquisa encontrada.</div>',unsafe_allow_html=True)
+        else:
+            for r in items: render_research_card(r,ctx="repo")
+    with col_side:
+        # User interests
+        if interests:
+            st.markdown('<div class="sc">',unsafe_allow_html=True)
+            st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;margin-bottom:.65rem;color:#fff">Seus interesses</div>',unsafe_allow_html=True)
+            for i,interest in enumerate(interests[:8]):
+                pct=max(20,100-i*10)
+                st.markdown(f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:.28rem">'
+                            f'<div style="flex:1;font-size:.72rem;color:#7A8FAD;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{interest}</div>'
+                            f'<div style="width:{pct}px;height:4px;background:linear-gradient(90deg,#0A84FF,#30D158);border-radius:4px;flex-shrink:0"></div>'
+                            f'</div>',unsafe_allow_html=True)
+            st.markdown('</div>',unsafe_allow_html=True)
+        # Online suggestions from internet
+        st.markdown('<div class="sc">',unsafe_allow_html=True)
+        st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;margin-bottom:.65rem;color:#fff">Sugerido para voce</div>',unsafe_allow_html=True)
+        top_interest=" ".join(interests[:3]) if interests else u.get("area","science")
+        ck=f"recs_{email}_{top_interest[:30]}"
+        if ck not in st.session_state.scholar_cache:
+            try:
+                with st.spinner("Buscando..."):
+                    st.session_state.scholar_cache[ck]=search_ss(top_interest,4)
+            except: st.session_state.scholar_cache[ck]=[]
+        for a in st.session_state.scholar_cache.get(ck,[])[:3]:
+            st.markdown(f'<div style="padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
+                        f'<div style="font-size:.74rem;font-weight:600;color:#D8E4F5;line-height:1.4;margin-bottom:.18rem">{a["title"][:55]}...</div>'
+                        f'<div style="font-size:.59rem;color:#3A4D6A">{a["authors"][:30]} · {a["year"]}'
+                        f'{"  "+str(a["citations"])+" cit." if a.get("citations") else ""}</div></div>',unsafe_allow_html=True)
+            if a.get("url"): st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.67rem;text-decoration:none">Abrir</a>',unsafe_allow_html=True)
+        st.markdown('</div>',unsafe_allow_html=True)
+        # Trending topics
+        st.markdown('<div class="sc">',unsafe_allow_html=True)
+        st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;margin-bottom:.65rem;color:#fff">Temas em alta</div>',unsafe_allow_html=True)
+        all_tags=Counter(t.lower() for r in st.session_state.research_items for t in r.get("tags",[]))
+        for t,cnt in all_tags.most_common(6):
+            st.markdown(f'<div style="padding:.28rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
+                        f'<div style="font-size:.73rem;font-weight:600;color:#0A84FF">{t}</div>'
+                        f'<div style="font-size:.57rem;color:#3A4D6A">{cnt} pesquisas</div></div>',unsafe_allow_html=True)
+        st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+#  SEARCH + VISION IA (merged)
+# ══════════════════════════════════════════════════
+def render_article(a, idx=0, ctx="web"):
+    sc="#0A84FF" if a.get("origin")=="semantic" else "#30D158"; sn="S2" if a.get("origin")=="semantic" else "CR"
+    cite=f" · {a['citations']} cit." if a.get("citations") else ""
+    uid=re.sub(r'[^a-zA-Z0-9]','',f"{ctx}_{idx}_{str(a.get('doi',''))[:8]}")[:28]
+    is_saved=any(s.get('doi')==a.get('doi') for s in st.session_state.saved_articles)
+    ab=(a.get("abstract","") or "")[:260]
+    st.markdown(f'<div class="scard"><div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:.24rem">'
+                f'<div style="flex:1;font-family:Syne,sans-serif;font-weight:700;font-size:.84rem;color:#fff">{a["title"]}</div>'
+                f'<span style="font-size:.56rem;color:{sc};border:1px solid {sc}30;border-radius:7px;padding:2px 6px;white-space:nowrap;flex-shrink:0">{sn}</span></div>'
+                f'<div style="color:#3A4D6A;font-size:.60rem;margin-bottom:.25rem">{a["authors"]} · <em>{a["source"]}</em> · {a["year"]}{cite}</div>'
+                f'<div style="color:#7A8FAD;font-size:.74rem;line-height:1.62">{ab}{"..." if len(a.get("abstract",""))>260 else ""}</div></div>',unsafe_allow_html=True)
+    ca,cb,cc=st.columns(3)
+    with ca:
+        lbl="Remover" if is_saved else "Salvar"
+        if st.button(lbl,key=f"svw_{uid}"):
+            if is_saved: st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]; st.toast("Removido")
+            else: st.session_state.saved_articles.append(a); st.toast("Salvo!")
+            save_db(); st.rerun()
+    with cb:
+        if st.button("Citar",key=f"ctw_{uid}"): st.toast(f'{a["authors"]} ({a["year"]}). {a["title"]}.')
+    with cc:
+        if a.get("url"): st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.75rem;text-decoration:none;line-height:2.3;display:block">Abrir</a>',unsafe_allow_html=True)
+
+def page_search():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.25rem">Busca e Visao IA</h1>',unsafe_allow_html=True)
+    st.markdown('<p style="color:#3A4D6A;font-size:.74rem;margin-bottom:.8rem">Busca de artigos · Pesquisa por imagem · Analise de imagem com ML + Claude Vision</p>',unsafe_allow_html=True)
+    api_key=st.session_state.get("api_key",""); has_api=bool(api_key and api_key.startswith("sk-"))
+    t_text,t_img=st.tabs(["  Busca por texto  ","  Busca por imagem / Vision IA  "])
+
+    with t_text:
+        with st.form("sf_text"):
+            c1,c2=st.columns([4,1])
+            with c1: q=st.text_input("",placeholder="CRISPR · quantum ML · dark matter · neuroplasticidade...",key="sq",label_visibility="collapsed")
+            with c2: sub=st.form_submit_button("Buscar",use_container_width=True)
+            if sub and q:
+                with st.spinner("Buscando..."):
+                    nb=[r for r in st.session_state.research_items if q.lower() in r["title"].lower() or q.lower() in r["abstract"].lower()]
+                    ss_r=search_ss(q,6); cr_r=search_cr(q,4)
+                    st.session_state.search_results={"nebula":nb,"ss":ss_r,"cr":cr_r}; st.session_state.last_sq=q
+                    update_profile([q.lower()],0.5)
+        # Also search in folders
+        if st.session_state.get("search_results") and st.session_state.get("last_sq"):
+            q_s=st.session_state.last_sq; res=st.session_state.search_results
+            neb=res.get("nebula",[]); ss=res.get("ss",[]); cr=res.get("cr",[])
+            web=ss+[x for x in cr if not any(x["title"].lower()==s["title"].lower() for s in ss)]
+            # Search in user folders
+            folder_matches=[]
+            for fn,fd in st.session_state.folders.items():
+                if not isinstance(fd,dict): continue
+                for fname,an in fd.get("analyses",{}).items():
+                    if q_s.lower() in fname.lower() or any(q_s.lower() in kw for kw in an.get("keywords",[])):
+                        folder_matches.append({"folder":fn,"file":fname,"keywords":an.get("keywords",[])[:6],"topics":an.get("topics",{}),"relevance":an.get("relevance_score",0)})
+            t_all,t_neb,t_web,t_fold=st.tabs([f"Todos ({len(neb)+len(web)})",f"Nebula ({len(neb)})",f"Internet ({len(web)})",f"Suas Pastas ({len(folder_matches)})"])
+            with t_all:
+                if neb:
+                    st.markdown('<div style="font-size:.56rem;color:#0A84FF;font-weight:700;margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.1em">Na Nebula</div>',unsafe_allow_html=True)
+                    for r in neb: render_research_card(r,ctx="sa",compact=True)
+                if web:
+                    if neb: st.markdown('<hr>',unsafe_allow_html=True)
+                    st.markdown('<div style="font-size:.56rem;color:#30D158;font-weight:700;margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.1em">Internet</div>',unsafe_allow_html=True)
+                    for i,a in enumerate(web): render_article(a,i,"aw")
+                if not neb and not web: st.info("Nenhum resultado.")
+            with t_neb:
+                for r in neb: render_research_card(r,ctx="sn",compact=True)
+                if not neb: st.info("Nenhuma pesquisa.")
+            with t_web:
+                for i,a in enumerate(web): render_article(a,i,"wt")
+                if not web: st.info("Nenhum artigo.")
+            with t_fold:
+                if folder_matches:
+                    for fm in folder_matches:
+                        st.markdown(f'<div class="scard"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.83rem;color:#fff;margin-bottom:.22rem">{fm["file"]}</div>'
+                                    f'<div style="font-size:.63rem;color:#3A4D6A;margin-bottom:.25rem">Pasta: {fm["folder"]} · Relevancia: {fm["relevance"]}%</div>'
+                                    f'<div>{tags_html(fm["keywords"][:5])}</div></div>',unsafe_allow_html=True)
+                else:
+                    st.markdown('<div style="color:#3A4D6A;padding:.8rem">Nenhum resultado nas suas pastas.</div>',unsafe_allow_html=True)
+
+    with t_img:
+        st.markdown('<div class="ai-disc"><span style="font-size:.64rem;color:#FF9F0A;font-weight:600">Aviso: </span><span style="font-size:.62rem;color:#7A8FAD">Analise realizada por IA e processamento ML. Resultados podem conter erros — valide com especialista qualificado.</span></div>',unsafe_allow_html=True)
+        if has_api:
+            st.markdown('<div class="pbox-teal" style="margin-bottom:.6rem"><div style="font-size:.7rem;color:#30D158;font-weight:600">Claude Vision Ativo</div><div style="font-size:.63rem;color:#7A8FAD">Analise real com IA + busca de artigos relacionados + busca em suas pastas</div></div>',unsafe_allow_html=True)
+        cu,cr2=st.columns([1,1.8])
+        with cu:
+            img_f=st.file_uploader("Imagem cientifica",type=["png","jpg","jpeg","webp","tiff"],key="img_up2")
+            img_bytes=None
+            if img_f: img_f.seek(0); img_bytes=img_f.read(); st.image(img_bytes,use_container_width=True)
+            run_ml_btn=st.button("Analisar (Pipeline ML)",key="btn_ml",use_container_width=True)
+            run_vision_btn=False
+            if img_bytes and has_api:
+                run_vision_btn=st.button("Claude Vision (IA Real)",key="btn_cv",use_container_width=True)
+        with cr2:
+            if img_bytes and run_ml_btn:
+                with st.spinner("Executando Sobel · Canny · FFT · Textura..."):
+                    ml=run_ml(img_bytes)
+                st.session_state.img_result=ml
+                if not ml.get("ok"): st.error(ml.get("error","Erro no pipeline"))
+                else:
+                    cls_=ml["classification"]; col_info=ml["color"]; conf_c=VIB[1] if cls_["confidence"]>80 else(VIB[0] if cls_["confidence"]>60 else VIB[2])
+                    st.markdown(f'<div class="ai-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:.5rem">'
+                                f'<div><div style="font-size:.54rem;color:#3A4D6A;text-transform:uppercase;letter-spacing:.10em;margin-bottom:4px">Pipeline ML</div>'
+                                f'<div style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:#fff;margin-bottom:2px">{cls_["category"]}</div></div>'
+                                f'<div style="text-align:center;background:rgba(0,0,0,.3);border-radius:10px;padding:.4rem .75rem;flex-shrink:0">'
+                                f'<div style="font-family:Syne,sans-serif;font-weight:900;font-size:1.4rem;color:{conf_c}">{cls_["confidence"]}%</div>'
+                                f'<div style="font-size:.48rem;color:#3A4D6A;text-transform:uppercase">confianca</div></div></div>'
+                                f'<div style="font-size:.61rem;color:#3A4D6A;margin-bottom:.25rem">{'  '.join(f"{k}: {v}pt" for k,v in list(cls_["all_scores"].items())[:4])}</div></div>',unsafe_allow_html=True)
+                    sb=ml.get("sobel",{}); tx=ml.get("texture",{}); fft_r=ml.get("fft",{})
+                    c1m,c2m,c3m,c4m=st.columns(4)
+                    with c1m: st.markdown(f'<div class="mbox"><div style="font-weight:800;font-size:.95rem;color:#0A84FF">{sb.get("mean",0):.4f}</div><div class="mlbl">Sobel</div></div>',unsafe_allow_html=True)
+                    with c2m: st.markdown(f'<div class="mbox"><div style="font-weight:800;font-size:.95rem;color:#30D158">{tx.get("texture_type","—")}</div><div class="mlbl">Textura</div></div>',unsafe_allow_html=True)
+                    with c3m: st.markdown(f'<div class="mbox"><div style="font-weight:800;font-size:.95rem;color:#BF5AF2">{"Perio." if fft_r.get("is_periodic") else "Aperio."}</div><div class="mlbl">FFT</div></div>',unsafe_allow_html=True)
+                    with c4m: st.markdown(f'<div class="mbox"><div style="font-weight:800;font-size:.95rem;color:#FF9F0A">{col_info.get("entropy",0):.2f}</div><div class="mlbl">Entropia</div></div>',unsafe_allow_html=True)
+                    t_ml1,t_ml2,t_ml3=st.tabs(["  Bordas & FFT  ","  Cores  ","  Histograma  "])
+                    with t_ml1:
+                        eh=sb.get("hist",[1]*16)
+                        fig_e=go.Figure(go.Bar(y=eh,marker=dict(color=list(range(len(eh))),colorscale=[[0,"#0A1020"],[.4,"#0A84FF"],[.8,"#30D158"],[1,"#FFD60A"]])))
+                        fig_e.update_layout(**{**pc_dark("Distribuicao Sobel"),'height':155,'margin':dict(l=10,r=10,t=32,b=8)})
+                        st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_e,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+                        lf=fft_r.get("lf",0); mf=fft_r.get("mf",0); hf=fft_r.get("hf",0)
+                        fig_f=go.Figure(go.Bar(x=["Baixa","Media","Alta"],y=[lf,mf,hf],marker=dict(color=["#0A84FF","#30D158","#BF5AF2"]),text=[f"{v:.3f}" for v in [lf,mf,hf]],textposition="outside",textfont=dict(color="#3A4D6A",size=9)))
+                        fig_f.update_layout(**{**pc_dark("FFT Frequencias"),'height':155,'margin':dict(l=10,r=10,t=32,b=8)})
+                        st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_f,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+                    with t_ml2:
+                        pal=ml.get("palette",[])
+                        for cp in pal[:6]:
+                            hx=cp.get("hex","#888"); r2,g2,b2=cp.get("rgb",(128,128,128)); pct=cp.get("pct",0)
+                            st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.32rem"><div style="width:26px;height:26px;border-radius:6px;background:{hx};border:1px solid rgba(255,255,255,.1);flex-shrink:0"></div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:.66rem;color:#7A8FAD;margin-bottom:2px"><span>{hx.upper()}</span><span>{pct:.1f}%</span></div><div style="height:4px;width:{min(int(pct*3),100)}%;background:{hx};border-radius:3px;max-width:100%"></div></div></div>',unsafe_allow_html=True)
+                    with t_ml3:
+                        hd=ml.get("histograms",{})
+                        if hd:
+                            fig4=go.Figure()
+                            bx2=list(range(0,256,8))[:32]
+                            fig4.add_trace(go.Scatter(x=bx2,y=hd.get("r",[])[:32],fill='tozeroy',name='R',line=dict(color='rgba(255,69,58,.9)',width=1.5),fillcolor='rgba(255,69,58,.08)'))
+                            fig4.add_trace(go.Scatter(x=bx2,y=hd.get("g",[])[:32],fill='tozeroy',name='G',line=dict(color='rgba(48,209,88,.9)',width=1.5),fillcolor='rgba(48,209,88,.08)'))
+                            fig4.add_trace(go.Scatter(x=bx2,y=hd.get("b",[])[:32],fill='tozeroy',name='B',line=dict(color='rgba(10,132,255,.9)',width=1.5),fillcolor='rgba(10,132,255,.08)'))
+                            fig4.update_layout(**{**pc_dark("Histograma RGB"),'height':165,'margin':dict(l=10,r=10,t=32,b=8),'legend':dict(font=dict(color="#3A4D6A",size=8))})
+                            st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig4,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+                    # Search related in folders and internet
+                    kw_s=cls_["search_kw"]
+                    st.markdown('<div class="dtxt">Pesquisas relacionadas</div>',unsafe_allow_html=True)
+                    t_r1,t_r2,t_r3=st.tabs(["Nebula","Suas Pastas","Internet"])
+                    with t_r1:
+                        kl=kw_s.lower().split()[:5]
+                        nr=sorted([(sum(1 for k in kl if k in (r.get("title","")+" "+r.get("abstract","")).lower()),r) for r in st.session_state.research_items],key=lambda x:-x[0])
+                        for _,r in [x for x in nr if x[0]>0][:4]: render_research_card(r,ctx="img_n",compact=True)
+                        if not [x for x in nr if x[0]>0]: st.info("Nenhuma pesquisa similar.")
+                    with t_r2:
+                        folder_img=[]
+                        for fn,fd in st.session_state.folders.items():
+                            if not isinstance(fd,dict): continue
+                            for fname,an in fd.get("analyses",{}).items():
+                                score=sum(1 for k in kl if any(k in kw for kw in an.get("keywords",[])))
+                                if score>0: folder_img.append((score,fn,fname,an))
+                        folder_img.sort(key=lambda x:-x[0])
+                        for _,fn,fname,an in folder_img[:4]:
+                            st.markdown(f'<div class="scard"><div style="font-weight:700;font-size:.82rem;color:#fff;margin-bottom:.2rem">{fname}</div>'
+                                        f'<div style="font-size:.62rem;color:#3A4D6A">Pasta: {fn}</div>'
+                                        f'<div style="margin-top:.25rem">{tags_html(an.get("keywords",[])[:5])}</div></div>',unsafe_allow_html=True)
+                        if not folder_img: st.info("Nenhum documento similar nas pastas.")
+                    with t_r3:
+                        ck_img=f"img_{kw_s[:35]}"
+                        if ck_img not in st.session_state.scholar_cache:
+                            with st.spinner("Buscando..."):
+                                st.session_state.scholar_cache[ck_img]=search_ss(kw_s,5)
+                        for i,a in enumerate(st.session_state.scholar_cache.get(ck_img,[])): render_article(a,i,"img_w")
+            elif img_bytes and run_vision_btn:
+                with st.spinner("Claude analisando a imagem..."):
+                    ai_text,ai_err=call_vision(img_bytes,api_key)
+                if ai_err: st.error(f"Erro Claude Vision: {ai_err}")
+                elif ai_text:
+                    try:
+                        clean=re.sub(r'```json\s*','',ai_text).replace('```','').strip()
+                        ai_d=json.loads(clean)
+                        tipo=ai_d.get("tipo","—"); origem=ai_d.get("origem","—"); desc=ai_d.get("descricao","—")
+                        estruturas=ai_d.get("estruturas",[]); tecnica=ai_d.get("tecnica","—")
+                        confianca=ai_d.get("confianca",0); termos=ai_d.get("termos_busca","")
+                        interp=ai_d.get("interpretacao",""); aviso=ai_d.get("aviso","")
+                        cc2="#30D158" if confianca>80 else("#0A84FF" if confianca>60 else "#FF9F0A")
+                        st.markdown(f'''<div class="ai-card" style="border-color:rgba(48,209,88,.25)">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:.65rem">
+    <div>
+      <div style="font-size:.53rem;color:#30D158;text-transform:uppercase;letter-spacing:.10em;font-weight:700;margin-bottom:3px">Claude Vision</div>
+      <div style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:#fff;margin-bottom:2px">{tipo}</div>
+      <div style="color:#30D158;font-size:.74rem;font-weight:600">{origem}</div>
+    </div>
+    <div style="text-align:center;background:rgba(0,0,0,.3);border-radius:10px;padding:.4rem .75rem;flex-shrink:0">
+      <div style="font-family:Syne,sans-serif;font-weight:900;font-size:1.35rem;color:{cc2}">{confianca}%</div>
+      <div style="font-size:.47rem;color:#3A4D6A;text-transform:uppercase">confianca</div>
+    </div>
+  </div>
+  <div style="background:rgba(0,0,0,.22);border-radius:9px;padding:.55rem .75rem;margin-bottom:.5rem;font-size:.75rem;color:#D8E4F5;line-height:1.65">{desc}</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.45rem;margin-bottom:.45rem;font-size:.71rem">
+    <div style="color:#7A8FAD">Tecnica: <strong style="color:#fff">{tecnica}</strong></div>
+    <div style="color:#7A8FAD">Qualidade: <strong style="color:#FF9F0A">{ai_d.get("qualidade","—")}</strong></div>
+  </div>
+  {f"<div style='font-size:.70rem;color:#7A8FAD;margin-bottom:.35rem'>Estruturas: {', '.join(estruturas)}</div>" if estruturas else ""}
+  {f"<div style='background:rgba(48,209,88,.04);border:1px solid rgba(48,209,88,.12);border-radius:8px;padding:.45rem .65rem;font-size:.71rem;color:#7A8FAD;line-height:1.65'>{interp}</div>" if interp else ""}
+  {f"<div style='margin-top:.4rem;font-size:.61rem;color:#FF9F0A'>{aviso}</div>" if aviso else ""}
+</div>''',unsafe_allow_html=True)
+                        if termos:
+                            with st.spinner("Buscando artigos..."):
+                                art=search_ss(termos,5)
+                            st.markdown('<div class="dtxt">Artigos relacionados</div>',unsafe_allow_html=True)
+                            for i,a in enumerate(art): render_article(a,i,"cv_w")
+                    except:
+                        st.markdown(f'<div class="abox"><div style="font-size:.75rem;color:#7A8FAD;white-space:pre-wrap">{ai_text[:1200]}</div></div>',unsafe_allow_html=True)
+            elif not img_f:
+                st.markdown('<div class="glass-card" style="padding:4rem 2rem;text-align:center;margin-top:.5rem">'
+                            '<div style="font-size:2.5rem;opacity:.12;margin-bottom:.85rem">N</div>'
+                            '<div style="font-family:Syne,sans-serif;font-size:.96rem;color:#D8E4F5">Carregue uma imagem cientifica</div>'
+                            '<div style="font-size:.68rem;color:#3A4D6A;margin-top:.4rem;line-height:1.9">Pipeline ML: Sobel · Canny · FFT · Textura · Paleta<br>Com API Key: Claude Vision para analise real</div></div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+#  FOLDERS
+# ══════════════════════════════════════════════════
+def page_folders():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.8rem">Pastas de Pesquisa</h1>',unsafe_allow_html=True)
+    u=guser(); ra=u.get("area","")
+    with st.form("nff"):
+        c1,c2,c3=st.columns([2,1.5,.7])
+        with c1: nfn=st.text_input("Nome da pasta",placeholder="Ex: Genomica Comparativa")
+        with c2: nfd=st.text_input("Descricao",placeholder="Breve descricao")
+        with c3:
+            st.markdown('<div style="margin-top:1.65rem">',unsafe_allow_html=True)
+            sub_nf=st.form_submit_button("Criar",use_container_width=True)
+            st.markdown('</div>',unsafe_allow_html=True)
+        if sub_nf:
+            if nfn.strip():
+                if nfn not in st.session_state.folders: st.session_state.folders[nfn]={"desc":nfd,"files":[],"notes":"","analyses":{}}; save_db(); st.success(f"Pasta '{nfn}' criada!"); st.rerun()
+                else: st.warning("Ja existe.")
+            else: st.warning("Digite um nome.")
+    if not st.session_state.folders:
+        st.markdown('<div class="glass-card" style="text-align:center;padding:3.5rem;color:#3A4D6A">Nenhuma pasta criada.</div>',unsafe_allow_html=True)
+        st.markdown('</div>',unsafe_allow_html=True); return
+    for fn,fd in list(st.session_state.folders.items()):
+        if not isinstance(fd,dict): fd={"files":fd,"desc":"","notes":"","analyses":{}}; st.session_state.folders[fn]=fd
+        files=fd.get("files",[]); analyses=fd.get("analyses",{})
+        with st.expander(f"{fn}  —  {len(files)} arquivo(s)  ·  {len(analyses)} analise(s)"):
+            up=st.file_uploader("",type=None,key=f"up_{fn}",label_visibility="collapsed",accept_multiple_files=True)
+            if up:
+                fb=st.session_state.folder_bytes.setdefault(fn,{})
+                for uf in up:
+                    if uf.name not in files: files.append(uf.name)
+                    uf.seek(0); fb[uf.name]=uf.read()
+                fd["files"]=files; save_db(); st.success(f"{len(up)} arquivo(s) adicionado(s)!")
+            icons={"PDF":"[PDF]","Word":"[DOC]","Planilha":"[XLS]","Dados":"[CSV]","Codigo":"[PY]","Imagem":"[IMG]","Markdown":"[MD]","Notebook":"[NB]"}
+            for f in files:
+                ft2=ftype(f); ha=f in analyses; ic=icons.get(ft2,"[?]")
+                ab_=f'  <span class="badge-teal" style="font-size:.54rem">analisado</span>' if ha else ''
+                st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.32rem 0;border-bottom:1px solid rgba(255,255,255,.04)"><span style="font-size:.68rem;color:#0A84FF;font-weight:700;width:32px;flex-shrink:0">{ic}</span><span style="font-size:.72rem;color:#7A8FAD;flex:1">{f}</span>{ab_}</div>',unsafe_allow_html=True)
+            ca2,cb2,_=st.columns([1.4,1.2,2])
+            with ca2:
+                if st.button("Analisar",key=f"an_{fn}",use_container_width=True):
+                    if files:
+                        pb=st.progress(0,"Iniciando..."); fb2=st.session_state.folder_bytes.get(fn,{})
+                        for fi,f in enumerate(files):
+                            pb.progress((fi+1)/len(files),f"Analisando {f[:25]}...")
+                            analyses[f]=analyze_document(f,fb2.get(f,b""),ftype(f),ra)
+                            if analyses[f].get("keywords"): update_profile(analyses[f]["keywords"][:5],0.8)
+                        fd["analyses"]=analyses; save_db(); pb.empty(); st.success("Analise completa!"); st.rerun()
+                    else: st.warning("Adicione arquivos primeiro.")
+            with cb2:
+                if st.button("Excluir pasta",key=f"df_{fn}",use_container_width=True):
+                    del st.session_state.folders[fn]; save_db(); st.rerun()
+            if analyses:
+                with st.expander(f"Ver analises ({len(analyses)} documentos)"):
+                    for f,an in analyses.items():
+                        st.markdown(f'<div class="abox"><div style="font-weight:700;font-size:.83rem;margin-bottom:.25rem">{f}</div>'
+                                    f'<div style="font-size:.72rem;color:#7A8FAD;margin-bottom:.35rem">{an.get("summary","")}</div>'
+                                    f'<div style="display:flex;gap:1rem;margin-bottom:.3rem">'
+                                    f'<div style="text-align:center"><div style="font-weight:800;font-size:1rem;color:{"#30D158" if an.get("relevance_score",0)>=70 else "#FF9F0A"}">{an.get("relevance_score",0)}%</div><div style="font-size:.52rem;color:#3A4D6A;text-transform:uppercase">Relevancia</div></div>'
+                                    f'<div style="text-align:center"><div style="font-weight:800;font-size:1rem;color:#0A84FF">{an.get("word_count",0):,}</div><div style="font-size:.52rem;color:#3A4D6A;text-transform:uppercase">Palavras</div></div>'
+                                    f'{"<div style=text-align:center><div style=font-weight:800;font-size:1rem;color:#BF5AF2>"+str(an.get("year","—"))+"</div><div style=font-size:.52rem;color:#3A4D6A;text-transform:uppercase>Ano</div></div>" if an.get("year") else ""}'
+                                    f'</div>'
+                                    f'{"<div style=font-size:.71rem;color:#7A8FAD;margin-bottom:.25rem>Autores: "+", ".join(an.get("authors",["—"])[:3])+"</div>" if an.get("authors") else ""}'
+                                    f'{"<div style=font-size:.71rem;color:#7A8FAD;margin-bottom:.3rem>Nacionalidade detectada: <strong style=color:#30D158>"+an.get("nationality","—")+"</strong></div>" if an.get("nationality") else ""}'
+                                    f'<div>{tags_html(an.get("keywords",[])[:12])}</div></div>',unsafe_allow_html=True)
+                        if an.get("key_sentences"):
+                            st.markdown('<div style="font-size:.6rem;color:#3A4D6A;text-transform:uppercase;font-weight:700;margin:.4rem 0 .2rem">Frases-chave extraidas</div>',unsafe_allow_html=True)
+                            for sent in an["key_sentences"][:2]:
+                                st.markdown(f'<div style="background:rgba(10,132,255,.04);border-left:3px solid rgba(10,132,255,.3);border-radius:0 8px 8px 0;padding:.38rem .65rem;margin-bottom:.22rem;font-size:.72rem;color:#7A8FAD;line-height:1.6;font-style:italic">{sent}</div>',unsafe_allow_html=True)
+            note=st.text_area("Notas",value=fd.get("notes",""),key=f"nt_{fn}",height=55,label_visibility="collapsed",placeholder="Notas da pasta...")
+            if st.button("Salvar nota",key=f"sn_{fn}"): fd["notes"]=note; save_db(); st.success("Salvo!")
+    st.markdown('</div>',unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+#  ANALYSIS — deep analytics + 3D map
+# ══════════════════════════════════════════════════
+def page_analysis():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.8rem">Analises e Metricas</h1>',unsafe_allow_html=True)
+    email=st.session_state.current_user
+    t_repo,t_pastas,t_mapa,t_impacto=st.tabs(["  Repositorio  ","  Pastas  ","  Mapa Mundial  ","  Impacto  "])
+
+    with t_repo:
+        # Research analytics
+        items=st.session_state.research_items
+        if not items:
+            st.info("Nenhuma pesquisa no repositorio.")
+        else:
+            c1,c2,c3,c4=st.columns(4)
+            with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas</div></div>',unsafe_allow_html=True)
+            with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{sum(r.get("citations",0) for r in items)}</div><div class="mlbl">Citacoes</div></div>',unsafe_allow_html=True)
+            with c3:
+                areas_cnt=Counter(r.get("area","") for r in items)
+                st.markdown(f'<div class="mbox"><div class="mval-pur">{len(areas_cnt)}</div><div class="mlbl">Areas</div></div>',unsafe_allow_html=True)
+            with c4:
+                authors_cnt=Counter(r.get("author","") for r in items)
+                st.markdown(f'<div class="mbox"><div class="mval-orn">{len(authors_cnt)}</div><div class="mlbl">Autores</div></div>',unsafe_allow_html=True)
+
+            # Year distribution
+            years_cnt=Counter(r.get("year",2026) for r in items)
+            if years_cnt:
+                ylist=sorted(years_cnt.keys()); yvlist=[years_cnt[y] for y in ylist]
+                fig_y=go.Figure(go.Bar(x=[str(y) for y in ylist],y=yvlist,marker=dict(color=yvlist,colorscale=[[0,"#0A1020"],[1,"#0A84FF"]]),text=yvlist,textposition="outside",textfont=dict(color="#3A4D6A",size=9)))
+                fig_y.update_layout(**{**pc_dark("Pesquisas por Ano"),'height':200,'margin':dict(l=10,r=10,t=36,b=8)})
+                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_y,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+
+            # Area distribution
+            if areas_cnt:
+                fig_a=go.Figure(go.Pie(labels=list(areas_cnt.keys()),values=list(areas_cnt.values()),hole=0.52,
+                    marker=dict(colors=VIB[:len(areas_cnt)],line=dict(color=["#03060E"]*15,width=2)),textfont=dict(color="white",size=8)))
+                fig_a.update_layout(height=240,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
+                    title=dict(text="Areas de Pesquisa",font=dict(color="#D8E4F5",family="Syne",size=11)),
+                    legend=dict(font=dict(color="#3A4D6A",size=8)),margin=dict(l=0,r=0,t=36,b=0))
+                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_a,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+
+            # Top authors
+            st.markdown('<div class="dtxt">Top Autores</div>',unsafe_allow_html=True)
+            auth_cit={r.get("author","?"):sum(x.get("citations",0) for x in items if x.get("author")==r.get("author")) for r in items}
+            for auth,cit in sorted(auth_cit.items(),key=lambda x:-x[1])[:6]:
+                nat_a=next((x.get("nationality","") for x in items if x.get("author")==auth),"")
+                st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.32rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
+                            f'{avh(ini(auth),28,ugrad(auth+"@"))}'
+                            f'<div style="flex:1"><div style="font-size:.74rem;font-weight:600;color:#D8E4F5">{auth}</div>'
+                            f'<div style="font-size:.59rem;color:#3A4D6A">{nat_a}</div></div>'
+                            f'<div style="font-weight:700;font-size:.82rem;color:#0A84FF">{cit}</div>'
+                            f'<div style="font-size:.55rem;color:#3A4D6A">cit.</div></div>',unsafe_allow_html=True)
+
+            # Methodology breakdown
+            meth_cnt=Counter(r.get("methodology","outro") for r in items if r.get("methodology"))
+            if meth_cnt:
+                fig_m=go.Figure(go.Bar(x=list(meth_cnt.values()),y=list(meth_cnt.keys()),orientation='h',
+                    marker=dict(color=list(range(len(meth_cnt))),colorscale=[[0,"#0e3a6e"],[1,"#0A84FF"]]),
+                    text=list(meth_cnt.values()),textposition="outside",textfont=dict(color="#3A4D6A",size=9)))
+                fig_m.update_layout(**{**pc_dark("Metodologias"),'height':max(140,len(meth_cnt)*35),'margin':dict(l=10,r=10,t=36,b=8),'yaxis':dict(showgrid=False,color="#3A4D6A",tickfont=dict(size=9))})
+                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_m,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+
+    with t_pastas:
+        folders=st.session_state.folders
+        if not folders: st.info("Crie pastas e analise documentos.")
+        else:
+            all_an={f:an for fd in folders.values() if isinstance(fd,dict) for f,an in fd.get("analyses",{}).items()}
+            if not all_an:
+                st.info("Analise os documentos nas pastas primeiro.")
+            else:
+                tf=sum(len(fd.get("files",[]) if isinstance(fd,dict) else []) for fd in folders.values())
+                c1,c2,c3,c4=st.columns(4)
+                with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(folders)}</div><div class="mlbl">Pastas</div></div>',unsafe_allow_html=True)
+                with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{tf}</div><div class="mlbl">Arquivos</div></div>',unsafe_allow_html=True)
+                with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{len(all_an)}</div><div class="mlbl">Analisados</div></div>',unsafe_allow_html=True)
+                all_kw=[kw for an in all_an.values() for kw in an.get("keywords",[])]
+                with c4: st.markdown(f'<div class="mbox"><div class="mval-orn">{len(set(all_kw[:200]))}</div><div class="mlbl">Keywords</div></div>',unsafe_allow_html=True)
+
+                # Year analysis of documents
+                doc_years=[an["year"] for an in all_an.values() if an.get("year")]
+                if doc_years:
+                    yr_cnt=Counter(doc_years)
+                    fig_dy=go.Figure(go.Bar(x=[str(y) for y in sorted(yr_cnt.keys())],y=[yr_cnt[y] for y in sorted(yr_cnt.keys())],
+                        marker=dict(color=VIB[:len(yr_cnt)]),text=[yr_cnt[y] for y in sorted(yr_cnt.keys())],textposition="outside",textfont=dict(color="#3A4D6A",size=9)))
+                    fig_dy.update_layout(**{**pc_dark("Anos dos Documentos"),'height':190,'margin':dict(l=10,r=10,t=36,b=8)})
+                    st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_dy,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+
+                # Topic distribution of all documents
+                all_topics=defaultdict(int)
+                for an in all_an.values():
+                    for t,s in an.get("topics",{}).items(): all_topics[t]+=s
+                if all_topics:
+                    fig_tp=go.Figure(go.Pie(labels=list(all_topics.keys())[:10],values=list(all_topics.values())[:10],hole=0.5,
+                        marker=dict(colors=VIB[:10],line=dict(color=["#03060E"]*15,width=2)),textfont=dict(color="white",size=8)))
+                    fig_tp.update_layout(height=260,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
+                        title=dict(text="Distribuicao Tematica das Pastas",font=dict(color="#D8E4F5",family="Syne",size=11)),
+                        legend=dict(font=dict(color="#3A4D6A",size=8)),margin=dict(l=0,r=0,t=36,b=0))
+                    st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_tp,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+
+                # Authors from documents
+                doc_authors=[]
+                for an in all_an.values(): doc_authors.extend(an.get("authors",[]))
+                if doc_authors:
+                    auth_cnt=Counter(doc_authors)
+                    st.markdown('<div class="dtxt">Autores nos documentos</div>',unsafe_allow_html=True)
+                    for auth,cnt in auth_cnt.most_common(6):
+                        st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.28rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
+                                    f'{avh(ini(auth),26,ugrad(auth+"@"))}'
+                                    f'<div style="flex:1;font-size:.72rem;color:#D8E4F5">{auth}</div>'
+                                    f'<span class="badge-acc" style="font-size:.55rem">{cnt} doc.</span></div>',unsafe_allow_html=True)
+
+                # Top keywords
+                kw_cnt=Counter(all_kw)
+                if kw_cnt:
+                    top_kw=kw_cnt.most_common(15)
+                    fig_kw=go.Figure(go.Bar(x=[c for _,c in top_kw],y=[w for w,_ in top_kw],orientation='h',
+                        marker=dict(color=[c for _,c in top_kw],colorscale=[[0,"#0e3a6e"],[1,"#0A84FF"]]),
+                        text=[w for w,_ in top_kw],textposition="inside",textfont=dict(color="white",size=8)))
+                    fig_kw.update_layout(**{**pc_dark("Top Keywords Globais"),'height':380,'margin':dict(l=10,r=10,t=36,b=8),'yaxis':dict(showticklabels=False)})
+                    st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_kw,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+
+                # Relevance histogram
+                rel_vals=[an.get("relevance_score",0) for an in all_an.values()]
+                if rel_vals:
+                    fig_rel=go.Figure(go.Histogram(x=rel_vals,nbinsx=10,marker=dict(color="#0A84FF",line=dict(color="#03060E",width=1))))
+                    fig_rel.update_layout(**{**pc_dark("Distribuicao de Relevancia"),'height':165,'margin':dict(l=10,r=10,t=36,b=8)})
+                    st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_rel,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+
+                # Document summaries
+                st.markdown('<div class="dtxt">Resumo dos documentos analisados</div>',unsafe_allow_html=True)
+                for fname,an in list(all_an.items())[:10]:
+                    st.markdown(f'<div class="scard"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.82rem;color:#fff;margin-bottom:.2rem">{fname}</div>'
+                                f'<div style="font-size:.7rem;color:#7A8FAD;margin-bottom:.28rem">{an.get("summary","")}</div>'
+                                f'<div style="display:flex;gap:1rem;flex-wrap:wrap">'
+                                f'<span style="font-size:.62rem;color:{"#30D158" if an.get("relevance_score",0)>=70 else "#FF9F0A"}">{an.get("relevance_score",0)}% relevancia</span>'
+                                f'{"<span style=font-size:.62rem;color:#0A84FF>"+str(an.get("year",""))+"</span>" if an.get("year") else ""}'
+                                f'{"<span style=font-size:.62rem;color:#BF5AF2>"+an.get("nationality","")+"</span>" if an.get("nationality") else ""}'
+                                f'</div>'
+                                f'<div style="margin-top:.3rem">{tags_html(an.get("keywords",[])[:8])}</div></div>',unsafe_allow_html=True)
+
+    with t_mapa:
+        st.markdown('<h2 style="margin-bottom:.4rem;margin-top:.4rem">Mapa 3D de Nacionalidades</h2>',unsafe_allow_html=True)
+        st.markdown('<p style="font-size:.72rem;color:#3A4D6A;margin-bottom:.75rem">Distribuicao geografica dos autores no repositorio e nas pastas de pesquisa</p>',unsafe_allow_html=True)
+        # Collect all nationalities
+        nat_data=defaultdict(lambda:{"count":0,"names":[],"titles":[]})
+        for r in st.session_state.research_items:
+            nat=r.get("nationality","")
+            if nat and nat in NATIONALITY_COORDS:
+                nat_data[nat]["count"]+=1; nat_data[nat]["names"].append(r.get("author","?"))
+                nat_data[nat]["titles"].append(r.get("title","")[:35])
+        # From folder analyses
+        for fd in st.session_state.folders.values():
+            if not isinstance(fd,dict): continue
+            for an in fd.get("analyses",{}).values():
+                nat=an.get("nationality","")
+                if nat and nat in NATIONALITY_COORDS:
+                    nat_data[nat]["count"]+=1
+                    for a in an.get("authors",[]): nat_data[nat]["names"].append(a)
+        # Also user profiles
+        for ue,ud in st.session_state.users.items():
+            nat=ud.get("nationality","")
+            if nat and nat in NATIONALITY_COORDS: nat_data[nat]["count"]+=1
+        if nat_data:
+            lats=[]; lons=[]; sizes=[]; labels=[]; hover_texts=[]; colors_n=[]
+            for nat,(lat,lon) in NATIONALITY_COORDS.items():
+                cnt=nat_data[nat]["count"]
+                if cnt>0:
+                    lats.append(lat); lons.append(lon)
+                    sizes.append(max(8,min(35,cnt*10)))
+                    labels.append(nat); colors_n.append(cnt)
+                    names_str=", ".join(set(nat_data[nat]["names"])[:3])
+                    hover_texts.append(f"<b>{nat}</b><br>{cnt} pesquisa(s)<br>{names_str}")
+            fig_map=go.Figure()
+            fig_map.add_trace(go.Scattergeo(
+                lat=lats,lon=lons,
+                text=labels,
+                hovertext=hover_texts,
+                hoverinfo="text",
+                mode="markers+text",
+                marker=dict(size=sizes,color=colors_n,
+                            colorscale=[[0,"#0e3a6e"],[0.5,"#0A84FF"],[1,"#30D158"]],
+                            opacity=0.85,line=dict(color="rgba(255,255,255,.2)",width=1.5),
+                            colorbar=dict(title="Pesquisas",titlefont=dict(color="#3A4D6A",size=9),tickfont=dict(color="#3A4D6A",size=8),bgcolor="rgba(0,0,0,0)",bordercolor="rgba(255,255,255,.06)")),
+                textfont=dict(size=8,color="rgba(255,255,255,.5)"),
+                textposition="top center"))
+            fig_map.update_geos(
+                projection_type="orthographic",
+                showland=True,landcolor="rgba(14,58,110,.4)",
+                showocean=True,oceancolor="rgba(3,6,14,.8)",
+                showcoastlines=True,coastlinecolor="rgba(10,132,255,.2)",coastlinewidth=0.5,
+                showframe=False,bgcolor="rgba(3,6,14,0)",
+                showlakes=True,lakecolor="rgba(10,132,255,.1)",
+                showcountries=True,countrycolor="rgba(255,255,255,.06)",countrywidth=0.3)
+            fig_map.update_layout(height=500,paper_bgcolor="rgba(0,0,0,0)",
+                margin=dict(l=0,r=0,t=0,b=0),geo=dict(bgcolor="rgba(0,0,0,0)"))
+            st.markdown('<div class="glass-card" style="padding:.5rem">',unsafe_allow_html=True)
+            st.plotly_chart(fig_map,use_container_width=True)
+            st.markdown('</div>',unsafe_allow_html=True)
+            # Legend
+            st.markdown('<div class="dtxt">Distribuicao por pais</div>',unsafe_allow_html=True)
+            cl1,cl2=st.columns(2)
+            nat_sorted=sorted(nat_data.items(),key=lambda x:-x[1]["count"])
+            for i,(nat,data) in enumerate(nat_sorted):
+                with (cl1 if i%2==0 else cl2):
+                    st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.28rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
+                                f'<div style="font-size:.72rem;font-weight:600;color:#D8E4F5;flex:1">{nat}</div>'
+                                f'<div style="font-weight:800;font-size:.82rem;color:#0A84FF">{data["count"]}</div>'
+                                f'<div style="font-size:.55rem;color:#3A4D6A"> pesq.</div></div>',unsafe_allow_html=True)
+        else:
+            st.info("Nenhuma nacionalidade identificada ainda. Publique pesquisas ou analise documentos com autores de diferentes paises.")
+
+    with t_impacto:
+        my_research=[r for r in st.session_state.research_items if r.get("author_email")==email]
+        c1,c2,c3=st.columns(3)
+        with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(my_research)}</div><div class="mlbl">Minhas pesquisas</div></div>',unsafe_allow_html=True)
+        with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{sum(r.get("citations",0) for r in my_research)}</div><div class="mlbl">Citacoes</div></div>',unsafe_allow_html=True)
+        with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{sum(r.get("likes",0) for r in my_research)}</div><div class="mlbl">Likes</div></div>',unsafe_allow_html=True)
+        # Interests radar
+        prefs=st.session_state.user_prefs.get(email,{})
+        if prefs:
+            top=sorted(prefs.items(),key=lambda x:-x[1])[:10]; mx=max(s for _,s in top) if top else 1
+            cats=[t for t,_ in top[:8]]; vals=[round(s/mx*100) for _,s in top[:8]]
+            if len(cats)>=3:
+                fig_r=go.Figure(go.Scatterpolar(r=vals+[vals[0]],theta=cats+[cats[0]],fill='toself',
+                    line=dict(color="#0A84FF",width=2),fillcolor="rgba(10,132,255,.08)"))
+                fig_r.update_layout(height=260,polar=dict(bgcolor="rgba(0,0,0,0)",
+                    radialaxis=dict(visible=True,gridcolor="rgba(255,255,255,.04)",color="#3A4D6A",tickfont=dict(size=7)),
+                    angularaxis=dict(gridcolor="rgba(255,255,255,.04)",color="#3A4D6A",tickfont=dict(size=9))),
+                    paper_bgcolor="rgba(0,0,0,0)",title=dict(text="Perfil de Interesses",font=dict(color="#D8E4F5",family="Syne",size=11)),
+                    margin=dict(l=40,r=40,t=40,b=20))
+                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_r,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+#  CONNECTIONS — research similarity graph
+# ══════════════════════════════════════════════════
+def page_connections():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.8rem">Conexoes entre Pesquisas</h1>',unsafe_allow_html=True)
+    email=st.session_state.current_user
+    items=st.session_state.research_items
+    # Build similarity edges
+    edges=[]
+    for i in range(len(items)):
+        for j in range(i+1,len(items)):
+            sim=similarity(items[i],items[j])
+            if sim>=0.15: edges.append((items[i],items[j],sim))
+    edges.sort(key=lambda x:-x[2])
+    # 3D Network
+    n=len(items); pos={}
+    for idx,item in enumerate(items):
+        angle=2*math.pi*idx/max(n,1); r_d=0.35+0.08*((hash(str(item["id"]))%5)/4)
+        pos[item["id"]]={"x":0.5+r_d*math.cos(angle),"y":0.5+r_d*math.sin(angle),"z":0.5+0.12*((idx%4)/3-.35)}
+    fig=go.Figure()
+    for item1,item2,sim in edges[:30]:
+        p1=pos[item1["id"]]; p2=pos[item2["id"]]; alpha=min(0.65,sim)
+        fig.add_trace(go.Scatter3d(x=[p1["x"],p2["x"],None],y=[p1["y"],p2["y"],None],z=[p1["z"],p2["z"],None],
+            mode="lines",line=dict(color=f"rgba(10,132,255,{alpha:.2f})",width=max(1,int(sim*5))),hoverinfo="none",showlegend=False))
+    # Also add folder document nodes
+    folder_nodes=[]
+    for fn,fd in st.session_state.folders.items():
+        if not isinstance(fd,dict): continue
+        for fname,an in fd.get("analyses",{}).items():
+            fid=hash(f"{fn}_{fname}")%100000
+            angle2=2*math.pi*len(pos)/(n+len(folder_nodes)+1)
+            pos[fid]={"x":0.5+0.45*math.cos(angle2),"y":0.5+0.45*math.sin(angle2),"z":0.35}
+            folder_nodes.append({"id":fid,"title":fname,"folder":fn,"kws":an.get("keywords",[])[:5]})
+    # Color by area
+    area_colors_map={}
+    for i,area in enumerate(set(r.get("area","") for r in items)):
+        area_colors_map[area]=VIB[i%len(VIB)]
+    ncolors=[area_colors_map.get(item.get("area",""),"#0A84FF") for item in items]
+    nsizes=[max(12,min(22,8+item.get("citations",0)//3)) for item in items]
+    fig.add_trace(go.Scatter3d(
+        x=[pos[item["id"]]["x"] for item in items],y=[pos[item["id"]]["y"] for item in items],z=[pos[item["id"]]["z"] for item in items],
+        mode="markers+text",
+        marker=dict(size=nsizes,color=ncolors,opacity=.9,symbol="circle",line=dict(color="rgba(255,255,255,.1)",width=1)),
+        text=[item["title"][:18]+"..." for item in items],textposition="top center",
+        textfont=dict(color="#3A4D6A",size=8,family="Inter"),
+        hovertemplate=[f"<b>{item['title'][:50]}</b><br>{item['area']}<br>{item.get('citations',0)} citacoes<extra></extra>" for item in items],
+        name="Pesquisas",showlegend=False))
+    if folder_nodes:
+        fig.add_trace(go.Scatter3d(
+            x=[pos[fn["id"]]["x"] for fn in folder_nodes],y=[pos[fn["id"]]["y"] for fn in folder_nodes],z=[pos[fn["id"]]["z"] for fn in folder_nodes],
+            mode="markers",marker=dict(size=8,color="#BF5AF2",opacity=.7,symbol="diamond",line=dict(color="rgba(255,255,255,.1)",width=1)),
+            hovertemplate=[f"<b>{fn['title']}</b><br>Pasta: {fn['folder']}<extra></extra>" for fn in folder_nodes],
+            name="Documentos pastas",showlegend=False))
+    fig.update_layout(height=450,scene=dict(
+        xaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
+        yaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
+        zaxis=dict(showgrid=False,zeroline=False,showticklabels=False,showbackground=False),
+        bgcolor="rgba(0,0,0,0)"),paper_bgcolor="rgba(0,0,0,0)",margin=dict(l=0,r=0,t=0,b=0))
+    st.plotly_chart(fig,use_container_width=True)
+    st.markdown('<p style="font-size:.63rem;color:#3A4D6A;text-align:center;margin-bottom:.7rem">Esferas = pesquisas do repositorio | Diamantes = documentos das pastas | Linhas = similaridade semantica</p>',unsafe_allow_html=True)
+    c1,c2,c3=st.columns(3)
+    with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Nos</div></div>',unsafe_allow_html=True)
+    with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{len([e for e in edges if e[2]>=0.15])}</div><div class="mlbl">Conexoes</div></div>',unsafe_allow_html=True)
+    with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{len(folder_nodes)}</div><div class="mlbl">Docs. Pastas</div></div>',unsafe_allow_html=True)
+    st.markdown("<hr>",unsafe_allow_html=True)
+    t_sim,t_focused,t_folder=st.tabs(["  Top Conexoes  ","  Pesquisa Foco  ","  Pastas x Repositorio  "])
+    with t_sim:
+        st.markdown('<div style="font-size:.57rem;color:#0A84FF;text-transform:uppercase;font-weight:700;letter-spacing:.10em;margin-bottom:.5rem">Pesquisas com maior similaridade semantica</div>',unsafe_allow_html=True)
+        for item1,item2,sim in edges[:15]:
+            sim_pct=round(sim*100)
+            sc="#30D158" if sim_pct>=40 else("#0A84FF" if sim_pct>=25 else "#FF9F0A")
+            common_kw=set(t.lower() for t in item1.get("tags",[])+kw_extract(item1.get("abstract",""),5))&set(t.lower() for t in item2.get("tags",[])+kw_extract(item2.get("abstract",""),5))
+            st.markdown(f'<div class="conn-card"><div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:.4rem">'
+                        f'<div style="flex:1"><div style="font-size:.76rem;font-weight:700;color:#D8E4F5;line-height:1.4">{item1["title"][:48]}</div>'
+                        f'<div style="font-size:.61rem;color:#3A4D6A">{item1.get("area","")} · {item1.get("nationality","")}</div></div>'
+                        f'<div style="font-size:.6rem;color:{sc};font-weight:800;border:1px solid {sc}30;border-radius:8px;padding:3px 8px;white-space:nowrap;flex-shrink:0">{sim_pct}% sim.</div></div>'
+                        f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:.35rem">'
+                        f'<div style="width:40px;height:1px;background:rgba(48,209,88,.3)"></div>'
+                        f'<div style="font-size:.6rem;color:#30D158">conecta</div>'
+                        f'<div style="flex:1;height:1px;background:rgba(48,209,88,.3)"></div></div>'
+                        f'<div style="font-size:.76rem;font-weight:700;color:#D8E4F5;margin-bottom:.3rem">{item2["title"][:48]}</div>'
+                        f'<div style="font-size:.61rem;color:#3A4D6A;margin-bottom:.28rem">{item2.get("area","")} · {item2.get("nationality","")}</div>'
+                        f'{"<div style=margin-top:.25rem>"+tags_html(list(common_kw)[:5],"tag-teal")+"</div>" if common_kw else ""}'
+                        f'</div>',unsafe_allow_html=True)
+    with t_focused:
+        target=st.session_state.get("view_research")
+        if not target:
+            sel_titles=["— Selecionar —"]+[r["title"][:55] for r in items]
+            sel=st.selectbox("Selecione uma pesquisa",sel_titles,key="conn_sel")
+            if sel!="— Selecionar —":
+                target=next((r for r in items if r["title"][:55]==sel),None)
+        if target:
+            st.markdown(f'<div class="abox"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.9rem;color:#fff;margin-bottom:.2rem">{target["title"]}</div>'
+                        f'<div style="font-size:.7rem;color:#0A84FF">{target.get("area","")} · {target.get("methodology","")}</div>'
+                        f'<div style="margin-top:.3rem">{tags_html(target.get("tags",[])[:6])}</div></div>',unsafe_allow_html=True)
+            similars=find_similar(target,0.10,8)
+            if similars:
+                st.markdown(f'<div style="font-size:.6rem;color:#30D158;font-weight:700;margin:.5rem 0 .4rem">Pesquisas com padrao similar:</div>',unsafe_allow_html=True)
+                for sim,item in similars:
+                    sim_pct=round(sim*100)
+                    common_kw=set(t.lower() for t in target.get("tags",[])+kw_extract(target.get("abstract",""),6))&set(t.lower() for t in item.get("tags",[])+kw_extract(item.get("abstract",""),6))
+                    st.markdown(f'<div class="sim-card"><div style="display:flex;justify-content:space-between;margin-bottom:.3rem">'
+                                f'<div style="font-weight:700;font-size:.82rem;color:#fff">{item["title"][:52]}</div>'
+                                f'<span style="font-size:.62rem;color:#BF5AF2;font-weight:800;flex-shrink:0;margin-left:8px">{sim_pct}%</span></div>'
+                                f'<div style="font-size:.63rem;color:#3A4D6A;margin-bottom:.25rem">{item.get("area","")} · {item.get("methodology","")}</div>'
+                                f'{"<div>"+tags_html(list(common_kw)[:5],"tag-pur")+"</div>" if common_kw else ""}</div>',unsafe_allow_html=True)
+                # Also search internet for related
+                top_tags=" ".join(target.get("tags",[])[:3])
+                if st.button("Buscar artigos relacionados na internet",key="conn_search"):
+                    with st.spinner("Buscando..."):
+                        arts=search_ss(target["title"][:60],5)
+                    st.session_state.scholar_cache[f"conn_{target['id']}"]=arts
+                arts=st.session_state.scholar_cache.get(f"conn_{target['id']}",None)
+                if arts is not None:
+                    st.markdown('<div class="dtxt">Artigos relacionados na internet</div>',unsafe_allow_html=True)
+                    for i,a in enumerate(arts): render_article(a,i,"conn_web")
+            else: st.info("Nenhuma pesquisa similar encontrada.")
+        elif not target: st.info("Selecione uma pesquisa para ver conexoes.")
+    with t_folder:
+        all_analyses={f:an for fd in st.session_state.folders.values() if isinstance(fd,dict) for f,an in fd.get("analyses",{}).items()}
+        if not all_analyses: st.info("Analise documentos nas pastas primeiro.")
+        else:
+            folder_kws=set(kw for an in all_analyses.values() for kw in an.get("keywords",[])[:8])
+            st.markdown(f'<div style="font-size:.62rem;color:#3A4D6A;margin-bottom:.6rem">Palavras-chave das suas pastas ({len(folder_kws)} termos) vs. pesquisas no repositorio:</div>',unsafe_allow_html=True)
+            folder_similar=folder_similarity(all_analyses)
+            if folder_similar:
+                for item in folder_similar:
+                    item_kws=set(t.lower() for t in item.get("tags",[])+kw_extract(item.get("abstract",""),6))
+                    overlap=list(folder_kws&item_kws)[:6]
+                    st.markdown(f'<div class="conn-card"><div style="font-weight:700;font-size:.82rem;color:#fff;margin-bottom:.2rem">{item["title"]}</div>'
+                                f'<div style="font-size:.63rem;color:#3A4D6A;margin-bottom:.28rem">{item.get("area","")} · {item.get("author","")}</div>'
+                                f'<div style="font-size:.63rem;color:#30D158;margin-bottom:.25rem">Termos em comum:</div>'
+                                f'<div>{tags_html(overlap,"tag-teal")}</div></div>',unsafe_allow_html=True)
+            else: st.info("Nenhuma pesquisa relacionada encontrada.")
+    st.markdown('</div>',unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+#  CHAT
+# ══════════════════════════════════════════════════
+def page_chat():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.8rem">Mensagens</h1>',unsafe_allow_html=True)
+    email=st.session_state.current_user
+    users=st.session_state.users if isinstance(st.session_state.users,dict) else {}
+    contacts=[e for e in users if e!=email]
+    cc,cm=st.columns([.85,2.7])
+    with cc:
+        st.markdown('<div style="font-size:.55rem;font-weight:700;color:#3A4D6A;letter-spacing:.12em;text-transform:uppercase;margin-bottom:.65rem">Conversas</div>',unsafe_allow_html=True)
+        for ue in contacts:
+            ud=users.get(ue,{}); un=ud.get("name","?"); ug=ugrad(ue)
+            msgs=st.session_state.chat_messages.get(ue,[]); last=msgs[-1]["text"][:22]+"..." if msgs and len(msgs[-1]["text"])>22 else(msgs[-1]["text"] if msgs else "Iniciar conversa")
+            is_act=st.session_state.active_chat==ue
+            st.markdown(f'<div style="background:{"rgba(10,132,255,.09)" if is_act else "rgba(255,255,255,.03)"};border:1px solid {"rgba(10,132,255,.25)" if is_act else "rgba(255,255,255,.06)"};border-radius:12px;padding:7px 9px;margin-bottom:3px">'
+                        f'<div style="display:flex;align-items:center;gap:7px">{avh(ini(un),28,ug)}'
+                        f'<div style="overflow:hidden;flex:1"><div style="font-size:.74rem;font-weight:600;color:#D8E4F5">{un}</div>'
+                        f'<div style="font-size:.60rem;color:#3A4D6A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>',unsafe_allow_html=True)
+            if st.button("Abrir",key=f"oc_{ue}",use_container_width=True): st.session_state.active_chat=ue; st.rerun()
+    with cm:
+        ac=st.session_state.active_chat
+        if ac and ac in users:
+            cd=users.get(ac,{}); cn=cd.get("name","?"); cg=ugrad(ac)
+            msgs=st.session_state.chat_messages.get(ac,[])
+            st.markdown(f'<div style="display:flex;align-items:center;gap:10px;padding:.55rem 0 .7rem;border-bottom:1px solid rgba(255,255,255,.05);margin-bottom:.65rem">'
+                        f'{avh(ini(cn),34,cg)}<div><div style="font-weight:700;font-size:.86rem;color:#fff">{cn}</div><div style="font-size:.62rem;color:#30D158">Criptografado</div></div></div>',unsafe_allow_html=True)
+            for msg in msgs:
+                is_me=msg["from"]=="me" or msg["from"]==email
+                st.markdown(f'<div style="display:flex;{"justify-content:flex-end" if is_me else ""}"><div class="{"bme" if is_me else "bthem"}">{msg["text"]}<div style="font-size:.56rem;color:rgba(255,255,255,.3);margin-top:2px;text-align:{"right" if is_me else "left"}">{msg["time"]}</div></div></div>',unsafe_allow_html=True)
+            with st.form(f"mf_{ac}"):
+                mc=st.text_input("",placeholder="Mensagem...",key=f"mi_{ac}",label_visibility="collapsed")
+                if st.form_submit_button("Enviar",use_container_width=True):
+                    if mc:
+                        now=datetime.now().strftime("%H:%M")
+                        st.session_state.chat_messages.setdefault(ac,[]).append({"from":email,"text":mc,"time":now})
+                        save_db(); st.rerun()
+        else:
+            st.markdown('<div class="glass-card" style="text-align:center;padding:5rem;color:#3A4D6A">Selecione uma conversa</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+#  SETTINGS
+# ══════════════════════════════════════════════════
+def page_settings():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.8rem">Configuracoes</h1>',unsafe_allow_html=True)
+    email=st.session_state.current_user; u=guser(); g=ugrad(email)
+    st.markdown(f'<div class="prof-hero"><div class="av" style="background:{g}">{ini(u.get("name","?"))}</div>'
+                f'<div style="flex:1"><div style="font-family:Syne,sans-serif;font-weight:800;font-size:1.25rem;color:#fff;margin-bottom:.15rem">{u.get("name","?")}</div>'
+                f'<div style="color:#0A84FF;font-size:.76rem;font-weight:600;margin-bottom:.25rem">{u.get("area","")}</div>'
+                f'<div style="color:#7A8FAD;font-size:.73rem">{email}</div></div></div>',unsafe_allow_html=True)
+    t1,t2,t3=st.tabs(["  Perfil  ","  Seguranca  ","  Artigos Salvos  "])
+    with t1:
+        with st.form("prf"):
+            n_name=st.text_input("Nome",value=u.get("name",""))
+            n_area=st.text_input("Area",value=u.get("area",""))
+            n_bio=st.text_area("Bio",value=u.get("bio",""),height=70)
+            n_nat=st.selectbox("Nacionalidade",["Brasil"]+sorted([k for k in NATIONALITY_COORDS if k!="Brasil"]),index=max(0,["Brasil"]+sorted([k for k in NATIONALITY_COORDS if k!="Brasil"]).index(u.get("nationality","Brasil")) if u.get("nationality","Brasil") in ["Brasil"]+sorted([k for k in NATIONALITY_COORDS if k!="Brasil"]) else 0))
+            if st.form_submit_button("Salvar perfil",use_container_width=True):
+                st.session_state.users[email].update({"name":n_name,"area":n_area,"bio":n_bio,"nationality":n_nat})
+                save_db(); st.success("Perfil salvo!")
+        if st.button("Sair da conta",key="logout",use_container_width=False):
+            st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
+    with t2:
+        with st.form("cpw"):
+            op=st.text_input("Senha atual",type="password"); np_=st.text_input("Nova senha",type="password"); nc=st.text_input("Confirmar",type="password")
+            if st.form_submit_button("Alterar senha",use_container_width=True):
+                if hp(op)!=u.get("password",""): st.error("Senha incorreta.")
+                elif np_!=nc: st.error("Nao coincidem.")
+                elif len(np_)<6: st.error("Minimo 6 caracteres.")
+                else: st.session_state.users[email]["password"]=hp(np_); save_db(); st.success("Senha alterada!")
+    with t3:
+        saved=st.session_state.saved_articles
+        if saved:
+            for i,a in enumerate(saved):
+                uid=re.sub(r'[^a-zA-Z0-9]','',f"svt_{i}_{str(a.get('doi',''))[:6]}")[:20]
+                st.markdown(f'<div class="scard"><div style="font-weight:700;font-size:.82rem;color:#fff;margin-bottom:.2rem">{a.get("title","?")}</div>'
+                            f'<div style="font-size:.63rem;color:#3A4D6A">{a.get("authors","—")} · {a.get("year","?")} · {a.get("source","")}</div></div>',unsafe_allow_html=True)
+                c1,c2=st.columns([1,3])
+                with c1:
+                    if st.button("Remover",key=f"rms_{uid}"):
+                        st.session_state.saved_articles.pop(i); save_db(); st.rerun()
+                with c2:
+                    if a.get("url"): st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.74rem;text-decoration:none;line-height:2.3;display:block">Abrir</a>',unsafe_allow_html=True)
+        else: st.markdown('<div class="glass-card" style="padding:2.5rem;text-align:center;color:#3A4D6A">Nenhum artigo salvo.</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
+
+# ══════════════════════════════════════════════════
+#  ROUTER
+# ══════════════════════════════════════════════════
+def main():
+    inject_css()
+    if not st.session_state.logged_in:
+        page_login(); return
+    render_nav()
+    if st.session_state.profile_view:
+        page_profile(st.session_state.profile_view); return
+    {
+        "repository":page_repository,"search":page_search,
+        "folders":page_folders,"analysis":page_analysis,
+        "connections":page_connections,"chat":page_chat,"settings":page_settings,
+    }.get(st.session_state.page,page_repository)()
+
+main()
