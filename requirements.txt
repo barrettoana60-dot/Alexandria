@@ -1,11 +1,9 @@
 streamlit
-plotly
-numpy
-Pillow
 requests
+numpy
+pandas
+plotly
+pillow
 PyPDF2
 openpyxl
-pandas
-scikit-image
 scikit-learn
-scipy
