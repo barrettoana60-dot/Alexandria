@@ -77,7 +77,7 @@ APP_DIR.mkdir(exist_ok=True)
 FILES_DIR = APP_DIR / "files"
 FILES_DIR.mkdir(exist_ok=True)
 
-st.set_page_config(page_title=APP_NAME, page_icon="🔬", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title=APP_NAME, layout="wide", initial_sidebar_state="collapsed")
 
 STOPWORDS = {
     "de","da","do","das","dos","a","o","as","os","e","em","para","por","com","um","uma","uns","umas",
@@ -693,6 +693,122 @@ def build_query_suggestions(query: str, docs: list[dict[str, Any]]) -> list[str]
     return list(dict.fromkeys(suggestions))[:6]
 
 
+def classify_query_intent(query: str) -> dict[str, Any]:
+    q = normalize(query).lower()
+    tokens = tokenize(q)
+    if not q.strip():
+        return {"intent": "geral", "label": "Consulta geral", "filters": [], "explanation": "Nenhuma consulta fornecida."}
+    filters = []
+    if re.search(r"\b(19|20)\d{2}\b", q):
+        filters.append("ano")
+    if any(tok in {"autor", "authors", "pesquisador", "pesquisadora"} for tok in tokens):
+        filters.append("autor")
+    if any(tok in {"imagem", "figura", "foto", "visual", "semelhante"} for tok in tokens):
+        filters.append("imagem")
+    if any(tok in {"método", "metodo", "metodologia", "survey", "revisão", "revisao"} for tok in tokens):
+        filters.append("método")
+    theme_hits = []
+    for theme, words in THEMES.items():
+        if any(w in q for w in words[:8]):
+            theme_hits.append(theme)
+    if theme_hits:
+        filters.append("tema")
+    if any(tok in {"autor", "authors", "pesquisador", "pesquisadora"} for tok in tokens):
+        label = "Busca orientada a autoria"
+        intent = "author"
+    elif "imagem" in filters:
+        label = "Busca visual e textual"
+        intent = "visual"
+    elif "ano" in filters and "tema" in filters:
+        label = "Busca temática com recorte temporal"
+        intent = "theme_time"
+    elif "tema" in filters:
+        label = "Busca temática"
+        intent = "theme"
+    elif "método" in filters:
+        label = "Busca por metodologia"
+        intent = "method"
+    else:
+        label = "Consulta acadêmica geral"
+        intent = "general"
+    explanation = "O algoritmo leu a consulta e priorizou texto, título, temas, método, ano e resultados externos compatíveis com o padrão detectado."
+    return {"intent": intent, "label": label, "filters": filters, "themes": theme_hits[:4], "explanation": explanation}
+
+
+def infer_user_interest_profile(user: dict[str, Any], docs: list[dict[str, Any]]) -> dict[str, Any]:
+    themes = Counter()
+    keywords = Counter()
+    methods = Counter()
+    years = Counter()
+    search_history = user.get("search_history", [])
+    for item in search_history[:30]:
+        q = item.get("query", "")
+        for t in infer_themes(q):
+            themes[t] += 3
+        for k in top_keywords(q, 8):
+            keywords[k] += 2
+        m = infer_method(q)
+        if m != "Não identificado":
+            methods[m] += 2
+    for d in docs:
+        for t in d.get("themes", []):
+            themes[t] += 1
+        for k in d.get("keywords", [])[:12]:
+            keywords[k] += 1
+        if d.get("method"):
+            methods[d["method"]] += 1
+        if d.get("year"):
+            years[d["year"]] += 1
+    preferred_themes = [k for k, _ in themes.most_common(6)]
+    preferred_keywords = [k for k, _ in keywords.most_common(12)]
+    preferred_methods = [k for k, _ in methods.most_common(4)]
+    return {
+        "themes": themes,
+        "keywords": keywords,
+        "methods": methods,
+        "years": years,
+        "preferred_themes": preferred_themes,
+        "preferred_keywords": preferred_keywords,
+        "preferred_methods": preferred_methods,
+    }
+
+
+def repo_research_suggestions(repo_docs: list[dict[str, Any]]) -> list[str]:
+    if not repo_docs:
+        return []
+    profile = gather_corpus_profile(repo_docs)
+    base_theme = profile["themes"].most_common(1)[0][0] if profile["themes"] else "pesquisa acadêmica"
+    base_keywords = [k for k, _ in profile["keywords"].most_common(6)]
+    method = profile["methods"].most_common(1)[0][0] if profile["methods"] else "revisão"
+    suggestions = [
+        f"{base_theme} revisão sistemática",
+        f"{base_theme} {method}",
+        f"{base_theme} tendências recentes",
+    ]
+    for kw in base_keywords[:4]:
+        suggestions.append(f"{base_theme} {kw}")
+        suggestions.append(f"{kw} museus OR repositórios")
+    return list(dict.fromkeys([s.strip() for s in suggestions if s.strip()]))[:8]
+
+
+def related_repo_articles(repo_docs: list[dict[str, Any]], limit: int = 4) -> list[dict[str, Any]]:
+    suggestions = repo_research_suggestions(repo_docs)
+    if not suggestions:
+        return []
+    query = suggestions[0]
+    results = semantic_scholar_search(query, limit)
+    if len(results) < limit:
+        seen = {normalize(r.get("title", "")) for r in results}
+        for item in crossref_search(query, limit):
+            key = normalize(item.get("title", ""))
+            if key not in seen:
+                results.append(item)
+                seen.add(key)
+            if len(results) >= limit:
+                break
+    return results[:limit]
+
+
 def search_local_documents(query: str, docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     scored = []
     for d in docs:
@@ -747,9 +863,9 @@ def gather_corpus_profile(docs: list[dict[str, Any]]) -> dict[str, Any]:
 def similarities(docs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], Any]:
     if len(docs) < 2:
         return [], None
-    texts = [f"{d.get('title','')} {d.get('summary','')} {' '.join(d.get('keywords',[]))} {' '.join(d.get('themes',[]))}" for d in docs]
+    texts = [f"{d.get('title','')} {d.get('summary','')} {' '.join(d.get('keywords',[]))} {' '.join(d.get('themes',[]))} {d.get('method','')} {' '.join(d.get('authors', []))}" for d in docs]
     if TfidfVectorizer and cosine_similarity:
-        vec = TfidfVectorizer(max_features=1200, stop_words=list(STOPWORDS))
+        vec = TfidfVectorizer(max_features=1500, stop_words=list(STOPWORDS), ngram_range=(1, 2))
         mat = vec.fit_transform(texts)
         sim = cosine_similarity(mat)
     else:
@@ -758,17 +874,30 @@ def similarities(docs: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], Any]
     for i in range(len(docs)):
         for j in range(i + 1, len(docs)):
             score = float(sim[i][j]) if np is not None or TfidfVectorizer else float(sim[i][j])
-            overlap = set(docs[i].get("themes", [])) & set(docs[j].get("themes", []))
-            if score >= 0.16 or overlap:
+            overlap_themes = sorted(set(docs[i].get("themes", [])) & set(docs[j].get("themes", [])))
+            overlap_keywords = sorted(set(docs[i].get("keywords", [])) & set(docs[j].get("keywords", [])))[:6]
+            same_method = docs[i].get("method") == docs[j].get("method") and docs[i].get("method") not in {"", "Não identificado"}
+            if score >= 0.12 or overlap_themes or overlap_keywords or same_method:
+                reasons = []
+                if overlap_themes:
+                    reasons.append("tema em comum: " + ", ".join(overlap_themes[:4]))
+                if overlap_keywords:
+                    reasons.append("palavras-chave comuns: " + ", ".join(overlap_keywords[:5]))
+                if same_method:
+                    reasons.append("mesma metodologia")
+                if score >= 0.22:
+                    reasons.append("proximidade textual alta")
                 pairs.append({
-                    "a": docs[i].get("title", "Documento A"),
-                    "b": docs[j].get("title", "Documento B"),
-                    "score": round(score, 3),
-                    "themes": ", ".join(sorted(overlap)) if overlap else "Sem tema em comum explícito",
-                    "methods": f"{docs[i].get('method')} / {docs[j].get('method')}",
+                    "Documento A": docs[i].get("title", "Documento A"),
+                    "Documento B": docs[j].get("title", "Documento B"),
+                    "Similaridade": round(score, 3),
+                    "Temas em comum": ", ".join(overlap_themes) if overlap_themes else "—",
+                    "Palavras-chave em comum": ", ".join(overlap_keywords) if overlap_keywords else "—",
+                    "Métodos": f"{docs[i].get('method')} / {docs[j].get('method')}",
+                    "Leitura do algoritmo": " | ".join(reasons) if reasons else "Relação fraca"
                 })
-    pairs = sorted(pairs, key=lambda x: x["score"], reverse=True)
-    return pairs[:24], sim
+    pairs = sorted(pairs, key=lambda x: x["Similaridade"], reverse=True)
+    return pairs[:40], sim
 
 
 def network_figure(docs: list[dict[str, Any]], sim_matrix: Any):
@@ -1260,12 +1389,13 @@ def render_analytics() -> None:
 def render_connections() -> None:
     docs = all_documents()
     st.markdown("<div class='page-title'>Conexões</div>", unsafe_allow_html=True)
-    st.markdown("<div class='page-subtitle'>Relações entre pesquisas semelhantes por texto, tema, método e palavras-chave.</div>", unsafe_allow_html=True)
+    st.markdown("<div class='page-subtitle'>Relações entre pesquisas semelhantes por texto, tema, método, autoria e palavras-chave.</div>", unsafe_allow_html=True)
     if len(docs) < 2:
         st.info("Adicione pelo menos dois documentos para gerar conexões.")
         return
     pairs, sim_matrix = similarities(docs)
     if pairs:
+        st.markdown("<div class='section-title'>Pares conectados</div>", unsafe_allow_html=True)
         if pd is not None:
             st.dataframe(pd.DataFrame(pairs), use_container_width=True, hide_index=True)
         else:
@@ -1273,9 +1403,22 @@ def render_connections() -> None:
                 st.write(p)
     else:
         st.caption("Ainda não surgiram conexões fortes entre os documentos.")
+
     fig = network_figure(docs, sim_matrix)
     if fig is not None:
         st.plotly_chart(fig, use_container_width=True)
+
+    st.markdown("<div class='section-title'>Leitura de padrões em comum</div>", unsafe_allow_html=True)
+    st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+    if pairs:
+        for item in pairs[:8]:
+            st.markdown(
+                f"<div class='res-item'><div class='doc-title'>{item['Documento A']} ↔ {item['Documento B']}</div><div class='doc-meta'>Similaridade {item['Similaridade']} · {item['Temas em comum']}</div><div class='doc-snippet'>{item['Leitura do algoritmo']}</div></div>",
+                unsafe_allow_html=True,
+            )
+    else:
+        st.markdown("<div class='section-text'>Com mais documentos, o sistema mostrará blocos temáticos, interseções metodológicas e proximidade textual.</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_account() -> None:
@@ -1301,7 +1444,7 @@ def render_account() -> None:
 def render_main() -> None:
     css()
     st.markdown("<div class='nebula-shell'>", unsafe_allow_html=True)
-    left, right = st.columns([1.05, 4.4], gap="large")
+    left, right = st.columns([1.18, 4.12], gap="large")
     with left:
         render_nav_column()
     with right:
