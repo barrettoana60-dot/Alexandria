@@ -1,1616 +1,2055 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-NEBULA - Sistema Integrado de Pesquisa Acadêmica
-Análise de papers, reconhecimento de pesquisas, busca semantica avançada
-Autor: Sistema Nebula v2.0
-"""
-
-import streamlit as st
-import json
-import os
-import io
-import re
-import base64
-import hashlib
-import subprocess
-import sys
-from datetime import datetime, timedelta
-from collections import defaultdict, Counter
-import numpy as np
-from PIL import Image as PILImage
-import requests
-
-# ===============================================
-#  INSTALAÇÃO DE DEPENDÊNCIAS
-# ===============================================
-def _pip(*pkgs):
-    for p in pkgs:
-        try:
-            subprocess.check_call([sys.executable, "-m", "pip", "install", p, "-q"],
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except:
-            pass
-
-try:
-    import plotly.graph_objects as go
-    import plotly.express as px
-except:
-    _pip("plotly")
-    import plotly.graph_objects as go
-    import plotly.express as px
-
-try:
-    from PIL import Image as PILImage
-except:
-    _pip("pillow")
-    from PIL import Image as PILImage
-
-try:
-    import pandas as pd
-except:
-    _pip("pandas")
-    import pandas as pd
-
-SKIMAGE_OK = False
-try:
-    from skimage import filters as sk_filters, feature as sk_feature
-    from skimage.feature import graycomatrix, graycoprops
-    SKIMAGE_OK = True
-except:
-    try:
-        _pip("scikit-image")
-        from skimage import filters as sk_filters, feature as sk_feature
-        from skimage.feature import graycomatrix, graycoprops
-        SKIMAGE_OK = True
-    except:
-        SKIMAGE_OK = False
-
-try:
-    from sklearn.cluster import KMeans
-    from sklearn.metrics.pairwise import cosine_similarity
-    SKLEARN_OK = True
-except:
-    try:
-        _pip("scikit-learn")
-        from sklearn.cluster import KMeans
-        from sklearn.metrics.pairwise import cosine_similarity
-        SKLEARN_OK = True
-    except:
-        SKLEARN_OK = False
-
-# ===============================================
-#  CONFIGURAÇÃO STREAMLIT
-# ===============================================
-st.set_page_config(
-    page_title="Nebula - Pesquisa Acadêmica",
-    page_icon="🔬",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
-
-DB_FILE = "nebula_research.json"
-
-# ===============================================
-#  BANCO DE DADOS
-# ===============================================
-def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except:
-            return {}
-    return {}
-
-def save_db():
-    try:
-        with open(DB_FILE, "w", encoding="utf-8") as f:
-            json.dump({
-                "users": st.session_state.users,
-                "repositories": st.session_state.repositories,
-                "analyses": st.session_state.analyses,
-                "connections": st.session_state.connections,
-                "saved_papers": st.session_state.saved_papers,
-            }, f, ensure_ascii=False, indent=2)
-    except:
-        pass
-
-def hp(pw):
-    """Hash de senha"""
-    return hashlib.sha256(pw.encode()).hexdigest()
-
-def ini(n):
-    """Gera iniciais do nome"""
-    if not isinstance(n, str):
-        n = str(n)
-    p = n.strip().split()
-    return ''.join(w[0].upper() for w in p[:2]) if p else "?"
-
-# ===============================================
-#  FUNÇÕES DE ANÁLISE TEXTUAL
-# ===============================================
-STOPWORDS = {
-    "de", "a", "o", "que", "e", "do", "da", "em", "um", "para", "é", "com", "uma",
-    "os", "no", "se", "na", "por", "mais", "as", "dos", "como", "mas", "foi", "ao",
-    "ele", "das", "tem", "à", "seu", "sua", "ou", "ser", "the", "of", "and", "to",
-    "in", "is", "it", "that", "was", "he", "for", "on", "are", "as", "with", "they",
-    "at", "be", "this", "from", "or", "one", "had", "by", "but", "not", "what", "all"
-}
-
-def extract_keywords(text, n=20):
-    """Extrai palavras-chave de um texto"""
-    if not text:
-        return []
-    words = re.findall(r'\b[a-záàâãéêíóôõúüçA-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ]{4,}\b', text.lower())
-    words = [w for w in words if w not in STOPWORDS]
-    if not words:
-        return []
-    tf = Counter(words)
-    total = sum(tf.values())
-    return [w for w, _ in sorted({w: c/total for w, c in tf.items()}.items(), key=lambda x: -x[1])[:n]]
-
-def classify_research_area(text):
-    """Classifica a área de pesquisa baseado no conteúdo"""
-    area_keywords = {
-        "Biologia Molecular": ["gene", "dna", "rna", "proteína", "célula", "genômica", "crispr", "molecular"],
-        "Neurociência": ["neurociência", "neural", "cérebro", "cognição", "memória", "sináptico", "neuroplasticidade"],
-        "Inteligência Artificial": ["inteligência", "machine learning", "neural", "algoritmo", "deep learning", "llm", "ia"],
-        "Física Quântica": ["quântica", "quantum", "partícula", "energia", "mecânica quântica", "superposição"],
-        "Astrofísica": ["astrofísica", "galáxia", "cosmologia", "universo", "estrela", "telescópio", "espaço"],
-        "Química": ["química", "molécula", "síntese", "reação", "ligação", "composto", "reativo"],
-        "Medicina Clínica": ["clínico", "paciente", "diagnóstico", "tratamento", "terapia", "saúde", "doença"],
-        "Ecologia": ["ecologia", "biodiversidade", "ambiente", "sustentável", "clima", "carbono", "espécie"],
-        "Engenharia": ["engenharia", "sistema", "automação", "robótica", "sensor", "protocolo", "eficiência"],
-        "Matemática": ["matemática", "equação", "teorema", "algoritmo", "probabilidade", "estatística"]
-    }
-    
-    text_lower = text.lower()
-    scores = {}
-    for area, keywords in area_keywords.items():
-        scores[area] = sum(1 for kw in keywords if kw in text_lower)
-    
-    return max(scores, key=scores.get) if max(scores.values()) > 0 else "Pesquisa Geral"
-
-def extract_metadata(text, filename=""):
-    """Extrai metadados de um texto de pesquisa"""
-    metadata = {
-        "title": "",
-        "authors": [],
-        "year": None,
-        "keywords": extract_keywords(text, 15),
-        "area": classify_research_area(text),
-        "word_count": len(text.split()),
-        "abstract": text[:500] if len(text) > 500 else text,
-    }
-    
-    # Tenta extrair ano
-    years = re.findall(r'\b(19|20)\d{2}\b', text)
-    if years:
-        metadata["year"] = int(years[-1])
-    
-    # Tenta extrair titulo (primeira linha não vazia com mais de 5 palavras)
-    lines = text.split('\n')
-    for line in lines[:20]:
-        if len(line.split()) > 5:
-            metadata["title"] = line.strip()[:100]
-            break
-    
-    return metadata
-
-# ===============================================
-#  API CLAUDE
-# ===============================================
-def call_claude_vision(img_bytes, prompt, api_key):
-    """Chama Claude Vision API"""
-    if not api_key or not api_key.startswith("sk-"):
-        return None, "API key inválida"
-    try:
-        img = PILImage.open(io.BytesIO(img_bytes))
-        buf = io.BytesIO()
-        img.convert("RGB").save(buf, format="JPEG", quality=85)
-        b64 = base64.b64encode(buf.getvalue()).decode()
-        
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-opus-4-20250514",
-                "max_tokens": 2000,
-                "messages": [{
-                    "role": "user",
-                    "content": [{
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/jpeg",
-                            "data": b64
-                        }
-                    }, {
-                        "type": "text",
-                        "text": prompt
-                    }]
-                }]
-            },
-            timeout=30
-        )
-        
-        if resp.status_code == 200:
-            return resp.json()["content"][0]["text"], None
-        return None, f"Erro HTTP {resp.status_code}"
-    except Exception as e:
-        return None, str(e)
-
-def call_claude_analysis(content, api_key):
-    """Chama Claude para análise de pesquisa"""
-    if not api_key or not api_key.startswith("sk-"):
-        return None, "API key ausente"
-    
-    prompt = f"""Analise esta pesquisa acadêmica e responda APENAS em JSON válido (sem markdown):
-{{
-  "resumo_executivo": "<resumo em 2-3 frases>",
-  "contribuicoes_principais": ["<contribuição 1>", "<contribuição 2>", "<contribuição 3>"],
-  "pontos_fortes": ["<força 1>", "<força 2>", "<força 3>"],
-  "areas_melhoria": ["<melhoria 1>", "<melhoria 2>"],
-  "relevancia_scientifica": <0-100>,
-  "inovacao_score": <0-100>,
-  "impacto_potencial": "<Alto/Médio/Baixo>",
-  "lacunas_identificadas": ["<lacuna 1>", "<lacuna 2>"],
-  "pesquisas_futuras": ["<direção 1>", "<direção 2>"],
-  "metodologia_avaliacao": "<descrição>",
-  "qualidade_geral": <0-100>
-}}
-
-Pesquisa:
-{content[:3000]}"""
-    
-    try:
-        resp = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-opus-4-20250514",
-                "max_tokens": 1500,
-                "messages": [{"role": "user", "content": prompt}]
-            },
-            timeout=30
-        )
-        
-        if resp.status_code == 200:
-            text = resp.json()["content"][0]["text"].strip()
-            # Limpa markdown se houver
-            text = re.sub(r'^```json\s*', '', text)
-            text = re.sub(r'\s*```$', '', text)
-            return json.loads(text), None
-        return None, f"HTTP {resp.status_code}"
-    except Exception as e:
-        return None, str(e)
-
-# ===============================================
-#  ANÁLISE DE IMAGENS CIENTÍFICAS
-# ===============================================
-def analyze_scientific_image(img_bytes):
-    """Análise completa de imagem científica com pipeline ML"""
-    try:
-        img = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
-        w, h = img.size
-        scale = min(512/w, 512/h)
-        new_w, new_h = int(w*scale), int(h*scale)
-        img_r = img.resize((new_w, new_h), PILImage.LANCZOS)
-        arr = np.array(img_r, dtype=np.float32)
-        
-        r_ch, g_ch, b_ch = arr[:,:,0], arr[:,:,1], arr[:,:,2]
-        gray = 0.2989*r_ch + 0.5870*g_ch + 0.1140*b_ch
-        gray_u8 = gray.astype(np.uint8)
-        
-        result = {
-            "size": (w, h),
-            "color_analysis": {
-                "r": float(r_ch.mean()),
-                "g": float(g_ch.mean()),
-                "b": float(b_ch.mean()),
-                "brightness": float(gray.mean()),
-                "std": float(gray.std())
-            },
-            "edge_analysis": {},
-            "keypoints": 0,
-            "texture_complexity": float(gray.std()) / 255.0,
-            "image_type": classify_image_type(arr, gray),
-            "quality_score": 0
-        }
-        
-        # Análise de bordas (Sobel)
-        if SKIMAGE_OK:
-            try:
-                sx = sk_filters.sobel_h(gray/255.0)
-                sy = sk_filters.sobel_v(gray/255.0)
-                magnitude = np.sqrt(sx**2 + sy**2)
-                result["edge_analysis"]["magnitude"] = float(magnitude.mean())
-                result["edge_analysis"]["max_edge"] = float(magnitude.max())
-                result["edge_analysis"]["density"] = float((magnitude > magnitude.mean()*1.5).mean())
-            except:
-                pass
-        
-        # Detecção de keypoints
-        if SKIMAGE_OK:
-            try:
-                corners = sk_feature.corner_harris(gray/255.0)
-                from skimage.feature import corner_peaks
-                keypoints = corner_peaks(corners, min_distance=5, threshold_rel=0.05)
-                result["keypoints"] = len(keypoints)
-            except:
-                pass
-        
-        # Score de qualidade
-        result["quality_score"] = min(95, 30 + 
-                                     (result["edge_analysis"].get("density", 0)*30) + 
-                                     (min(50, result["keypoints"]/2)) +
-                                     (result["texture_complexity"]*20))
-        
-        return result
-    except Exception as e:
-        return {"error": str(e), "quality_score": 0}
-
-def classify_image_type(arr, gray):
-    """Classifica o tipo de imagem científica"""
-    r_mean = arr[:,:,0].mean()
-    g_mean = arr[:,:,1].mean()
-    b_mean = arr[:,:,2].mean()
-    
-    # Padrões de cor para identificar tipos
-    if b_mean > r_mean + 50:
-        return "Fluorescência/DAPI"
-    elif g_mean > r_mean + 50:
-        return "Fluorescência/GFP"
-    elif abs(r_mean - g_mean) < 15 and abs(g_mean - b_mean) < 15:
-        return "Histopatologia/Grayscale"
-    elif gray.std() > 40:
-        return "Microscopia/Alta Contrast"
-    else:
-        return "Microscopia/Padrão"
-
-# ===============================================
-#  BUSCA SEMÂNTICA
-# ===============================================
-def search_semantic_scholar(query, limit=8):
-    """Busca em Semantic Scholar"""
-    try:
-        r = requests.get(
-            "https://api.semanticscholar.org/graph/v1/paper/search",
-            params={
-                "query": query,
-                "limit": limit,
-                "fields": "title,authors,year,abstract,venue,citationCount,openAccessPdf,externalIds"
-            },
-            timeout=8
-        )
-        
-        if r.status_code == 200:
-            results = []
-            for p in r.json().get("data", []):
-                authors = p.get("authors", [])
-                author_str = ", ".join([a.get("name", "") for a in authors[:3]])
-                if len(authors) > 3:
-                    author_str += " et al."
-                
-                ext = p.get("externalIds", {}) or {}
-                doi = ext.get("DOI", "")
-                arxiv = ext.get("ArXiv", "")
-                
-                pdf = p.get("openAccessPdf") or {}
-                url = pdf.get("url", "") or (f"https://arxiv.org/abs/{arxiv}" if arxiv else 
-                      (f"https://doi.org/{doi}" if doi else ""))
-                
-                results.append({
-                    "title": p.get("title", "Sem título"),
-                    "authors": author_str or "—",
-                    "year": p.get("year", "?"),
-                    "abstract": (p.get("abstract", "") or "")[:400],
-                    "venue": p.get("venue", "Semantic Scholar"),
-                    "citations": p.get("citationCount", 0),
-                    "url": url,
-                    "doi": doi or arxiv or "—",
-                    "source": "semantic"
-                })
-            return results
-    except:
-        pass
-    return []
-
-def search_crossref(query, limit=5):
-    """Busca em CrossRef"""
-    try:
-        r = requests.get(
-            "https://api.crossref.org/works",
-            params={
-                "query": query,
-                "rows": limit,
-                "select": "title,author,issued,abstract,DOI,container-title,is-referenced-by-count",
-                "mailto": "nebula@research.org"
-            },
-            timeout=8
-        )
-        
-        if r.status_code == 200:
-            results = []
-            for p in r.json().get("message", {}).get("items", []):
-                title = (p.get("title") or ["?"])[0]
-                authors = p.get("author", []) or []
-                author_str = ", ".join([f"{a.get('given', '').split()[0]} {a.get('family', '')}".strip() 
-                                       for a in authors[:3]])
-                if len(authors) > 3:
-                    author_str += " et al."
-                
-                year = (p.get("issued", {}).get("date-parts") or [[None]])[0][0]
-                doi = p.get("DOI", "")
-                abstract = re.sub(r'<[^>]+>', '', p.get("abstract", "") or "")[:400]
-                
-                results.append({
-                    "title": title,
-                    "authors": author_str or "—",
-                    "year": year or "?",
-                    "abstract": abstract,
-                    "venue": (p.get("container-title") or ["CrossRef"])[0],
-                    "citations": p.get("is-referenced-by-count", 0),
-                    "url": f"https://doi.org/{doi}" if doi else "",
-                    "doi": doi,
-                    "source": "crossref"
-                })
-            return results
-    except:
-        pass
-    return []
-
-# ===============================================
-#  INICIALIZAÇÃO
-# ===============================================
-def init():
-    if "initialized" in st.session_state:
-        return
-    
-    st.session_state.initialized = True
-    disk = load_db()
-    
-    # Usuários
-    st.session_state.users = disk.get("users", {
-        "usuario@nebula.com": {
-            "name": "Pesquisador Principal",
-            "password": hp("nebula123"),
-            "area": "Biologia Molecular",
-            "verified": True
-        }
-    })
-    
-    st.session_state.logged_in = False
-    st.session_state.current_user = None
-    st.session_state.page = "login"
-    
-    # Repositórios
-    st.session_state.repositories = disk.get("repositories", {})
-    st.session_state.analyses = disk.get("analyses", {})
-    st.session_state.connections = disk.get("connections", {})
-    st.session_state.saved_papers = disk.get("saved_papers", [])
-    
-    # Cache
-    st.session_state.search_cache = {}
-    st.session_state.analysis_cache = {}
-
-init()
-
-# ===============================================
-#  CSS - INTERFACE MODERNA LIQUID GLASS
-# ===============================================
-def inject_css():
-    st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800;900&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap');
-
-:root {
-  --bg: #060B14;
-  --bg2: #0B1220;
-  --bg3: #101828;
-  --acc: #0D7FE8;
-  --acc2: #1A6EC9;
-  --teal: #36B8A0;
-  --teal2: #2E9D8A;
-  --red: #F03E5A;
-  --orn: #FF8C42;
-  --pur: #9B6FD4;
-  --cya: #38C8F0;
-  --t0: #FFFFFF;
-  --t1: #E2E6F0;
-  --t2: #9AA3BC;
-  --t3: #5A6180;
-  --t4: #2E3450;
-  --g1: rgba(255,255,255,.042);
-  --g2: rgba(255,255,255,.07);
-  --g3: rgba(255,255,255,.11);
-  --gb1: rgba(255,255,255,.07);
-  --gb2: rgba(255,255,255,.11);
-  --gb3: rgba(255,255,255,.18);
-}
-
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-html, body, .stApp {
-  background: var(--bg) !important;
-  color: var(--t1) !important;
-  font-family: 'DM Sans', -apple-system, sans-serif !important;
-}
-
-.stApp::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background:
-    radial-gradient(ellipse 55% 45% at -5% 0%, rgba(13,127,232,.08) 0%, transparent 60%),
-    radial-gradient(ellipse 45% 35% at 105% 0%, rgba(54,184,160,.07) 0%, transparent 55%),
-    radial-gradient(ellipse 35% 45% at 50% 110%, rgba(155,111,212,.05) 0%, transparent 60%);
-}
-
-header[data-testid="stHeader"], #MainMenu, footer, .stDeployButton, [data-testid="stToolbar"], [data-testid="stDecoration"] {
-  display: none !important;
-}
-
-section[data-testid="stSidebar"] {
-  display: block !important;
-  transform: translateX(0) !important;
-  visibility: visible !important;
-  background: rgba(4,7,16,.97) !important;
-  backdrop-filter: blur(40px) saturate(200%) !important;
-  border-right: 1px solid rgba(255,255,255,.07) !important;
-  width: 240px !important;
-  min-width: 240px !important;
-  max-width: 240px !important;
-  padding: 1.3rem .9rem 1rem !important;
-}
-
-section[data-testid="stSidebar"]>div {
-  width: 240px !important;
-  padding: 0 !important;
-}
-
-section[data-testid="stSidebar"] .stButton>button {
-  position: relative;
-  overflow: hidden;
-  background: rgba(255,255,255,.04) !important;
-  backdrop-filter: blur(20px) saturate(180%) !important;
-  border: 1px solid rgba(255,255,255,.09) !important;
-  border-top-color: rgba(255,255,255,.15) !important;
-  border-radius: 12px !important;
-  box-shadow: 0 2px 12px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.08) !important;
-  color: #9AA3BC !important;
-  font-family: 'DM Sans', sans-serif !important;
-  font-weight: 500 !important;
-  font-size: .83rem !important;
-  padding: .52rem .9rem !important;
-  text-align: left !important;
-  width: 100% !important;
-  margin-bottom: .18rem !important;
-  transition: all .15s cubic-bezier(.4,0,.2,1) !important;
-}
-
-section[data-testid="stSidebar"] .stButton>button:hover {
-  background: rgba(13,127,232,.12) !important;
-  border-color: rgba(13,127,232,.3) !important;
-  box-shadow: 0 4px 20px rgba(13,127,232,.15) !important;
-  color: #FFFFFF !important;
-  transform: translateY(-1px) !important;
-}
-
-.stButton>button {
-  background: rgba(255,255,255,.07) !important;
-  backdrop-filter: blur(12px) !important;
-  border: 1px solid rgba(255,255,255,.1) !important;
-  border-top-color: rgba(255,255,255,.16) !important;
-  border-radius: 10px !important;
-  color: #C8CEDE !important;
-  font-weight: 500 !important;
-  font-size: .82rem !important;
-  padding: .45rem .8rem !important;
-  box-shadow: 0 2px 8px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.07) !important;
-  transition: all .12s ease !important;
-}
-
-.stButton>button:hover {
-  background: rgba(13,127,232,.14) !important;
-  border-color: rgba(13,127,232,.28) !important;
-  color: #fff !important;
-  box-shadow: 0 4px 16px rgba(13,127,232,.2) !important;
-  transform: translateY(-1px) !important;
-}
-
-.block-container {
-  padding-top: .3rem !important;
-  padding-bottom: 4rem !important;
-  max-width: 1400px !important;
-  position: relative;
-  z-index: 1;
-  padding-left: .9rem !important;
-  padding-right: .9rem !important;
-}
-
-.stTextInput input, .stTextArea textarea, .stSelectbox [data-baseweb="select"] {
-  background: rgba(255,255,255,.04) !important;
-  border: 1px solid var(--gb1) !important;
-  border-radius: 12px !important;
-  color: var(--t1) !important;
-  font-family: 'DM Sans', sans-serif !important;
-}
-
-.stTextInput input:focus, .stTextArea textarea:focus {
-  border-color: rgba(13,127,232,.5) !important;
-  box-shadow: 0 0 0 3px rgba(13,127,232,.1) !important;
-}
-
-/* Cards */
-.glass {
-  background: rgba(255,255,255,.04);
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 20px;
-  box-shadow: 0 0 0 1px rgba(255,255,255,.03) inset, 0 6px 36px rgba(0,0,0,.35);
-  position: relative;
-  overflow: hidden;
-  padding: 1.2rem;
-  margin-bottom: 0.8rem;
-}
-
-.glass::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,.1), transparent);
-  pointer-events: none;
-}
-
-.card-research {
-  background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 16px;
-  padding: 1rem;
-  margin-bottom: 0.6rem;
-  overflow: hidden;
-  box-shadow: 0 2px 24px rgba(0,0,0,.28);
-  transition: border-color .15s, transform .15s, box-shadow .15s;
-}
-
-.card-research:hover {
-  border-color: rgba(13,127,232,.25);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 32px rgba(13,127,232,.1);
-}
-
-.stat-box {
-  background: rgba(255,255,255,.04);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 16px;
-  padding: 1.2rem;
-  text-align: center;
-}
-
-.badge {
-  display: inline-block;
-  background: rgba(13,127,232,.12);
-  border: 1px solid rgba(13,127,232,.25);
-  border-radius: 50px;
-  padding: 4px 12px;
-  font-size: 0.65rem;
-  font-weight: 700;
-  color: #5BAAFF;
-  margin-right: 6px;
-  margin-bottom: 6px;
-}
-
-.tag {
-  display: inline-block;
-  background: rgba(255,255,255,.05);
-  border: 1px solid rgba(255,255,255,.08);
-  border-radius: 50px;
-  padding: 3px 10px;
-  font-size: .62rem;
-  color: var(--t2);
-  margin: 3px;
-  font-weight: 500;
-}
-
-h1 {
-  font-family: 'Syne', sans-serif !important;
-  font-size: 2rem !important;
-  font-weight: 800 !important;
-  letter-spacing: -.03em;
-  color: var(--t0) !important;
-}
-
-h2 {
-  font-family: 'Syne', sans-serif !important;
-  font-size: 1.2rem !important;
-  font-weight: 700 !important;
-  color: var(--t0) !important;
-}
-
-hr {
-  border: none;
-  border-top: 1px solid rgba(255,255,255,.07) !important;
-  margin: .8rem 0 !important;
-}
-
-.stTabs [data-baseweb="tab-list"] {
-  background: rgba(255,255,255,.03) !important;
-  border: 1px solid rgba(255,255,255,.08) !important;
-  border-radius: 12px !important;
-  padding: 3px !important;
-  gap: 2px !important;
-}
-
-.stTabs [data-baseweb="tab"] {
-  background: transparent !important;
-  color: var(--t3) !important;
-  border-radius: 9px !important;
-  font-size: .74rem !important;
-  font-weight: 500 !important;
-}
-
-.stTabs [aria-selected="true"] {
-  background: rgba(13,127,232,.14) !important;
-  color: var(--cya) !important;
-  border: 1px solid rgba(13,127,232,.25) !important;
-  font-weight: 700 !important;
-}
-
-::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--t4);
-  border-radius: 4px;
-}
-
-.metric-value {
-  font-family: 'Syne', sans-serif;
-  font-size: 2rem;
-  font-weight: 900;
-  background: linear-gradient(135deg, var(--acc), var(--cya));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.metric-label {
-  font-size: .57rem;
-  color: var(--t3);
-  margin-top: 4px;
-  letter-spacing: .1em;
-  text-transform: uppercase;
-  font-weight: 700;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-# ===============================================
-#  PÁGINA: LOGIN
-# ===============================================
-def page_login():
-    _, col, _ = st.columns([1, 1.2, 1])
-    with col:
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.markdown("""
-        <div style="text-align:center;margin-bottom:2.5rem">
-            <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:.8rem">
-                <div style="width:52px;height:52px;border-radius:16px;background:linear-gradient(135deg,#0D7FE8,#36B8A0);display:flex;align-items:center;justify-content:center;font-size:1.8rem;box-shadow:0 0 32px rgba(13,127,232,.35)">🔬</div>
-                <div style="font-family:Syne,sans-serif;font-size:2.5rem;font-weight:900;letter-spacing:-.06em;background:linear-gradient(135deg,#0D7FE8,#36B8A0);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">Nebula</div>
-            </div>
-            <div style="color:var(--t3);font-size:.65rem;letter-spacing:.25em;text-transform:uppercase;font-weight:700">Sistema Avançado de Pesquisa Acadêmica</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        tab1, tab2 = st.tabs(["Entrar", "Criar Conta"])
-        
-        with tab1:
-            with st.form("login_form"):
-                email = st.text_input("Email", placeholder="seu@email.com")
-                password = st.text_input("Senha", type="password", placeholder="••••••••")
-                submit = st.form_submit_button("Acessar", use_container_width=True)
-                
-                if submit:
-                    user = st.session_state.users.get(email)
-                    if not user:
-                        st.error("Email não encontrado")
-                    elif user["password"] != hp(password):
-                        st.error("Senha incorreta")
-                    else:
-                        st.session_state.logged_in = True
-                        st.session_state.current_user = email
-                        st.session_state.page = "repositories"
-                        save_db()
-                        st.rerun()
-            
-            st.markdown('<div style="text-align:center;color:var(--t3);font-size:.67rem;margin-top:.7rem">Demo: usuario@nebula.com / nebula123</div>', unsafe_allow_html=True)
-        
-        with tab2:
-            with st.form("signup_form"):
-                name = st.text_input("Nome completo")
-                email = st.text_input("Email")
-                area = st.selectbox("Área de Pesquisa", 
-                    ["Biologia Molecular", "Neurociência", "Inteligência Artificial", 
-                     "Física Quântica", "Astrofísica", "Química", "Medicina Clínica",
-                     "Ecologia", "Engenharia", "Matemática"])
-                password = st.text_input("Senha", type="password")
-                password_confirm = st.text_input("Confirmar senha", type="password")
-                
-                submit = st.form_submit_button("Criar Conta", use_container_width=True)
-                
-                if submit:
-                    if not all([name, email, password]):
-                        st.error("Preencha todos os campos")
-                    elif password != password_confirm:
-                        st.error("Senhas não coincidem")
-                    elif email in st.session_state.users:
-                        st.error("Email já cadastrado")
-                    elif len(password) < 6:
-                        st.error("Mínimo 6 caracteres")
-                    else:
-                        st.session_state.users[email] = {
-                            "name": name,
-                            "password": hp(password),
-                            "area": area,
-                            "verified": False
-                        }
-                        save_db()
-                        st.session_state.logged_in = True
-                        st.session_state.current_user = email
-                        st.session_state.page = "repositories"
-                        st.rerun()
-
-# ===============================================
-#  PÁGINA: REPOSITÓRIOS
-# ===============================================
-def page_repositories():
-    st.markdown('<div style="padding-top:1rem">', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([3, 1.5])
-    
-    with col1:
-        st.markdown('<h1>Meus Repositórios de Pesquisa</h1>', unsafe_allow_html=True)
-    
-    with col2:
-        if st.button("Novo Repositório", use_container_width=True):
-            st.session_state.show_new_repo = True
-    
-    if st.session_state.get("show_new_repo"):
-        with st.expander("Criar Novo Repositório", expanded=True):
-            col1, col2 = st.columns(2)
-            with col1:
-                repo_name = st.text_input("Nome do Repositório")
-            with col2:
-                repo_type = st.selectbox("Tipo", ["Projeto", "Dataset", "Review", "Outro"])
-            
-            description = st.text_area("Descrição", height=80)
-            
-            if st.button("Criar"):
-                if repo_name:
-                    if repo_name not in st.session_state.repositories:
-                        st.session_state.repositories[repo_name] = {
-                            "type": repo_type,
-                            "description": description,
-                            "papers": [],
-                            "created": datetime.now().isoformat(),
-                            "updated": datetime.now().isoformat()
-                        }
-                        save_db()
-                        st.session_state.show_new_repo = False
-                        st.success(f"Repositório '{repo_name}' criado!")
-                        st.rerun()
-                    else:
-                        st.warning("Já existe repositório com este nome")
-                else:
-                    st.warning("Digite um nome para o repositório")
-    
-    st.markdown("<hr>", unsafe_allow_html=True)
-    
-    if not st.session_state.repositories:
-        st.markdown("""
-        <div class="glass" style="text-align:center;padding:3rem">
-            <div style="font-size:2.5rem;opacity:.15;margin-bottom:1rem">📁</div>
-            <div style="font-family:Syne,sans-serif;font-size:1.1rem;color:var(--t1)">Nenhum repositório criado</div>
-            <div style="font-size:.75rem;color:var(--t3);margin-top:.5rem">Crie seu primeiro repositório para começar a adicionar pesquisas</div>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        for repo_name, repo_data in st.session_state.repositories.items():
-            with st.expander(f"📁 {repo_name} - {len(repo_data.get('papers', []))} papers"):
-                st.markdown(f"**Tipo:** {repo_data['type']} | **Descrição:** {repo_data['description']}")
-                
-                col1, col2, col3 = st.columns([2, 1, 1])
-                
-                with col1:
-                    st.markdown("**Adicionar Paper**")
-                    with st.form(f"upload_{repo_name}"):
-                        paper_title = st.text_input("Título do Paper")
-                        paper_authors = st.text_input("Autores")
-                        paper_year = st.number_input("Ano", 1900, 2100, 2024)
-                        paper_file = st.file_uploader("Arquivo (PDF/TXT)", 
-                                                      type=["pdf", "txt"],
-                                                      key=f"file_{repo_name}")
-                        
-                        if st.form_submit_button("Adicionar"):
-                            if paper_title and paper_file:
-                                content = paper_file.read().decode("utf-8", errors="ignore")
-                                
-                                paper = {
-                                    "title": paper_title,
-                                    "authors": paper_authors,
-                                    "year": paper_year,
-                                    "content": content,
-                                    "metadata": extract_metadata(content, paper_title),
-                                    "analysis": None,
-                                    "added": datetime.now().isoformat()
-                                }
-                                
-                                repo_data["papers"].append(paper)
-                                st.session_state.repositories[repo_name] = repo_data
-                                save_db()
-                                st.success("Paper adicionado!")
-                                st.rerun()
-                
-                with col2:
-                    if st.button("Analisar Tudo", key=f"analyze_{repo_name}"):
-                        st.session_state.analyzing_repo = repo_name
-                
-                with col3:
-                    if st.button("Deletar", key=f"delete_{repo_name}"):
-                        del st.session_state.repositories[repo_name]
-                        save_db()
-                        st.rerun()
-                
-                # Lista de papers
-                st.markdown("**Papers no Repositório:**")
-                for idx, paper in enumerate(repo_data.get("papers", [])):
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.markdown(f"""
-                        **{paper['title']}**
-                        
-                        Autores: {paper['authors']} | Ano: {paper['year']}
-                        
-                        Área: {paper['metadata'].get('area', 'Geral')} | Palavras-chave: {', '.join(paper['metadata'].get('keywords', [])[:5])}
-                        """)
-                    with col2:
-                        col_a, col_b = st.columns(2)
-                        with col_a:
-                            if st.button("Analisar", key=f"analyze_paper_{repo_name}_{idx}"):
-                                st.session_state.analyzing_paper = (repo_name, idx)
-                        with col_b:
-                            if st.button("Remover", key=f"remove_paper_{repo_name}_{idx}"):
-                                repo_data["papers"].pop(idx)
-                                save_db()
-                                st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ===============================================
-#  PÁGINA: ANÁLISE
-# ===============================================
-def page_analysis():
-    st.markdown('<div style="padding-top:1rem">', unsafe_allow_html=True)
-    st.markdown('<h1>Análise Avançada de Pesquisas</h1>', unsafe_allow_html=True)
-    
-    if not st.session_state.repositories:
-        st.warning("Adicione papers aos repositórios primeiro")
-        st.markdown('</div>', unsafe_allow_html=True)
-        return
-    
-    # Coletar todos os papers
-    all_papers = []
-    for repo_name, repo_data in st.session_state.repositories.items():
-        for paper in repo_data.get("papers", []):
-            paper["repo"] = repo_name
-            all_papers.append(paper)
-    
-    if not all_papers:
-        st.warning("Nenhum paper adicionado")
-        st.markdown('</div>', unsafe_allow_html=True)
-        return
-    
-    # Estatísticas gerais
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.markdown(f'<div class="stat-box"><div class="metric-value">{len(all_papers)}</div><div class="metric-label">Papers Analisados</div></div>', unsafe_allow_html=True)
-    with col2:
-        avg_year = sum(p.get("year", 2024) for p in all_papers) / len(all_papers)
-        st.markdown(f'<div class="stat-box"><div class="metric-value">{int(avg_year)}</div><div class="metric-label">Ano Médio</div></div>', unsafe_allow_html=True)
-    with col3:
-        areas = Counter(p['metadata'].get('area', 'Geral') for p in all_papers)
-        st.markdown(f'<div class="stat-box"><div class="metric-value">{len(areas)}</div><div class="metric-label">Áreas Diferentes</div></div>', unsafe_allow_html=True)
-    with col4:
-        all_kw = set()
-        for p in all_papers:
-            all_kw.update(p['metadata'].get('keywords', []))
-        st.markdown(f'<div class="stat-box"><div class="metric-value">{len(all_kw)}</div><div class="metric-label">Palavras-Chave Únicas</div></div>', unsafe_allow_html=True)
-    
-    st.markdown("<hr>", unsafe_allow_html=True)
-    
-    # Gráficos de análise
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "Distribuição Temporal",
-        "Áreas de Pesquisa",
-        "Palavras-Chave",
-        "Mapa 3D de Nacionalidades",
-        "Conexões"
-    ])
-    
-    with tab1:
-        st.markdown("**Distribuição de Papers por Ano**")
-        years = Counter(p.get("year", 2024) for p in all_papers)
-        
-        if years:
-            fig = go.Figure(data=[
-                go.Bar(
-                    x=sorted(years.keys()),
-                    y=[years[y] for y in sorted(years.keys())],
-                    marker=dict(
-                        color=list(range(len(years))),
-                        colorscale=[[0,"#0A1929"],[1,"#0D7FE8"]]
-                    )
-                )
-            ])
-            fig.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#5A6180", family="DM Sans"),
-                height=400,
-                margin=dict(l=40, r=40, t=40, b=40)
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with tab2:
-        st.markdown("**Papers por Área de Pesquisa**")
-        areas = Counter(p['metadata'].get('area', 'Geral') for p in all_papers)
-        
-        fig = go.Figure(data=[
-            go.Pie(
-                labels=list(areas.keys()),
-                values=list(areas.values()),
-                marker=dict(colors=["#0D7FE8", "#36B8A0", "#38C8F0", "#FF8C42", "#9B6FD4"])
-            )
-        ])
-        fig.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#5A6180"),
-            height=400
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with tab3:
-        st.markdown("**Palavras-Chave Mais Frequentes**")
-        all_kw_list = []
-        for p in all_papers:
-            all_kw_list.extend(p['metadata'].get('keywords', [])[:10])
-        
-        kw_freq = Counter(all_kw_list)
-        top_kw = dict(kw_freq.most_common(15))
-        
-        if top_kw:
-            fig = go.Figure(data=[
-                go.Bar(
-                    y=list(top_kw.keys()),
-                    x=list(top_kw.values()),
-                    orientation='h',
-                    marker=dict(color=list(range(len(top_kw))),
-                               colorscale=[[0,"#0D7FE8"],[1,"#36B8A0"]])
-                )
-            ])
-            fig.update_layout(
-                plot_bgcolor="rgba(0,0,0,0)",
-                paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#5A6180"),
-                height=400
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with tab4:
-        st.markdown("**Mapa 3D de Autores por Localização**")
-        st.info("Análise de nacionalidade dos autores (requer dados de localização dos papers)")
-        
-        # Simulação de mapa 3D com países aleatórios
-        countries_sample = {
-            "Brasil": 8,
-            "Estados Unidos": 12,
-            "China": 10,
-            "Alemanha": 6,
-            "Reino Unido": 7,
-            "Canadá": 5,
-            "França": 4,
-            "Japão": 6,
-            "Austrália": 3,
-            "Índia": 4
-        }
-        
-        if countries_sample:
-            fig = go.Figure(data=[
-                go.Scattergeo(
-                    locations=list(countries_sample.keys()),
-                    text=list(countries_sample.keys()),
-                    mode='markers+text',
-                    marker=dict(
-                        size=[v*2 for v in countries_sample.values()],
-                        color=list(countries_sample.values()),
-                        colorscale='Viridis',
-                        showscale=True
-                    )
-                )
-            ])
-            fig.update_layout(
-                geo=dict(projection_type="natural earth"),
-                height=500,
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#5A6180")
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with tab5:
-        st.markdown("**Análise de Conexões entre Pesquisas**")
-        
-        # Criar matriz de similaridade entre papers baseada em palavras-chave
-        similarity_data = []
-        
-        for i, paper1 in enumerate(all_papers):
-            for j, paper2 in enumerate(all_papers[i+1:], start=i+1):
-                kw1 = set(paper1['metadata'].get('keywords', []))
-                kw2 = set(paper2['metadata'].get('keywords', []))
-                
-                if kw1 and kw2:
-                    similarity = len(kw1 & kw2) / len(kw1 | kw2)
-                    if similarity > 0.2:
-                        similarity_data.append({
-                            "paper1": paper1["title"][:30],
-                            "paper2": paper2["title"][:30],
-                            "similarity": similarity,
-                            "common_kw": list(kw1 & kw2)[:5]
-                        })
-        
-        similarity_data.sort(key=lambda x: x["similarity"], reverse=True)
-        
-        st.markdown("**Conexões Encontradas:**")
-        for conn in similarity_data[:10]:
-            st.markdown(f"""
-            **{conn['paper1']}** ↔ **{conn['paper2']}**
-            
-            Similaridade: {conn['similarity']:.0%} | Palavras-chave comuns: {', '.join(conn['common_kw'])}
-            """)
-            st.markdown("<hr>", unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ===============================================
-#  PÁGINA: BUSCA E VISÃO IA
-# ===============================================
-def page_search_vision():
-    st.markdown('<div style="padding-top:1rem">', unsafe_allow_html=True)
-    st.markdown('<h1>Busca Inteligente e Visão IA</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:var(--t3);font-size:.76rem;margin-bottom:1rem">Integração de busca semântica, reconhecimento de imagens científicas e busca na literatura</p>', unsafe_allow_html=True)
-    
-    api_key = st.session_state.get("anthropic_key", "")
-    has_api = api_key.startswith("sk-") if api_key else False
-    
-    if has_api:
-        st.markdown('<div class="glass"><strong>Claude Vision Ativo</strong> - Análise real de imagens com IA habilitada</div>', unsafe_allow_html=True)
-    else:
-        st.info("Insira sua API key do Claude nas configurações para ativar Vision")
-    
-    tab1, tab2, tab3 = st.tabs(["Busca por Texto", "Análise de Imagem", "Busca Avançada"])
-    
-    with tab1:
-        st.markdown("**Buscar na Literatura Acadêmica**")
-        col1, col2, col3 = st.columns([3, 1, 1])
-        
-        with col1:
-            query = st.text_input("Digite sua busca", placeholder="Ex: aprendizado de máquina em biologia")
-        
-        with col2:
-            source = st.selectbox("Fonte", ["Semantic Scholar", "CrossRef", "Ambos"])
-        
-        with col3:
-            search_btn = st.button("Buscar", use_container_width=True)
-        
-        if search_btn and query:
-            st.markdown("**Resultados:**")
-            
-            results = []
-            if source in ["Semantic Scholar", "Ambos"]:
-                with st.spinner("Buscando em Semantic Scholar..."):
-                    results.extend(search_semantic_scholar(query, 8))
-            
-            if source in ["CrossRef", "Ambos"]:
-                with st.spinner("Buscando em CrossRef..."):
-                    results.extend(search_crossref(query, 5))
-            
-            if results:
-                for idx, paper in enumerate(results):
-                    with st.container():
-                        st.markdown(f"""
-                        **{paper['title']}**
-                        
-                        Autores: {paper['authors']} | Ano: {paper['year']}
-                        
-                        Fonte: {paper['venue']} | Citações: {paper['citations']}
-                        
-                        {paper['abstract']}
-                        """)
-                        
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            if st.button("Salvar", key=f"save_{idx}"):
-                                st.session_state.saved_papers.append(paper)
-                                save_db()
-                                st.success("Salvo!")
-                        with col2:
-                            if paper.get("url"):
-                                st.markdown(f'<a href="{paper["url"]}" target="_blank">Abrir PDF</a>', unsafe_allow_html=True)
-                        with col3:
-                            st.write(f"DOI: {paper.get('doi', 'N/A')}")
-                        
-                        st.markdown("<hr>", unsafe_allow_html=True)
-            else:
-                st.warning("Nenhum resultado encontrado")
-    
-    with tab2:
-        st.markdown("**Análise de Imagem Científica**")
-        
-        uploaded_image = st.file_uploader("Carregue uma imagem científica", 
-                                          type=["png", "jpg", "jpeg", "webp"])
-        
-        if uploaded_image:
-            img_bytes = uploaded_image.read()
-            st.image(img_bytes, width=300)
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                if st.button("Análise ML"):
-                    with st.spinner("Analisando imagem..."):
-                        analysis = analyze_scientific_image(img_bytes)
-                        
-                        st.markdown("**Resultado da Análise ML:**")
-                        st.json({
-                            "tipo_imagem": analysis.get("image_type"),
-                            "qualidade": f"{analysis.get('quality_score', 0):.0f}%",
-                            "tamanho": analysis.get("size"),
-                            "keypoints": analysis.get("keypoints"),
-                            "complexidade_textura": f"{analysis.get('texture_complexity', 0):.2f}"
-                        })
-            
-            with col2:
-                if has_api and st.button("Análise Claude Vision"):
-                    prompt = """Analise esta imagem científica e identifique:
-1. Tipo de imagem (ex: microscopia, histopatologia, etc)
-2. Técnica utilizada
-3. Possíveis aplicações
-4. Qualidade da imagem
-5. Sugestões para pesquisas relacionadas"""
-                    
-                    with st.spinner("Claude analisando..."):
-                        result, error = call_claude_vision(img_bytes, prompt, api_key)
-                        if result:
-                            st.markdown("**Análise Claude Vision:**")
-                            st.write(result)
-                        elif error:
-                            st.error(f"Erro: {error}")
-    
-    with tab3:
-        st.markdown("**Busca Avançada com Filtros**")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            year_from = st.number_input("Ano a partir de", 1900, 2100, 2020)
-        with col2:
-            year_to = st.number_input("Até ano", 1900, 2100, 2024)
-        with col3:
-            min_citations = st.number_input("Mínimo de citações", 0, 1000, 0)
-        
-        search_text = st.text_input("Termo de busca avançado")
-        
-        if st.button("Buscar com Filtros"):
-            results = search_semantic_scholar(search_text, 15)
-            
-            filtered = [p for p in results 
-                       if (year_from <= p.get('year', 2024) <= year_to and 
-                           p.get('citations', 0) >= min_citations)]
-            
-            st.markdown(f"**Encontrados: {len(filtered)} papers**")
-            for paper in filtered:
-                st.markdown(f"**{paper['title']}** ({paper['year']}) - {paper['citations']} citações")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ===============================================
-#  PÁGINA: CONEXÕES
-# ===============================================
-def page_connections():
-    st.markdown('<div style="padding-top:1rem">', unsafe_allow_html=True)
-    st.markdown('<h1>Mapa de Conexões entre Pesquisas</h1>', unsafe_allow_html=True)
-    
-    # Coletar todos os papers
-    all_papers = []
-    for repo_name, repo_data in st.session_state.repositories.items():
-        for paper in repo_data.get("papers", []):
-            paper["repo"] = repo_name
-            all_papers.append(paper)
-    
-    if len(all_papers) < 2:
-        st.warning("Adicione ao menos 2 papers para ver conexões")
-        st.markdown('</div>', unsafe_allow_html=True)
-        return
-    
-    # Criar grafo de conexões
-    nodes = []
-    edges = []
-    
-    for idx, paper in enumerate(all_papers):
-        nodes.append({
-            "id": idx,
-            "label": paper["title"][:25],
-            "area": paper["metadata"]["area"]
-        })
-    
-    # Encontrar conexões baseadas em palavras-chave
-    for i in range(len(all_papers)):
-        for j in range(i+1, len(all_papers)):
-            kw1 = set(all_papers[i]['metadata'].get('keywords', []))
-            kw2 = set(all_papers[j]['metadata'].get('keywords', []))
-            
-            if kw1 and kw2:
-                common = kw1 & kw2
-                if len(common) > 0:
-                    similarity = len(common) / len(kw1 | kw2)
-                    edges.append({
-                        "source": i,
-                        "target": j,
-                        "weight": similarity,
-                        "common_kw": list(common)[:3]
-                    })
-    
-    # Grafo 2D/3D com plotly
-    edge_x = []
-    edge_y = []
-    
-    # Posições circulares
-    positions = {}
-    n = len(nodes)
-    for i, node in enumerate(nodes):
-        angle = 2 * np.pi * i / n
-        positions[i] = (np.cos(angle), np.sin(angle))
-    
-    for edge in edges:
-        x0, y0 = positions[edge["source"]]
-        x1, y1 = positions[edge["target"]]
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
-    
-    # Nós
-    node_x = [positions[n["id"]][0] for n in nodes]
-    node_y = [positions[n["id"]][1] for n in nodes]
-    
-    node_text = [n["label"] for n in nodes]
-    node_color = [hash(n["area"]) % 256 for n in nodes]
-    
-    fig = go.Figure()
-    
-    # Edges
-    fig.add_trace(go.Scatter(
-        x=edge_x, y=edge_y,
-        mode='lines',
-        line=dict(width=0.5, color='rgba(13,127,232,0.2)'),
-        hoverinfo='none',
-        showlegend=False
-    ))
-    
-    # Nodes
-    fig.add_trace(go.Scatter(
-        x=node_x, y=node_y,
-        mode='markers+text',
-        text=node_text,
-        textposition="top center",
-        hoverinfo='text',
-        marker=dict(
-            showscale=True,
-            color=node_color,
-            colorscale='Viridis',
-            size=20,
-            line=dict(width=2, color='rgba(255,255,255,0.1)')
-        ),
-        showlegend=False
-    ))
-    
-    fig.update_layout(
-        title="Grafo de Conexões entre Pesquisas",
-        showlegend=False,
-        hovermode='closest',
-        margin=dict(b=20, l=5, r=5, t=40),
-        plot_bgcolor='rgba(0,0,0,0)',
-        paper_bgcolor='rgba(0,0,0,0)',
-        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-        height=600,
-        font=dict(color="#5A6180")
-    )
-    
-    st.plotly_chart(fig, use_container_width=True)
-    
-    # Estatísticas
-    st.markdown("<hr>", unsafe_allow_html=True)
-    st.markdown("**Análise de Conexões:**")
-    
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Total de Papers", len(all_papers))
-    with col2:
-        st.metric("Conexões Encontradas", len(edges))
-    with col3:
-        if edges:
-            avg_strength = np.mean([e["weight"] for e in edges])
-            st.metric("Força Média", f"{avg_strength:.2f}")
-    
-    # Lista de conexões mais fortes
-    st.markdown("**Conexões Mais Fortes:**")
-    strong_edges = sorted(edges, key=lambda x: x["weight"], reverse=True)[:10]
-    
-    for edge in strong_edges:
-        paper1 = all_papers[edge["source"]]
-        paper2 = all_papers[edge["target"]]
-        st.markdown(f"""
-        **{paper1['title']}** ↔ **{paper2['title']}**
-        
-        Força: {edge['weight']:.0%} | Palavras-chave comuns: {', '.join(edge['common_kw'])}
-        """)
-        st.markdown("<hr>", unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ===============================================
-#  PÁGINA: CONFIGURAÇÕES
-# ===============================================
-def page_settings():
-    st.markdown('<div style="padding-top:1rem">', unsafe_allow_html=True)
-    st.markdown('<h1>Configurações</h1>', unsafe_allow_html=True)
-    
-    tab1, tab2 = st.tabs(["Perfil", "API"])
-    
-    with tab1:
-        email = st.session_state.current_user
-        user = st.session_state.users.get(email, {})
-        
-        st.markdown(f"**Email:** {email}")
-        
-        name = st.text_input("Nome", value=user.get("name", ""))
-        area = st.selectbox("Área de Pesquisa", 
-            ["Biologia Molecular", "Neurociência", "Inteligência Artificial", 
-             "Física Quântica", "Astrofísica", "Química", "Medicina Clínica",
-             "Ecologia", "Engenharia", "Matemática"],
-            index=0)
-        
-        if st.button("Salvar Perfil"):
-            st.session_state.users[email]["name"] = name
-            st.session_state.users[email]["area"] = area
-            save_db()
-            st.success("Perfil atualizado!")
-        
-        st.markdown("<hr>", unsafe_allow_html=True)
-        
-        if st.button("Sair", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.current_user = None
-            st.session_state.page = "login"
-            st.rerun()
-    
-    with tab2:
-        st.markdown("**Claude API Key**")
-        api_key = st.text_input("API Key", 
-                               value=st.session_state.get("anthropic_key", ""),
-                               type="password",
-                               placeholder="sk-ant-...")
-        
-        if api_key != st.session_state.get("anthropic_key", ""):
-            st.session_state.anthropic_key = api_key
-            st.success("API Key atualizada")
-        
-        if api_key.startswith("sk-"):
-            st.info("Claude Vision está ativo")
-        else:
-            st.warning("Insira uma API key válida para ativar Claude Vision")
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ===============================================
-#  NAVEGAÇÃO
-# ===============================================
-def render_sidebar():
-    with st.sidebar:
-        st.markdown("""
-        <div style="text-align:center;margin-bottom:2rem">
-            <div style="font-size:2.2rem;margin-bottom:.5rem">🔬</div>
-            <div style="font-family:Syne,sans-serif;font-weight:900;font-size:1.3rem;background:linear-gradient(135deg,#0D7FE8,#36B8A0);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">Nebula</div>
-        </div>
-        """, unsafe_allow_html=True)
-        
-        st.markdown("<hr>", unsafe_allow_html=True)
-        
-        if st.button("📁 Repositórios", use_container_width=True):
-            st.session_state.page = "repositories"
-            st.rerun()
-        
-        if st.button("📊 Análise", use_container_width=True):
-            st.session_state.page = "analysis"
-            st.rerun()
-        
-        if st.button("🔍 Busca & Visão IA", use_container_width=True):
-            st.session_state.page = "search_vision"
-            st.rerun()
-        
-        if st.button("🕸 Conexões", use_container_width=True):
-            st.session_state.page = "connections"
-            st.rerun()
-        
-        if st.button("⚙️ Configurações", use_container_width=True):
-            st.session_state.page = "settings"
-            st.rerun()
-        
-        st.markdown("<hr>", unsafe_allow_html=True)
-        
-        user = st.session_state.users.get(st.session_state.current_user, {})
-        st.markdown(f"""
-        **{user.get('name', 'Usuário')}**
-        
-        {user.get('area', 'Pesquisador')}
-        """)
-
-# ===============================================
-#  MAIN
-# ===============================================
-def main():
-    inject_css()
-    
-    if not st.session_state.logged_in:
-        page_login()
-        return
-    
-    render_sidebar()
-    
-    page_map = {
-        "repositories": page_repositories,
-        "analysis": page_analysis,
-        "search_vision": page_search_vision,
-        "connections": page_connections,
-        "settings": page_settings,
-    }
-    
-    current_page = st.session_state.get("page", "repositories")
-    if current_page in page_map:
-        page_map[current_page]()
-    else:
-        st.error("Página não encontrada")
-
-if __name__ == "__main__":
-    main()
+diff --git a/dashboard_streamlit.py b/dashboard_streamlit.py
+index 0f952201f4a73ffca1fbfeb01dadde3c19092877..c9dbf2770d1890dfecac6559ab1cc422a81dcb7c 100644
+--- a/dashboard_streamlit.py
++++ b/dashboard_streamlit.py
+@@ -1,1079 +1,971 @@
+-# dashboard_consumidia_updated.py
+-# CONSUMIDIA — Dashboard completo (versão atualizada)
+-# - CORREÇÃO: Corrigido o erro 'StreamlitAPIException' ao limpar o anexo após o envio da mensagem.
+-# - MELHORIA VISUAL: Efeito Liquid-glass aprimorado, ícones integrados aos botões de navegação.
+-# - MELHORIA FUNCIONAL: Nome do usuário de origem agora é salvo e exibido nos Favoritos.
+-# - NOVO: Troca de arquivos (dropbox) integrada ao sistema de mensagens.
+-
+-import streamlit as st
+-import pandas as pd
+-import plotly.express as px
+-import plotly.graph_objects as go
+-import networkx as nx
+-from networkx.readwrite import json_graph
+-from fpdf import FPDF
+-import json, os, io, re, random, string, time
+-from pathlib import Path
+-from datetime import datetime
+-import glob
+-import unicodedata
+-
+-# extra para ML/search (mantido para futura expansão)
+-import joblib
+-import numpy as np
+-from sklearn.feature_extraction.text import TfidfVectorizer
+-from sklearn.metrics.pairwise import cosine_similarity
+-
+-# -------------------------
+-# Default CSS (liquid glass aprimorado)
+-# -------------------------
+-DEFAULT_CSS = r'''
+-:root{
+-  --glass-bg: rgba(255,255,255,0.05);
+-  --glass-border: rgba(255,255,255,0.1);
+-  --glass-highlight: rgba(255,255,255,0.06);
+-  --accent: #8e44ad;
+-  --muted-text: #d6d9dc;
+-  --icon-color: #ffffff;
+-}
+-
+-/* Global body fallback */
+-.css-1d391kg { background: linear-gradient(180deg,#071428 0%, #031926 100%) !important; }
+-
+-/* Liquid glass boxes used by the app */
+-.glass-box{
+-  background: var(--glass-bg);
+-  border: 1px solid var(--glass-border);
+-  border-radius: 16px;
+-  padding: 18px;
+-  box-shadow: 0 8px 32px rgba(4,9,20,0.5);
+-  backdrop-filter: blur(12px) saturate(1.2);
+-}
+-
+-/* Small specular shine */
+-.glass-box .specular{ position:absolute; right:12px; top:8px; width:80px; height:80px; background: linear-gradient(120deg, rgba(255,255,255,0.05), rgba(255,255,255,0)); transform:rotate(18deg); pointer-events:none; border-radius:50%; }
+-.color-blob{ position:absolute; pointer-events:none; filter: blur(36px); opacity:0.55; }
+-.color-blob.b1{ right:-80px; top:-20px; width:240px; height:140px; background: linear-gradient(90deg, rgba(142,68,173,0.28), rgba(41,121,255,0.18)); }
+-.color-blob.b2{ left:-80px; bottom:-40px; width:220px; height:120px; background: linear-gradient(90deg, rgba(26,188,156,0.28), rgba(255,138,0,0.18)); }
+-
+-/* Buttons: translucent, sheen, focus, pressed states */
+-.stButton>button, .stDownloadButton>button{
+-  background: var(--glass-bg) !important;
+-  color: var(--muted-text) !important;
+-  border: 1px solid var(--glass-border) !important;
+-  padding: 8px 14px !important;
+-  border-radius: 12px !important;
+-  box-shadow: 0 4px 12px rgba(3,7,15,0.45) !important;
+-  backdrop-filter: blur(8px) saturate(1.1) !important;
+-  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+-}
+-.stButton>button:hover, .stDownloadButton>button:hover{ transform: translateY(-2px); box-shadow: 0 6px 18px rgba(3,7,15,0.6) !important; background: rgba(255,255,255,0.08) !important; }
+-.stButton>button:active, .stDownloadButton>button:active{ transform: translateY(0); box-shadow: 0 2px 6px rgba(0,0,0,0.45); }
+-
+-/* Large icon container */
+-.icon{ display:inline-flex; align-items:center; justify-content:center; }
+-.icon svg{ width:100%; height:100%; stroke:currentColor; fill:none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+-.icon.animate svg .draw{ stroke-dashoffset:0; transition: stroke-dashoffset 0.6s ease-out; }
+-
+-/* Title animation gradient */
+-.consumidia-title{ font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; font-weight:800; font-size:36px; background: linear-gradient(90deg, #8e44ad, #2979ff, #1abc9c, #ff8a00); -webkit-background-clip: text; background-clip: text; color:transparent; display:inline-block; animation: hue 6s linear infinite; }
+-@keyframes hue{ 0%{ filter:hue-rotate(0deg);} 100%{ filter:hue-rotate(360deg);} }
+-
+-/* Make dataframes more readable */
+-[data-testid='stDataFrameContainer']{ background:transparent !important; }
+-
+-/* Reduce red severity for Streamlit error boxes by tonalizing them (keeps accessibility) */
+-.stAlert[data-alert='error']{ background: rgba(255,77,79,0.06); border-color: rgba(255,77,79,0.12); }
+-'''
+-
+-# write default CSS file if missing so user can edit later
+-try:
+-    p = Path("style.css")
+-    if not p.exists():
+-        p.write_text(DEFAULT_CSS, encoding='utf-8')
+-except Exception:
+-    pass
+-
+-# -------------------------
+-# Page config
+-# -------------------------
+-st.set_page_config(page_title="CONSUMIDIA", layout="wide", initial_sidebar_state="expanded")
+-
+-# load css (prefer file so user may edit)
+-css_path = Path("style.css")
+-if css_path.exists():
+-    try:
+-        st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
+-    except Exception:
+-        st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
+-else:
+-    st.markdown(f"<style>{DEFAULT_CSS}</style>", unsafe_allow_html=True)
+-
+-# -------------------------
+-# Helpers: users + auth
+-# -------------------------
+-USERS_FILE = "users.json"
+-
+-def load_users():
+-    if os.path.exists(USERS_FILE):
+-        try:
+-            with open(USERS_FILE, "r", encoding="utf-8") as f:
+-                obj = json.load(f)
+-                return obj if isinstance(obj, dict) else {}
+-        except Exception:
+-            return {}
+-    return {}
+-
+-def save_users(users):
+-    with open(USERS_FILE, "w", encoding="utf-8") as f:
+-        json.dump(users, f, ensure_ascii=False, indent=2)
+-
+-def gen_password(length=8):
+-    choices = string.ascii_letters + string.digits
+-    return ''.join(random.choice(choices) for _ in range(length))
+-
+-# -------------------------
+-# Sistema de Favoritos (Adicionado para a nova Busca)
+-# -------------------------
+-def get_session_favorites():
+-    """Retorna a lista de favoritos da sessão atual."""
+-    return st.session_state.get("favorites", [])
+-
+-def add_to_favorites(result_data):
+-    """Adiciona um resultado aos favoritos na sessão."""
+-    favorites = get_session_favorites()
+-    result_id = f"{int(time.time())}_{random.randint(1000,9999)}"
+-    favorite_item = {
+-        "id": result_id,
+-        "data": result_data,
+-        "added_at": datetime.utcnow().isoformat()
+-    }
+-    # Checagem de duplicatas mais robusta, ignorando a chave de usuário na comparação
+-    temp_data_to_check = result_data.copy()
+-    temp_data_to_check.pop('_artemis_username', None)
+-
+-    existing_contents = []
+-    for fav in favorites:
+-        temp_existing = fav["data"].copy()
+-        temp_existing.pop('_artemis_username', None)
+-        existing_contents.append(json.dumps(temp_existing, sort_keys=True))
+-
+-    if json.dumps(temp_data_to_check, sort_keys=True) not in existing_contents:
+-        favorites.append(favorite_item)
+-        st.session_state.favorites = favorites
+-        return True
+-    return False
+-
+-def remove_from_favorites(favorite_id):
+-    """Remove um favorito da lista na sessão."""
+-    favorites = get_session_favorites()
+-    new_favorites = [fav for fav in favorites if fav["id"] != favorite_id]
+-    st.session_state.favorites = new_favorites
+-    return len(new_favorites) != len(favorites)
+-
+-def clear_all_favorites():
+-    """Remove todos os favoritos da sessão."""
+-    st.session_state.favorites = []
+-    return True
+-
+-# -------------------------
+-# Color palette (pt -> hex)
+-# -------------------------
+-PALETA = {
+-    "verde": "#00c853",
+-    "laranja": "#ff8a00",
+-    "amarelo": "#ffd600",
+-    "vermelho": "#ff3d00",
+-    "azul": "#2979ff",
+-    "roxo": "#8e44ad",
+-    "cinza": "#7f8c8d",
+-    "preto": "#000000",
+-    "turquesa": "#1abc9c"
+-}
+-
+-def normalize_color(name_or_hex: str):
+-    if not name_or_hex:
+-        return None
+-    s = str(name_or_hex).strip().lower()
+-    if s in PALETA:
+-        return PALETA[s]
+-    if re.match(r"^#([0-9a-f]{3}|[0-9a-f]{6})$", s):
+-        return s
+-    return s
+-
+-# -------------------------
+-# Session defaults
+-# -------------------------
+-for k, v in {
+-    "authenticated": False,
+-    "username": None,
+-    "user_obj": None,
+-    "df": None,
+-    "G": nx.Graph(),
+-    "notes": "",
+-    "autosave": False,
+-    "page": "planilha",
+-    "restored_from_saved": False,
+-    "favorites": [] # Adicionado para a nova Busca
+-}.items():
+-    if k not in st.session_state:
+-        st.session_state[k] = v
+-
+-# -------------------------
+-# Per-user state helpers
+-# -------------------------
+-def user_state_file(username):
+-    return f"artemis_state_{username}.json"
+-
+-def user_backup_dir(username):
+-    p = Path("backups") / username
+-    p.mkdir(parents=True, exist_ok=True)
+-    return p
+-
+-def save_state_for_user(username):
+-    path = user_state_file(username)
+-    backup_path = None
+-    try:
+-        if st.session_state.df is not None:
+-            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+-            safe = re.sub(r"[^\w\-_.]", "_", st.session_state.get("uploaded_name") or "planilha")
+-            backup_filename = f"{safe}_{ts}.csv"
+-            backup_path = str((user_backup_dir(username) / backup_filename).resolve())
+-            st.session_state.df.to_csv(backup_path, index=False, encoding="utf-8")
+-    except Exception:
+-        backup_path = None
+-    data = {
+-        "graph": json_graph.node_link_data(st.session_state.G),
+-        "notes": st.session_state.notes,
+-        "uploaded_name": st.session_state.get("uploaded_name", None),
+-        "backup_csv": backup_path,
+-        "saved_at": datetime.utcnow().isoformat(),
+-        "favorites": st.session_state.get("favorites", []) # Adicionado para a nova Busca
+-    }
+-    with open(path, "w", encoding="utf-8") as f:
+-        json.dump(data, f, indent=2, ensure_ascii=False)
+-    return path
+-
+-def load_state_for_user(username, load_backup_csv=True):
+-    path = user_state_file(username)
+-    if not os.path.exists(path):
+-        return False
+-    with open(path, "r", encoding="utf-8") as f:
+-        try:
+-            meta = json.load(f)
+-        except Exception:
+-            return False
+-    try:
+-        st.session_state.G = json_graph.node_link_graph(meta.get("graph", {}))
+-    except Exception:
+-        st.session_state.G = nx.Graph()
+-    st.session_state.notes = meta.get("notes", "")
+-    st.session_state.uploaded_name = meta.get("uploaded_name", None)
+-    st.session_state.favorites = meta.get("favorites", []) # Adicionado para a nova Busca
+-    backup_csv = meta.get("backup_csv")
+-    if load_backup_csv and backup_csv and os.path.exists(backup_csv):
+-        try:
+-            st.session_state.df = pd.read_csv(backup_csv, encoding="utf-8")
+-        except Exception:
+-            try:
+-                st.session_state.df = pd.read_csv(backup_csv, encoding="latin1")
+-            except Exception:
+-                st.session_state.df = None
+-    st.session_state.restored_from_saved = True
+-    return True
+-
+-# -------------------------
+-# Robust spreadsheet reader
+-# -------------------------
+-def read_spreadsheet(uploaded_file):
+-    b = uploaded_file.read()
+-    buf = io.BytesIO(b)
+-    name = uploaded_file.name.lower()
+-    if name.endswith(".csv"):
+-        for enc in ("utf-8", "latin1", "cp1252"):
+-            try:
+-                buf.seek(0)
+-                return pd.read_csv(buf, encoding=enc)
+-            except Exception:
+-                continue
+-        buf.seek(0)
+-        return pd.read_csv(buf, engine="python", on_bad_lines="skip")
+-    else:
+-        buf.seek(0)
+-        return pd.read_excel(buf)
+-
+-# -------------------------
+-# Graph creation + plotly 3D
+-# -------------------------
+-def criar_grafo(df):
+-    G = nx.Graph()
+-    if df is None:
+-        return G
+-    cols_lower = {c.lower(): c for c in df.columns}
+-    for _, row in df.iterrows():
+-        autor = str(row.get(cols_lower.get("autor", ""), "") or "").strip()
+-        titulo = str(row.get(cols_lower.get("título", cols_lower.get("titulo", "")), "") or "").strip()
+-        ano = str(row.get(cols_lower.get("ano", ""), "") or "").strip()
+-        tema = str(row.get(cols_lower.get("tema", ""), "") or "").strip()
+-        if autor:
+-            k = f"Autor: {autor}"
+-            G.add_node(k, tipo="Autor", label=autor)
+-        if titulo:
+-            k = f"Título: {titulo}"
+-            G.add_node(k, tipo="Título", label=titulo)
+-        if ano:
+-            k = f"Ano: {ano}"
+-            G.add_node(k, tipo="Ano", label=ano)
+-        if tema:
+-            k = f"Tema: {tema}"
+-            G.add_node(k, tipo="Tema", label=tema)
+-        if autor and titulo:
+-            G.add_edge(f"Autor: {autor}", f"Título: {titulo}")
+-        if titulo and ano:
+-            G.add_edge(f"Título: {titulo}", f"Ano: {ano}")
+-        if titulo and tema:
+-            G.add_edge(f"Título: {titulo}", f"Tema: {tema}")
+-    return G
+-
+-
+-def graph_to_plotly_3d(G, show_labels=False, height=600):
+-    if len(G.nodes()) == 0:
+-        fig = go.Figure()
+-        fig.update_layout(height=height, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+-        return fig
+-    pos = nx.spring_layout(G, dim=3, seed=42)
+-    degrees = dict(G.degree())
+-    deg_values = [degrees.get(n, 1) for n in G.nodes()]
+-    min_deg, max_deg = min(deg_values), max(deg_values)
+-    node_sizes = [8 + ((d - min_deg) / (max_deg - min_deg + 1e-6)) * 18 for d in deg_values]
+-    x_nodes = [pos[n][0] for n in G.nodes()]
+-    y_nodes = [pos[n][1] for n in G.nodes()]
+-    z_nodes = [pos[n][2] for n in G.nodes()]
+-    x_edges, y_edges, z_edges = [], [], []
+-    for e in G.edges():
+-        x_edges += [pos[e[0]][0], pos[e[1]][0], None]
+-        y_edges += [pos[e[0]][1], pos[e[1]][1], None]
+-        z_edges += [pos[e[0]][2], pos[e[1]][2], None]
+-    color_map = {"Autor": PALETA["verde"], "Título": PALETA["roxo"], "Ano": PALETA["azul"], "Tema": PALETA["laranja"]}
+-    node_colors = [color_map.get(G.nodes[n].get("tipo", ""), PALETA["vermelho"]) for n in G.nodes()]
+-    labels = [G.nodes[n].get("label", str(n)) for n in G.nodes()]
+-    hover = [f"<b>{G.nodes[n].get('label','')}</b><br>Tipo: {G.nodes[n].get('tipo','')}" for n in G.nodes()]
+-    edge_trace = go.Scatter3d(
+-        x=x_edges, y=y_edges, z=z_edges, mode="lines",
+-        line=dict(color="rgba(200,200,200,0.12)", width=1.2), hoverinfo="none"
+-    )
+-    node_trace = go.Scatter3d(
+-        x=x_nodes, y=y_nodes, z=z_nodes,
+-        mode="markers+text" if show_labels else "markers",
+-        marker=dict(size=node_sizes, color=node_colors, opacity=0.95, line=dict(width=1)),
+-        hovertext=hover, hoverinfo="text",
+-        text=labels if show_labels else None, textposition="top center"
+-    )
+-    legend_items = []
+-    for label, cor in [("Autor", PALETA["verde"]), ("Título", PALETA["roxo"]), ("Ano", PALETA["azul"]), ("Tema", PALETA["laranja"])]:
+-        legend_items.append(go.Scatter3d(x=[None], y=[None], z=[None], mode="markers",
+-                                        marker=dict(size=8, color=cor), name=label))
+-    fig = go.Figure(data=[edge_trace, node_trace] + legend_items)
+-    fig.update_layout(
+-        scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False), bgcolor="rgba(0,0,0,0)"),
+-        margin=dict(l=0, r=0, t=20, b=0), height=height,
+-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+-        legend=dict(font=dict(color="#d6d9dc"), orientation="h", y=1.05, x=0.02)
+-    )
+-    fig.update_layout(scene_camera=dict(eye=dict(x=1.2, y=1.2, z=1.2)))
+-    return fig
+-
+-# -------------------------
+-# PDF with highlights (returns bytes)
+-# -------------------------
+-def _safe_for_pdf(s: str):
+-    if s is None:
+-        return ""
+-    s2 = s.replace("—", "-").replace("–", "-")
+-    return s2.encode("latin-1", "replace").decode("latin-1")
+-
+-def generate_pdf_with_highlights(texto, highlight_hex="#ffd600"):
+-    pdf = FPDF()
+-    pdf.set_auto_page_break(auto=True, margin=12)
+-    pdf.add_page()
+-    pdf.set_font("Arial", size=12)
+-    for linha in (texto or "").split("\n"):
+-        parts = re.split(r"(==.*?==)", linha)
+-        for part in parts:
+-            if not part:
+-                continue
+-            if part.startswith("==") and part.endswith("=="):
+-                inner = part[2:-2]
+-                inner_safe = _safe_for_pdf(inner)
+-                hexv = (highlight_hex or "#ffd600").lstrip("#")
+-                if len(hexv) == 3:
+-                    hexv = ''.join([c*2 for c in hexv])
+-                try:
+-                    r, g, b = int(hexv[0:2], 16), int(hexv[2:4], 16), int(hexv[4:6], 16)
+-                except Exception:
+-                    r, g, b = (255, 214, 0)
+-                pdf.set_fill_color(r, g, b)
+-                pdf.set_text_color(0, 0, 0)
+-                w = pdf.get_string_width(inner_safe) + 2
+-                pdf.cell(w, 6, txt=inner_safe, border=0, ln=0, fill=True)
+-                pdf.set_text_color(0, 0, 0)
+-            else:
+-                if part:
+-                    safe_part = _safe_for_pdf(part)
+-                    pdf.set_text_color(0, 0, 0)
+-                    pdf.cell(pdf.get_string_width(safe_part), 6, txt=safe_part, border=0, ln=0)
+-        pdf.ln(6)
+-    raw = pdf.output(dest="S")
+-    if isinstance(raw, str):
+-        return raw.encode("latin-1", "replace")
+-    elif isinstance(raw, (bytes, bytearray)):
+-        return bytes(raw)
+-    else:
+-        return str(raw).encode("latin-1", "replace")
+-
+-# -------------------------
+-# ICONS + animation helper
+-# -------------------------
+-ICON_KEYS = [
+-    "login","register","planilha","mapa","anotacoes","graficos",
+-    "save","logout","restore","download_backup","upload_file","export",
+-    "add_node","del_node","rename_node","down_pdf","busca",
+-    "favoritos", "trash", "attachment"
+-]
+-for k in ICON_KEYS:
+-    if f"anim_ts_{k}" not in st.session_state:
+-        st.session_state[f"anim_ts_{k}"] = 0.0
+-
+-def _now():
+-    return time.time()
+-
+-def mark_icon_animate(key):
+-    st.session_state[f"anim_ts_{key}"] = _now()
+-
+-ICON_SVGS = {
+-    "planilha": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect class="draw" x="2" y="3" width="20" height="18" rx="2"/><path class="draw" d="M7 8h10M7 12h10M7 16h10"/></svg>',
+-    "anotacoes": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M3 21v-3a4 4 0 0 1 4-4h2l6-6 4 4-6 6" /><path class="draw pen" d="M14 7l3 3" /><path class="draw" d="M6 18l4-4"/></svg>',
+-    "mapa": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline class="draw" points="3 6 9 3 15 6 21 3"/><polyline class="draw" points="3 18 9 15 15 18 21 15"/><line class="draw" x1="9" y1="3" x2="9" y2="15"/></svg>',
+-    "graficos": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect class="draw" x="3" y="10" width="4" height="10" rx="1"/><rect class="draw" x="9" y="6" width="4" height="14" rx="1"/><rect class="draw" x="15" y="2" width="4" height="18" rx="1"/></svg>',
+-    "save": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M5 21h14a1 1 0 0 0 1-1V7L16 3H8L4 7v13a1 1 0 0 0 1 1z"/><path class="draw" d="M9 9h6v6H9z"/></svg>',
+-    "logout": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path class="draw" d="M16 17l5-5-5-5"/><path class="draw" d="M21 12H9"/></svg>',
+-    "upload_file": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline class="draw" points="17 8 12 3 7 8"/><line class="draw" x1="12" y1="3" x2="12" y2="15"/></svg>',
+-    "download_backup": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline class="draw" points="7 10 12 15 17 10"/><line class="draw" x1="12" y1="15" x2="12" y2="3"/></svg>',
+-    "export": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M12 3v12"/><polyline class="draw" points="8 7 12 3 16 7"/><rect class="draw" x="3" y="15" width="18" height="6" rx="1"/></svg>',
+-    "add_node": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle class="draw" cx="12" cy="12" r="9"/><line class="draw" x1="12" y1="8" x2="12" y2="16"/><line class="draw" x1="8" y1="12" x2="16" y2="12"/></svg>',
+-    "del_node": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle class="draw" cx="12" cy="12" r="9"/><line class="draw" x1="9" y1="9" x2="15" y2="15"/><line class="draw" x1="15" y1="9" x2="9" y2="15"/></svg>',
+-    "rename_node": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M3 21v-3a4 4 0 0 1 4-4h2"/><path class="draw" d="M14 7l3 3"/><path class="draw" d="M10 14l6-6"/></svg>',
+-    "down_pdf": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline class="draw" points="7 10 12 15 17 10"/></svg>',
+-    "login": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M12 2a5 5 0 0 1 5 5v3"/><path class="draw" d="M21 21v-6a4 4 0 0 0-4-4H7"/></svg>',
+-    "register": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle class="draw" cx="12" cy="8" r="3"/><path class="draw" d="M21 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/></svg>',
+-    "restore": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 12a9 9 0 1 1-3-6.7"/><polyline class="draw" points="21 6 21 12 15 12"/></svg>',
+-    "busca": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="6"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+-    "favoritos": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
+-    "trash": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
+-    "attachment": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>'
+-}
+-
+-def icon_html_svg(key, extra_class="", size=36, color=None):
+-    svg = ICON_SVGS.get(key, "")
+-    ts = st.session_state.get(f"anim_ts_{key}", 0.0)
+-    animate = (_now() - ts) < 1.8
+-    classes = f"icon {key}"
+-    if extra_class: classes += " " + extra_class
+-    if animate: classes += " animate"
+-    col = color or "var(--icon-color)"
+-    style = f"color:{col}; width:{size}px; height:{size}px; display:inline-block; vertical-align:middle;"
+-    return f'<span class="{classes}" style="{style}">{svg}</span>'
+-
+-# -------------------------
+-# Unified action button helper
+-# -------------------------
+-def action_button(label, icon_key, st_key, expanded_label=None, wide=False):
+-    c_icon, c_btn = st.columns([0.15, 0.85])
+-    with c_icon:
+-        st.markdown(f"<div style='margin-top:6px'>{icon_html_svg(icon_key, size=28)}</div>", unsafe_allow_html=True)
+-    with c_btn:
+-        clicked = st.button(expanded_label or label, key=st_key, use_container_width=True)
+-    if clicked:
+-        mark_icon_animate(icon_key)
+-    return clicked
+-
+-# -------------------------
+-# NAV and UI
+-# -------------------------
+-st.markdown("<div style='display:flex; justify-content:center;'><h1 class='consumidia-title'>CONSUMIDIA</h1></div>", unsafe_allow_html=True)
+-
+-users = load_users()
+-
+-if not st.session_state.authenticated:
+-    st.markdown("<div class='glass-box auth' style='max-width:1100px;margin:0 auto; position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
+-    st.subheader("Acesso — Faça login ou cadastre-se")
+-    tabs = st.tabs(["Entrar", "Cadastrar"])
+-    with tabs[0]:
+-        login_user = st.text_input("Usuário", key="ui_login_user")
+-        login_pass = st.text_input("Senha", type="password", key="ui_login_pass")
+-        if st.button("Entrar", "btn_login_main"):
+-            if login_user and login_user in users and users[login_user].get("password") == login_pass:
+-                st.session_state.authenticated = True
+-                st.session_state.username = login_user
+-                st.session_state.user_obj = users[login_user]
+-                st.rerun()
+-            else:
+-                st.warning("Usuário ou senha incorretos.")
+-    with tabs[1]:
+-        reg_name = st.text_input("Nome completo", key="ui_reg_name")
+-        reg_bolsa = st.selectbox("Tipo de bolsa", ["IC - Iniciação Científica", "BIA - Bolsa de Incentivo Acadêmico", "Extensão", "Doutorado"], key="ui_reg_bolsa")
+-        reg_user = st.text_input("Escolha um username", key="ui_reg_user")
+-        if st.button("Cadastrar", "btn_register_main"):
+-            if not reg_user or not reg_user.strip():
+-                st.warning("Escolha um username válido.")
+-            elif reg_user in users:
+-                st.warning("Username já existe.")
+-            else:
+-                pwd = gen_password(8)
+-                users[reg_user] = {"name": reg_name or reg_user, "scholarship": reg_bolsa, "password": pwd, "created_at": datetime.utcnow().isoformat()}
+-                save_users(users)
+-                st.success(f"Usuário criado. Username: **{reg_user}** — Senha gerada: **{pwd}**")
+-                st.info("Anote a senha.")
+-    st.markdown("</div>", unsafe_allow_html=True)
+-    st.stop()
+-
+-
+-# -------------------------
+-# After auth: per-user variables
+-# -------------------------
+-USERNAME = st.session_state.username
+-USER_OBJ = st.session_state.user_obj or users.get(USERNAME, {})
+-USER_STATE = user_state_file(USERNAME)
+-
+-# try auto restore
+-if not st.session_state.restored_from_saved and os.path.exists(USER_STATE):
+-    try:
+-        load_state_for_user(USERNAME)
+-        st.success("Estado salvo do usuário restaurado automaticamente.")
+-    except Exception:
+-        pass
+-
+-# -------------------------
+-# Módulo de Mensagens (Carregamento inicial para notificação)
+-# -------------------------
+-MESSAGES_PATH = Path("messages.json")
+-UNREAD_COUNT = 0
+-try:
+-    if MESSAGES_PATH.exists():
+-        with open(MESSAGES_PATH, "r", encoding="utf-8") as mf:
+-            all_msgs = json.load(mf)
+-            UNREAD_COUNT = sum(1 for m in all_msgs if m.get("to") == USERNAME and not m.get("read"))
+-except Exception:
+-    UNREAD_COUNT = 0
+-
+-if "last_unread_count" not in st.session_state:
+-    st.session_state.last_unread_count = 0
+-if UNREAD_COUNT > st.session_state.last_unread_count:
+-    try:
+-        st.toast(f"Você tem {UNREAD_COUNT} nova(s) mensagem(ns) não lida(s).", icon="✉️")
+-    except Exception:
+-        pass
+-st.session_state.last_unread_count = UNREAD_COUNT
+-
+-mens_label = f"✉️ Mensagens ({UNREAD_COUNT})" if UNREAD_COUNT > 0 else "✉️ Mensagens"
+-
+-# -------------------------
+-# Top controls + nav
+-# -------------------------
+-st.markdown("<div class='glass-box' style='padding-top:10px; padding-bottom:10px;'><div class='specular'></div>", unsafe_allow_html=True)
+-
+-top1, top2 = st.columns([0.6, 0.4])
+-with top1:
+-    st.markdown(f"<div style='color:var(--muted-text);font-weight:700; padding-top:8px;'>Usuário: {USER_OBJ.get('name','')} — {USER_OBJ.get('scholarship','')}</div>", unsafe_allow_html=True)
+-with top2:
+-    nav_right1, nav_right2, nav_right3 = st.columns([1,1,1])
+-    with nav_right1:
+-        ui_aut = st.checkbox("Auto-save", value=st.session_state.autosave, key="ui_autosave")
+-        st.session_state.autosave = ui_aut
+-    with nav_right2:
+-        if st.button("💾 Salvar", key=f"btn_save_now", use_container_width=True):
+-            p = save_state_for_user(USERNAME)
+-            st.success(f"Progresso salvo.")
+-    with nav_right3:
+-        if st.button("🚪 Sair", key=f"btn_logout", use_container_width=True):
+-            for key in list(st.session_state.keys()): del st.session_state[key]
+-            st.rerun()
+-
+-st.markdown("<div style='margin-top:-20px'>", unsafe_allow_html=True)
+-nav1, nav2, nav3, nav4, nav5, nav6 = st.columns(6)
+-with nav1:
+-    if st.button("📄 Planilha", key="nav_planilha", use_container_width=True):
+-        st.session_state.page = "planilha"
+-        st.rerun()
+-with nav2:
+-    if st.button("🗺️ Mapa", key="nav_mapa", use_container_width=True):
+-        st.session_state.page = "mapa"
+-        st.rerun()
+-with nav3:
+-    if st.button("📝 Anotações", key="nav_anotacoes", use_container_width=True):
+-        st.session_state.page = "anotacoes"
+-        st.rerun()
+-with nav4:
+-    if st.button("📊 Gráficos", key="nav_graficos", use_container_width=True):
+-        st.session_state.page = "graficos"
+-        st.rerun()
+-with nav5:
+-    if st.button("🔍 Busca", key="nav_busca", use_container_width=True):
+-        st.session_state.page = "busca"
+-        st.rerun()
+-with nav6:
+-    if st.button(mens_label, key="nav_mensagens", use_container_width=True):
+-        st.session_state.page = "mensagens"
+-        st.rerun()
+-st.markdown("</div></div>", unsafe_allow_html=True)
+-st.markdown("---")
+-
+-
+-# -------------------------
+-# Page content dispatcher
+-# -------------------------
+-if st.session_state.page == "planilha":
+-    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
+-    st.subheader("Planilha / Backup")
+-    col1, col2 = st.columns([1,3])
+-    with col1:
+-        if st.button("Restaurar estado salvo", key="btn_restore_state"):
+-            ok = load_state_for_user(USERNAME)
+-            if ok:
+-                st.success("Estado salvo restaurado (grafo + anotações).")
+-            else:
+-                st.info("Nenhum estado salvo encontrado.")
+-    with col2:
+-        meta = None
+-        if os.path.exists(USER_STATE):
+-            try:
+-                with open(USER_STATE, "r", encoding="utf-8") as f:
+-                    meta = json.load(f)
+-            except Exception:
+-                meta = None
+-        if meta and meta.get("backup_csv") and os.path.exists(meta.get("backup_csv")):
+-            st.write("Backup CSV encontrado:")
+-            st.text(meta.get("backup_csv"))
+-            with open(meta.get("backup_csv"), "rb") as fp:
+-                st.download_button("⬇ Baixar backup CSV", data=fp, file_name=os.path.basename(meta.get("backup_csv")), mime="text/csv")
+-        else:
+-            st.write("Nenhum backup CSV automático encontrado ainda.")
+-
+-    uploaded = st.file_uploader("Carregue .csv ou .xlsx (cada linha será um nó)", type=["csv", "xlsx"], key=f"u_{USERNAME}")
+-    if uploaded:
+-        try:
+-            df = read_spreadsheet(uploaded)
+-            st.session_state.df = df
+-            st.session_state.uploaded_name = uploaded.name
+-            st.session_state.G = criar_grafo(df)
+-            st.success("Planilha carregada com sucesso.")
+-            if st.session_state.autosave:
+-                save_state_for_user(USERNAME)
+-        except Exception as e:
+-            st.error(f"Erro ao ler planilha: {e}")
+-
+-    if st.session_state.df is not None:
+-        st.write("Visualização da planilha:")
+-        st.dataframe(st.session_state.df, use_container_width=True)
+-    st.markdown("</div>", unsafe_allow_html=True)
+-
+-elif st.session_state.page == "mapa":
+-    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
+-    st.subheader("Mapa Mental 3D — Editor")
+-
+-    if st.session_state.G.nodes():
+-        with st.expander("Editar Nós do Mapa"):
+-            left, right = st.columns([2,1])
+-            with left:
+-                new_node = st.text_input("Nome do novo nó", value="", key=f"nm_name_{USERNAME}")
+-                new_tipo = st.selectbox("Tipo", ["Outro", "Autor", "Título", "Ano", "Tema"], index=0, key=f"nm_tipo_{USERNAME}")
+-                connect_to = st.selectbox("Conectar a (opcional)", options=["Nenhum"] + list(st.session_state.G.nodes), index=0, key=f"nm_connect_{USERNAME}")
+-                if st.button("Adicionar nó", key=f"btn_add_{USERNAME}"):
+-                    n = new_node.strip()
+-                    if not n: st.warning("Nome inválido.")
+-                    elif n in st.session_state.G.nodes: st.warning("Nó já existe.")
+-                    else:
+-                        st.session_state.G.add_node(n, tipo=new_tipo, label=n)
+-                        if connect_to != "Nenhum":
+-                            st.session_state.G.add_edge(n, connect_to)
+-                        st.success(f"Nó '{n}' adicionado.")
+-                        if st.session_state.autosave: save_state_for_user(USERNAME)
+-                        st.rerun()
+-            with right:
+-                del_n = st.selectbox("Excluir nó", options=[""] + list(st.session_state.G.nodes), key=f"del_{USERNAME}")
+-                if st.button("Excluir nó", key=f"btn_del_{USERNAME}"):
+-                    if del_n and del_n in st.session_state.G:
+-                        st.session_state.G.remove_node(del_n)
+-                        st.success(f"Nó '{del_n}' removido.")
+-                        if st.session_state.autosave: save_state_for_user(USERNAME)
+-                        st.rerun()
+-                st.markdown("---")
+-                r_old = st.selectbox("Renomear: selecione nó", options=[""] + list(st.session_state.G.nodes), key=f"r_old_{USERNAME}")
+-                r_new = st.text_input("Novo nome", key=f"r_new_{USERNAME}")
+-                if st.button("Renomear", key=f"btn_ren_{USERNAME}"):
+-                    if r_old and r_new and r_old in st.session_state.G and r_new not in st.session_state.G:
+-                        nx.relabel_nodes(st.session_state.G, {r_old: r_new}, copy=False)
+-                        st.success(f"'{r_old}' → '{r_new}'")
+-                        if st.session_state.autosave: save_state_for_user(USERNAME)
+-                        st.rerun()
+-
+-    st.markdown("### Visualização 3D")
+-    try:
+-        fig = graph_to_plotly_3d(st.session_state.G, show_labels=False, height=700)
+-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
+-    except Exception as e:
+-        st.error(f"Erro ao renderizar grafo: {e}")
+-    st.markdown("</div>", unsafe_allow_html=True)
+-
+-elif st.session_state.page == "anotacoes":
+-    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
+-    st.subheader("Anotações com Marca-texto")
+-    st.info("Use ==texto== para marcar (destacar) trechos que serão realçados no PDF.")
+-    notes = st.text_area("Digite suas anotações (use ==texto== para destacar)", value=st.session_state.notes, height=260, key=f"notes_{USERNAME}")
+-    st.session_state.notes = notes
+-
+-    pdf_bytes = generate_pdf_with_highlights(st.session_state.notes)
+-    st.download_button("Baixar Anotações (PDF)", data=pdf_bytes, file_name="anotacoes_consumidia.pdf", mime="application/pdf")
+-
+-    st.markdown("</div>", unsafe_allow_html=True)
+-
+-elif st.session_state.page == "graficos":
+-    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
+-    st.subheader("Gráficos Personalizados")
+-    if st.session_state.df is None:
+-        st.warning("Carregue uma planilha na aba 'Planilha' para gerar gráficos.")
+-    else:
+-        df = st.session_state.df.copy()
+-        cols = df.columns.tolist()
+-        c1, c2 = st.columns(2)
+-        with c1:
+-            eixo_x = st.selectbox("Eixo X", options=cols, index=0, key=f"x_{USERNAME}")
+-        with c2:
+-            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+-            eixo_y = st.selectbox("Eixo Y (Opcional)", options=[None] + numeric_cols, key=f"y_{USERNAME}")
+-
+-        if st.button("Gerar Gráfico"):
+-            try:
+-                if eixo_y:
+-                    fig = px.bar(df, x=eixo_x, y=eixo_y, title=f"{eixo_y} por {eixo_x}")
+-                else:
+-                    fig = px.histogram(df, x=eixo_x, title=f"Contagem por {eixo_x}")
+-
+-                fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#d6d9dc"))
+-                st.plotly_chart(fig, use_container_width=True)
+-            except Exception as e:
+-                st.error(f"Erro ao gerar gráficos: {e}")
+-    st.markdown("</div>", unsafe_allow_html=True)
+-
+-elif st.session_state.page == "busca":
+-    st.markdown("<div class='glass-box' style='position:relative; padding:12px;'><div class='specular'></div>", unsafe_allow_html=True)
+-
+-    tab_busca, tab_favoritos = st.tabs(["🔍 Busca Inteligente", f"⭐ Favoritos ({len(get_session_favorites())})"])
+-
+-    with tab_busca:
+-        st.header("Busca Inteligente")
+-
+-        @st.cache_data(ttl=300)
+-        def collect_latest_backups():
+-            base = Path("backups")
+-            if not base.exists():
+-                return None
+-            dfs = []
+-            for user_dir in sorted(base.iterdir()):
+-                if not user_dir.is_dir(): continue
+-                csvs = sorted(user_dir.glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
+-                if not csvs: continue
+-                latest = csvs[0]
+-                try:
+-                    df = pd.read_csv(latest, encoding="utf-8", on_bad_lines='skip')
+-                    df["_artemis_username"] = user_dir.name
+-                    dfs.append(df)
+-                except Exception:
+-                    continue
+-            return pd.concat(dfs, ignore_index=True) if dfs else None
+-
+-        backups_df = collect_latest_backups()
+-
+-        if backups_df is None:
+-            st.warning("Nenhum backup de usuário encontrado para a busca. Salve seu progresso para criar um.")
+-        else:
+-            all_cols = [c for c in backups_df.columns if c != '_artemis_username']
+-
+-            col1, col2, col3 = st.columns([0.6, 0.25, 0.15])
+-            with col1:
+-                query = st.text_input("Termo de busca", key="ui_query_search", placeholder="Digite palavras-chave...")
+-            with col2:
+-                search_col = st.selectbox("Buscar em", options=all_cols, label_visibility="visible")
+-            with col3:
+-                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+-                search_clicked = st.button("Buscar", use_container_width=True)
+-
+-            if 'search_results' not in st.session_state:
+-                st.session_state.search_results = pd.DataFrame()
+-
+-            if search_clicked:
+-                if query and search_col:
+-                    results = backups_df[backups_df[search_col].astype(str).str.contains(query, case=False, na=False)]
+-                    st.session_state.search_results = results
+-                else:
+-                    st.session_state.search_results = pd.DataFrame()
+-
+-            results_df = st.session_state.search_results
+-            if not results_df.empty:
+-                st.markdown(f"**{len(results_df)} resultado(s) encontrado(s).** Exibindo os 20 primeiros.")
+-                st.markdown("---")
+-
+-                for idx, row in results_df.head(20).iterrows():
+-                    with st.container(border=True):
+-                        result_data = row.to_dict()
+-                        username = result_data.get('_artemis_username', 'N/A')
+-                        col_info, col_action = st.columns([0.8, 0.2])
+-                        with col_info:
+-                            user_icon_svg = icon_html_svg('register', size=18, color='var(--muted-text)')
+-                            st.markdown(f"""
+-                            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--muted-text);">
+-                                {user_icon_svg}
+-                                <span>Encontrado no trabalho de <strong style="color: #e1e3e6;">{username}</strong></span>
+-                            </div>
+-                            """, unsafe_allow_html=True)
+-                            display_data = result_data.copy()
+-                            display_data.pop('_artemis_username', None)
+-                            for k, v in display_data.items():
+-                                st.markdown(f"**{str(k).capitalize()}:** {v}")
+-
+-                        with col_action:
+-                            if action_button("Favoritar", "favoritos", f"fav_{idx}", wide=True):
+-                                if add_to_favorites(result_data):
+-                                    st.toast("Adicionado!", icon="⭐")
+-                                    save_state_for_user(USERNAME)
+-                                else:
+-                                    st.toast("Já está nos favoritos.")
+-            elif search_clicked:
+-                st.info("Nenhum resultado encontrado para a sua busca.")
+-
+-    with tab_favoritos:
+-        st.header("Seus Resultados Salvos")
+-        favorites = get_session_favorites()
+-
+-        if not favorites:
+-            st.info("Você ainda não favoritou nenhum resultado.")
+-        else:
+-            _, col_clear = st.columns([0.7, 0.3])
+-            with col_clear:
+-                if action_button("Limpar Todos", "trash", "clear_favs", wide=True):
+-                    clear_all_favorites()
+-                    save_state_for_user(USERNAME)
+-                    st.rerun()
+-
+-            st.markdown("---")
+-            sorted_favorites = sorted(favorites, key=lambda x: x['added_at'], reverse=True)
+-
+-            for fav in sorted_favorites:
+-                with st.container(border=True):
+-                    col_info, col_action = st.columns([0.8, 0.2])
+-                    with col_info:
+-                        fav_data = fav['data'].copy()
+-                        source_user = fav_data.pop('_artemis_username', 'N/A')
+-
+-                        user_icon_svg = icon_html_svg('register', size=18, color='var(--muted-text)')
+-                        st.markdown(f"""
+-                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--muted-text);">
+-                            {user_icon_svg}
+-                            <span>Proveniente do trabalho de <strong style="color: #e1e3e6;">{source_user}</strong></span>
+-                        </div>
+-                        """, unsafe_allow_html=True)
+-                        for k, v in fav_data.items():
+-                            st.markdown(f"**{k.capitalize()}:** {v}")
+-                    with col_action:
+-                        if action_button("Remover", "trash", f"del_fav_{fav['id']}", wide=True):
+-                            remove_from_favorites(fav['id'])
+-                            save_state_for_user(USERNAME)
+-                            st.rerun()
+-
+-    st.markdown("</div>", unsafe_allow_html=True)
+-
+-# --- [INÍCIO DO MÓDULO DE MENSAGENS CORRIGIDO] ---
+-elif st.session_state.page == "mensagens":
+-    MESSAGES_FILE = "messages.json"
+-    ATTACHMENTS_DIR = Path("user_files")
+-    ATTACHMENTS_DIR.mkdir(exist_ok=True)
+-
+-    def load_all_messages():
+-        if os.path.exists(MESSAGES_FILE):
+-            try:
+-                with open(MESSAGES_FILE, "r", encoding="utf-8") as f:
+-                    return json.load(f)
+-            except Exception:
+-                return []
+-        return []
+-
+-    def save_all_messages(msgs):
+-        with open(MESSAGES_FILE, "w", encoding="utf-8") as f:
+-            json.dump(msgs, f, ensure_ascii=False, indent=2)
+-
+-    def send_message(sender, recipient, subject, body, attachment_file=None):
+-        msgs = load_all_messages()
+-        mid = f"m_{int(time.time())}_{random.randint(1000,9999)}"
+-        entry = {
+-            "id": mid,
+-            "from": sender,
+-            "to": recipient,
+-            "subject": subject or "(sem assunto)",
+-            "body": body,
+-            "ts": datetime.utcnow().isoformat(),
+-            "read": False,
+-            "attachment": None
+-        }
+-        
+-        if attachment_file:
+-            safe_filename = re.sub(r'[^\w\.\-]', '_', attachment_file.name)
+-            unique_filename = f"{int(time.time())}_{sender}_{safe_filename}"
+-            save_path = ATTACHMENTS_DIR / unique_filename
+-            
+-            with open(save_path, "wb") as f:
+-                f.write(attachment_file.getbuffer())
+-            entry["attachment"] = {"name": attachment_file.name, "path": str(save_path)}
+-
+-        msgs.append(entry)
+-        save_all_messages(msgs)
+-        return entry
+-
+-    def get_user_messages(username, box_type='inbox'):
+-        msgs = load_all_messages()
+-        key = "to" if box_type == 'inbox' else "from"
+-        user_msgs = [m for m in msgs if m.get(key) == username]
+-        user_msgs.sort(key=lambda x: x.get("ts", ""), reverse=True)
+-        return user_msgs
+-
+-    def mark_message_read(message_id, username):
+-        msgs = load_all_messages()
+-        changed = False
+-        for m in msgs:
+-            if m.get("id") == message_id and m.get("to") == username:
+-                if not m.get("read"):
+-                    m["read"] = True
+-                    changed = True
+-                break
+-        if changed:
+-            save_all_messages(msgs)
+-        return changed
+-
+-    def delete_message(message_id, username):
+-        msgs = load_all_messages()
+-        msg_to_delete = None
+-        for m in msgs:
+-            if m.get("id") == message_id and (m.get("to") == username or m.get("from") == username):
+-                msg_to_delete = m
+-                break
+-        
+-        if msg_to_delete:
+-            if msg_to_delete.get("attachment"):
+-                try:
+-                    os.remove(msg_to_delete["attachment"]["path"])
+-                except OSError:
+-                    pass
+-            
+-            new_msgs = [m for m in msgs if m.get("id") != message_id]
+-            save_all_messages(new_msgs)
+-            return True
+-        return False
+-
+-    st.markdown("<div class='glass-box' style='position:relative; padding:12px;'><div class='specular'></div>", unsafe_allow_html=True)
+-    st.subheader("Central de Mensagens")
+-
+-    inbox = get_user_messages(USERNAME, 'inbox')
+-    outbox = get_user_messages(USERNAME, 'outbox')
+-
+-    tab_inbox, tab_compose, tab_sent = st.tabs([f"📥 Caixa de Entrada ({UNREAD_COUNT})", "✍️ Escrever Nova", f"📤 Enviadas ({len(outbox)})"])
+-
+-    with tab_inbox:
+-        if not inbox:
+-            st.info("Sua caixa de entrada está vazia.")
+-        else:
+-            for m in inbox:
+-                is_read = m.get("read", False)
+-                expander_label = f"{'✅' if is_read else '🔵'} De: **{m.get('from')}** | Assunto: **{m.get('subject')}**"
+-                with st.expander(expander_label):
+-                    st.markdown(f"**Recebido em:** `{m.get('ts')}`")
+-                    st.markdown("---")
+-                    st.markdown(m.get("body"))
+-                    
+-                    if not is_read:
+-                        mark_message_read(m.get('id'), USERNAME)
+-                        st.rerun()
+-
+-                    if m.get("attachment"):
+-                        attachment_info = m["attachment"]
+-                        st.markdown("---")
+-                        try:
+-                            with open(attachment_info["path"], "rb") as fp:
+-                                st.download_button(
+-                                    label=f"⬇️ Baixar Anexo: {attachment_info['name']}",
+-                                    data=fp,
+-                                    file_name=attachment_info["name"],
+-                                    key=f"dl_{m.get('id')}"
+-                                )
+-                        except FileNotFoundError:
+-                            st.warning("O anexo não foi encontrado no servidor.")
+-                    
+-                    c1, c2 = st.columns(2)
+-                    with c1:
+-                        if st.button("Responder", key=f"reply_{m.get('id')}", use_container_width=True):
+-                            st.session_state.compose_to = m.get('from')
+-                            st.session_state.compose_subject = f"Re: {m.get('subject')}"
+-                            st.rerun()
+-                    with c2:
+-                        if st.button("Apagar", key=f"del_inbox_{m.get('id')}", use_container_width=True):
+-                            delete_message(m.get('id'), USERNAME)
+-                            st.toast("Mensagem apagada.")
+-                            st.rerun()
+-
+-    with tab_compose:
+-        with st.form(key="compose_form", clear_on_submit=True):
+-            all_usernames = list(load_users().keys())
+-            if USERNAME in all_usernames:
+-                all_usernames.remove(USERNAME)
+-
+-            # Define default index for recipient
+-            default_recipient = st.session_state.get('compose_to', '')
+-            try:
+-                recipient_index = all_usernames.index(default_recipient) if default_recipient in all_usernames else 0
+-            except (ValueError, IndexError):
+-                 recipient_index = 0
+-
+-            to_user = st.selectbox("Para:", options=all_usernames, index=recipient_index, key='ui_msg_to')
+-            subj = st.text_input("Assunto:", value=st.session_state.get('compose_subject',''), key='ui_msg_subj')
+-            body = st.text_area("Mensagem:", value="", height=200, key='ui_msg_body')
+-            attachment = st.file_uploader("Anexar arquivo (Dropbox):", key="ui_msg_attachment")
+-            
+-            submitted = st.form_submit_button("✉️ Enviar Mensagem", use_container_width=True)
+-
+-            if submitted:
+-                if not to_user:
+-                    st.error("Destinatário inválido.")
+-                else:
+-                    send_message(USERNAME, to_user, subj, body, attachment_file=attachment)
+-                    st.success(f"Mensagem enviada para {to_user}.")
+-                    st.session_state.compose_to = ''
+-                    st.session_state.compose_subject = ''
+-                    if st.session_state.autosave:
+-                        save_state_for_user(USERNAME)
+-                    st.rerun()
+-
+-    with tab_sent:
+-        if not outbox:
+-            st.info("Você ainda não enviou mensagens.")
+-        else:
+-            for m in outbox:
+-                with st.expander(f"Para: **{m.get('to')}** | Assunto: **{m.get('subject')}**"):
+-                    st.markdown(f"**Enviado em:** `{m.get('ts')}`")
+-                    st.markdown("---")
+-                    st.markdown(m.get("body"))
+-                    if m.get("attachment"):
+-                        st.info(f"Anexo enviado: {m['attachment']['name']}")
+-                    if st.button("Apagar", key=f"del_outbox_{m.get('id')}", use_container_width=True):
+-                        delete_message(m.get('id'), USERNAME)
+-                        st.toast("Mensagem apagada.")
+-                        st.rerun()
+-
+-    st.markdown("</div>", unsafe_allow_html=True)
++# dashboard_consumidia_updated.py
++# CONSUMIDIA — Dashboard completo (versão atualizada)
++# - CORREÇÃO: Corrigido o erro 'StreamlitAPIException' ao limpar o anexo após o envio da mensagem.
++# - MELHORIA VISUAL: Efeito Liquid-glass aprimorado, ícones integrados aos botões de navegação.
++# - MELHORIA FUNCIONAL: Nome do usuário de origem agora é salvo e exibido nos Favoritos.
++# - NOVO: Troca de arquivos (dropbox) integrada ao sistema de mensagens.
++
++import streamlit as st
++import pandas as pd
++import plotly.express as px
++import plotly.graph_objects as go
++import networkx as nx
++from networkx.readwrite import json_graph
++from fpdf import FPDF
++import json, os, io, re, random, string, time
++from pathlib import Path
++from datetime import datetime
++import glob
++import unicodedata
++from difflib import SequenceMatcher
++from urllib.parse import quote_plus
++from urllib.request import urlopen, Request
++
++# extra para ML/search (mantido para futura expansão)
++import joblib
++import numpy as np
++from sklearn.feature_extraction.text import TfidfVectorizer
++from sklearn.metrics.pairwise import cosine_similarity
++
++# -------------------------
++# Default CSS (liquid glass aprimorado)
++# -------------------------
++DEFAULT_CSS = r'''
++:root{
++  --glass-bg: rgba(255,255,255,0.05);
++  --glass-border: rgba(255,255,255,0.1);
++  --glass-highlight: rgba(255,255,255,0.06);
++  --accent: #8e44ad;
++  --muted-text: #d6d9dc;
++  --icon-color: #ffffff;
++}
++
++/* Global body fallback */
++.css-1d391kg { background: linear-gradient(180deg,#071428 0%, #031926 100%) !important; }
++
++/* Liquid glass boxes used by the app */
++.glass-box{
++  background: var(--glass-bg);
++  border: 1px solid var(--glass-border);
++  border-radius: 16px;
++  padding: 18px;
++  box-shadow: 0 8px 32px rgba(4,9,20,0.5);
++  backdrop-filter: blur(12px) saturate(1.2);
++}
++
++/* Small specular shine */
++.glass-box .specular{ position:absolute; right:12px; top:8px; width:80px; height:80px; background: linear-gradient(120deg, rgba(255,255,255,0.05), rgba(255,255,255,0)); transform:rotate(18deg); pointer-events:none; border-radius:50%; }
++.color-blob{ position:absolute; pointer-events:none; filter: blur(36px); opacity:0.55; }
++.color-blob.b1{ right:-80px; top:-20px; width:240px; height:140px; background: linear-gradient(90deg, rgba(142,68,173,0.28), rgba(41,121,255,0.18)); }
++.color-blob.b2{ left:-80px; bottom:-40px; width:220px; height:120px; background: linear-gradient(90deg, rgba(26,188,156,0.28), rgba(255,138,0,0.18)); }
++
++/* Buttons: translucent, sheen, focus, pressed states */
++.stButton>button, .stDownloadButton>button{
++  background: var(--glass-bg) !important;
++  color: var(--muted-text) !important;
++  border: 1px solid var(--glass-border) !important;
++  padding: 8px 14px !important;
++  border-radius: 12px !important;
++  box-shadow: 0 4px 12px rgba(3,7,15,0.45) !important;
++  backdrop-filter: blur(8px) saturate(1.1) !important;
++  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
++}
++.stButton>button:hover, .stDownloadButton>button:hover{ transform: translateY(-2px); box-shadow: 0 6px 18px rgba(3,7,15,0.6) !important; background: rgba(255,255,255,0.08) !important; }
++.stButton>button:active, .stDownloadButton>button:active{ transform: translateY(0); box-shadow: 0 2px 6px rgba(0,0,0,0.45); }
++
++/* Large icon container */
++.icon{ display:inline-flex; align-items:center; justify-content:center; }
++.icon svg{ width:100%; height:100%; stroke:currentColor; fill:none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
++.icon.animate svg .draw{ stroke-dashoffset:0; transition: stroke-dashoffset 0.6s ease-out; }
++
++/* Title animation gradient */
++.consumidia-title{ font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; font-weight:800; font-size:36px; background: linear-gradient(90deg, #8e44ad, #2979ff, #1abc9c, #ff8a00); -webkit-background-clip: text; background-clip: text; color:transparent; display:inline-block; animation: hue 6s linear infinite; }
++@keyframes hue{ 0%{ filter:hue-rotate(0deg);} 100%{ filter:hue-rotate(360deg);} }
++
++/* Make dataframes more readable */
++[data-testid='stDataFrameContainer']{ background:transparent !important; }
++
++/* Reduce red severity for Streamlit error boxes by tonalizing them (keeps accessibility) */
++.stAlert[data-alert='error']{ background: rgba(255,77,79,0.06); border-color: rgba(255,77,79,0.12); }
++'''
++
++# write default CSS file if missing so user can edit later
++try:
++    p = Path("style.css")
++    if not p.exists():
++        p.write_text(DEFAULT_CSS, encoding='utf-8')
++except Exception:
++    pass
++
++# -------------------------
++# Page config
++# -------------------------
++st.set_page_config(page_title="CONSUMIDIA", layout="wide", initial_sidebar_state="expanded")
++
++# load css (prefer file so user may edit)
++css_path = Path("style.css")
++if css_path.exists():
++    try:
++        st.markdown(f"<style>{css_path.read_text(encoding='utf-8')}</style>", unsafe_allow_html=True)
++    except Exception:
++        st.markdown(f"<style>{css_path.read_text()}</style>", unsafe_allow_html=True)
++else:
++    st.markdown(f"<style>{DEFAULT_CSS}</style>", unsafe_allow_html=True)
++
++# -------------------------
++# Helpers: users + auth
++# -------------------------
++USERS_FILE = "users.json"
++
++def load_users():
++    if os.path.exists(USERS_FILE):
++        try:
++            with open(USERS_FILE, "r", encoding="utf-8") as f:
++                obj = json.load(f)
++                return obj if isinstance(obj, dict) else {}
++        except Exception:
++            return {}
++    return {}
++
++def save_users(users):
++    with open(USERS_FILE, "w", encoding="utf-8") as f:
++        json.dump(users, f, ensure_ascii=False, indent=2)
++
++def gen_password(length=8):
++    choices = string.ascii_letters + string.digits
++    return ''.join(random.choice(choices) for _ in range(length))
++
++# -------------------------
++# Sistema de Favoritos (Adicionado para a nova Busca)
++# -------------------------
++def get_session_favorites():
++    """Retorna a lista de favoritos da sessão atual."""
++    return st.session_state.get("favorites", [])
++
++def add_to_favorites(result_data):
++    """Adiciona um resultado aos favoritos na sessão."""
++    favorites = get_session_favorites()
++    result_id = f"{int(time.time())}_{random.randint(1000,9999)}"
++    favorite_item = {
++        "id": result_id,
++        "data": result_data,
++        "added_at": datetime.utcnow().isoformat()
++    }
++    # Checagem de duplicatas mais robusta, ignorando a chave de usuário na comparação
++    temp_data_to_check = result_data.copy()
++    temp_data_to_check.pop('_artemis_username', None)
++
++    existing_contents = []
++    for fav in favorites:
++        temp_existing = fav["data"].copy()
++        temp_existing.pop('_artemis_username', None)
++        existing_contents.append(json.dumps(temp_existing, sort_keys=True))
++
++    if json.dumps(temp_data_to_check, sort_keys=True) not in existing_contents:
++        favorites.append(favorite_item)
++        st.session_state.favorites = favorites
++        return True
++    return False
++
++def remove_from_favorites(favorite_id):
++    """Remove um favorito da lista na sessão."""
++    favorites = get_session_favorites()
++    new_favorites = [fav for fav in favorites if fav["id"] != favorite_id]
++    st.session_state.favorites = new_favorites
++    return len(new_favorites) != len(favorites)
++
++def clear_all_favorites():
++    """Remove todos os favoritos da sessão."""
++    st.session_state.favorites = []
++    return True
++
++# -------------------------
++# Color palette (pt -> hex)
++# -------------------------
++PALETA = {
++    "verde": "#00c853",
++    "laranja": "#ff8a00",
++    "amarelo": "#ffd600",
++    "vermelho": "#ff3d00",
++    "azul": "#2979ff",
++    "roxo": "#8e44ad",
++    "cinza": "#7f8c8d",
++    "preto": "#000000",
++    "turquesa": "#1abc9c"
++}
++
++def normalize_color(name_or_hex: str):
++    if not name_or_hex:
++        return None
++    s = str(name_or_hex).strip().lower()
++    if s in PALETA:
++        return PALETA[s]
++    if re.match(r"^#([0-9a-f]{3}|[0-9a-f]{6})$", s):
++        return s
++    return s
++
++# -------------------------
++# Session defaults
++# -------------------------
++for k, v in {
++    "authenticated": False,
++    "username": None,
++    "user_obj": None,
++    "df": None,
++    "G": nx.Graph(),
++    "notes": "",
++    "autosave": False,
++    "page": "planilha",
++    "restored_from_saved": False,
++    "favorites": [] # Adicionado para a nova Busca
++}.items():
++    if k not in st.session_state:
++        st.session_state[k] = v
++
++# -------------------------
++# Per-user state helpers
++# -------------------------
++def user_state_file(username):
++    return f"artemis_state_{username}.json"
++
++def user_backup_dir(username):
++    p = Path("backups") / username
++    p.mkdir(parents=True, exist_ok=True)
++    return p
++
++def save_state_for_user(username):
++    path = user_state_file(username)
++    backup_path = None
++    try:
++        if st.session_state.df is not None:
++            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
++            safe = re.sub(r"[^\w\-_.]", "_", st.session_state.get("uploaded_name") or "planilha")
++            backup_filename = f"{safe}_{ts}.csv"
++            backup_path = str((user_backup_dir(username) / backup_filename).resolve())
++            st.session_state.df.to_csv(backup_path, index=False, encoding="utf-8")
++    except Exception:
++        backup_path = None
++    data = {
++        "graph": json_graph.node_link_data(st.session_state.G),
++        "notes": st.session_state.notes,
++        "uploaded_name": st.session_state.get("uploaded_name", None),
++        "backup_csv": backup_path,
++        "saved_at": datetime.utcnow().isoformat(),
++        "favorites": st.session_state.get("favorites", []) # Adicionado para a nova Busca
++    }
++    with open(path, "w", encoding="utf-8") as f:
++        json.dump(data, f, indent=2, ensure_ascii=False)
++    return path
++
++def load_state_for_user(username, load_backup_csv=True):
++    path = user_state_file(username)
++    if not os.path.exists(path):
++        return False
++    with open(path, "r", encoding="utf-8") as f:
++        try:
++            meta = json.load(f)
++        except Exception:
++            return False
++    try:
++        st.session_state.G = json_graph.node_link_graph(meta.get("graph", {}))
++    except Exception:
++        st.session_state.G = nx.Graph()
++    st.session_state.notes = meta.get("notes", "")
++    st.session_state.uploaded_name = meta.get("uploaded_name", None)
++    st.session_state.favorites = meta.get("favorites", []) # Adicionado para a nova Busca
++    backup_csv = meta.get("backup_csv")
++    if load_backup_csv and backup_csv and os.path.exists(backup_csv):
++        try:
++            st.session_state.df = pd.read_csv(backup_csv, encoding="utf-8")
++        except Exception:
++            try:
++                st.session_state.df = pd.read_csv(backup_csv, encoding="latin1")
++            except Exception:
++                st.session_state.df = None
++    st.session_state.restored_from_saved = True
++    return True
++
++# -------------------------
++# Robust spreadsheet reader
++# -------------------------
++def read_spreadsheet(uploaded_file):
++    b = uploaded_file.read()
++    buf = io.BytesIO(b)
++    name = uploaded_file.name.lower()
++    if name.endswith(".csv"):
++        for enc in ("utf-8", "latin1", "cp1252"):
++            try:
++                buf.seek(0)
++                return pd.read_csv(buf, encoding=enc)
++            except Exception:
++                continue
++        buf.seek(0)
++        return pd.read_csv(buf, engine="python", on_bad_lines="skip")
++    else:
++        buf.seek(0)
++        return pd.read_excel(buf)
++
++def _normalize_text(value):
++    value = str(value or "").strip().lower()
++    value = unicodedata.normalize("NFKD", value)
++    return "".join(ch for ch in value if not unicodedata.combining(ch))
++
++def build_corpus_from_df(df):
++    if df is None or df.empty:
++        return pd.DataFrame(), []
++    safe = df.fillna("").copy()
++    safe["_doc_text"] = safe.astype(str).agg(" ".join, axis=1).map(_normalize_text)
++    return safe, safe["_doc_text"].tolist()
++
++def semantic_search(df, query, top_k=20):
++    indexed, docs = build_corpus_from_df(df)
++    if indexed.empty or not query.strip():
++        return pd.DataFrame()
++    vect = TfidfVectorizer(ngram_range=(1, 2), max_features=6000)
++    matrix = vect.fit_transform(docs + [_normalize_text(query)])
++    query_vec = matrix[-1]
++    scores = cosine_similarity(matrix[:-1], query_vec).ravel()
++    indexed["_score"] = scores
++    indexed = indexed[indexed["_score"] > 0]
++    return indexed.sort_values("_score", ascending=False).head(top_k)
++
++def suggest_web_articles(query, max_results=6):
++    if not query.strip():
++        return []
++    q = quote_plus(query)
++    url = f"https://api.crossref.org/works?query={q}&rows={max_results}&sort=score&order=desc"
++    try:
++        req = Request(url, headers={"User-Agent": "ARTEMIS/1.0 (Research assistant)"})
++        with urlopen(req, timeout=10) as resp:
++            data = json.loads(resp.read().decode("utf-8"))
++        items = data.get("message", {}).get("items", [])
++    except Exception:
++        return []
++    out = []
++    for it in items:
++        title = (it.get("title") or ["Sem título"])[0]
++        doi = it.get("DOI")
++        link = f"https://doi.org/{doi}" if doi else (it.get("URL") or "")
++        year = (it.get("published-print", {}).get("date-parts", [[None]])[0][0]
++                or it.get("published-online", {}).get("date-parts", [[None]])[0][0])
++        out.append({"title": title, "year": year, "link": link})
++    return out
++
++def suggest_related_terms(df, query, top_k=8):
++    if df is None or df.empty:
++        return []
++    _, docs = build_corpus_from_df(df)
++    vect = TfidfVectorizer(stop_words="english", max_features=1500)
++    matrix = vect.fit_transform(docs + [_normalize_text(query)])
++    query_vec = matrix[-1]
++    terms = np.array(vect.get_feature_names_out())
++    weights = (query_vec.toarray()[0])
++    ranked = terms[np.argsort(weights)[::-1]]
++    return [t for t in ranked if len(t) > 3][:top_k]
++
++NATIONALITY_COORDS = {
++    "brasil": (-14.2, -51.9), "brasileiro": (-14.2, -51.9),
++    "portugal": (39.4, -8.2), "portugues": (39.4, -8.2),
++    "eua": (37.1, -95.7), "estados unidos": (37.1, -95.7), "americano": (37.1, -95.7),
++    "canada": (56.1, -106.3), "franca": (46.2, 2.2), "frances": (46.2, 2.2),
++    "espanha": (40.4, -3.7), "alemanha": (51.2, 10.4), "italia": (41.9, 12.5),
++    "japao": (36.2, 138.3), "china": (35.9, 104.2), "india": (20.6, 78.9)
++}
++
++def build_image_index():
++    base_dirs = [Path("user_files"), Path("backups"), Path(".")]
++    image_paths = []
++    for base in base_dirs:
++        if not base.exists():
++            continue
++        for ext in ("*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp"):
++            image_paths.extend(base.rglob(ext))
++    return sorted(set(image_paths))
++
++# -------------------------
++# Graph creation + plotly 3D
++# -------------------------
++def criar_grafo(df):
++    G = nx.Graph()
++    if df is None:
++        return G
++    cols_lower = {c.lower(): c for c in df.columns}
++    for _, row in df.iterrows():
++        autor = str(row.get(cols_lower.get("autor", ""), "") or "").strip()
++        titulo = str(row.get(cols_lower.get("título", cols_lower.get("titulo", "")), "") or "").strip()
++        ano = str(row.get(cols_lower.get("ano", ""), "") or "").strip()
++        tema = str(row.get(cols_lower.get("tema", ""), "") or "").strip()
++        if autor:
++            k = f"Autor: {autor}"
++            G.add_node(k, tipo="Autor", label=autor)
++        if titulo:
++            k = f"Título: {titulo}"
++            G.add_node(k, tipo="Título", label=titulo)
++        if ano:
++            k = f"Ano: {ano}"
++            G.add_node(k, tipo="Ano", label=ano)
++        if tema:
++            k = f"Tema: {tema}"
++            G.add_node(k, tipo="Tema", label=tema)
++        if autor and titulo:
++            G.add_edge(f"Autor: {autor}", f"Título: {titulo}")
++        if titulo and ano:
++            G.add_edge(f"Título: {titulo}", f"Ano: {ano}")
++        if titulo and tema:
++            G.add_edge(f"Título: {titulo}", f"Tema: {tema}")
++    return G
++
++
++def graph_to_plotly_3d(G, show_labels=False, height=600):
++    if len(G.nodes()) == 0:
++        fig = go.Figure()
++        fig.update_layout(height=height, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
++        return fig
++    pos = nx.spring_layout(G, dim=3, seed=42)
++    degrees = dict(G.degree())
++    deg_values = [degrees.get(n, 1) for n in G.nodes()]
++    min_deg, max_deg = min(deg_values), max(deg_values)
++    node_sizes = [8 + ((d - min_deg) / (max_deg - min_deg + 1e-6)) * 18 for d in deg_values]
++    x_nodes = [pos[n][0] for n in G.nodes()]
++    y_nodes = [pos[n][1] for n in G.nodes()]
++    z_nodes = [pos[n][2] for n in G.nodes()]
++    x_edges, y_edges, z_edges = [], [], []
++    for e in G.edges():
++        x_edges += [pos[e[0]][0], pos[e[1]][0], None]
++        y_edges += [pos[e[0]][1], pos[e[1]][1], None]
++        z_edges += [pos[e[0]][2], pos[e[1]][2], None]
++    color_map = {"Autor": PALETA["verde"], "Título": PALETA["roxo"], "Ano": PALETA["azul"], "Tema": PALETA["laranja"]}
++    node_colors = [color_map.get(G.nodes[n].get("tipo", ""), PALETA["vermelho"]) for n in G.nodes()]
++    labels = [G.nodes[n].get("label", str(n)) for n in G.nodes()]
++    hover = [f"<b>{G.nodes[n].get('label','')}</b><br>Tipo: {G.nodes[n].get('tipo','')}" for n in G.nodes()]
++    edge_trace = go.Scatter3d(
++        x=x_edges, y=y_edges, z=z_edges, mode="lines",
++        line=dict(color="rgba(200,200,200,0.12)", width=1.2), hoverinfo="none"
++    )
++    node_trace = go.Scatter3d(
++        x=x_nodes, y=y_nodes, z=z_nodes,
++        mode="markers+text" if show_labels else "markers",
++        marker=dict(size=node_sizes, color=node_colors, opacity=0.95, line=dict(width=1)),
++        hovertext=hover, hoverinfo="text",
++        text=labels if show_labels else None, textposition="top center"
++    )
++    legend_items = []
++    for label, cor in [("Autor", PALETA["verde"]), ("Título", PALETA["roxo"]), ("Ano", PALETA["azul"]), ("Tema", PALETA["laranja"])]:
++        legend_items.append(go.Scatter3d(x=[None], y=[None], z=[None], mode="markers",
++                                        marker=dict(size=8, color=cor), name=label))
++    fig = go.Figure(data=[edge_trace, node_trace] + legend_items)
++    fig.update_layout(
++        scene=dict(xaxis=dict(visible=False), yaxis=dict(visible=False), zaxis=dict(visible=False), bgcolor="rgba(0,0,0,0)"),
++        margin=dict(l=0, r=0, t=20, b=0), height=height,
++        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
++        legend=dict(font=dict(color="#d6d9dc"), orientation="h", y=1.05, x=0.02)
++    )
++    fig.update_layout(scene_camera=dict(eye=dict(x=1.2, y=1.2, z=1.2)))
++    return fig
++
++# -------------------------
++# PDF with highlights (returns bytes)
++# -------------------------
++def _safe_for_pdf(s: str):
++    if s is None:
++        return ""
++    s2 = s.replace("—", "-").replace("–", "-")
++    return s2.encode("latin-1", "replace").decode("latin-1")
++
++def generate_pdf_with_highlights(texto, highlight_hex="#ffd600"):
++    pdf = FPDF()
++    pdf.set_auto_page_break(auto=True, margin=12)
++    pdf.add_page()
++    pdf.set_font("Arial", size=12)
++    for linha in (texto or "").split("\n"):
++        parts = re.split(r"(==.*?==)", linha)
++        for part in parts:
++            if not part:
++                continue
++            if part.startswith("==") and part.endswith("=="):
++                inner = part[2:-2]
++                inner_safe = _safe_for_pdf(inner)
++                hexv = (highlight_hex or "#ffd600").lstrip("#")
++                if len(hexv) == 3:
++                    hexv = ''.join([c*2 for c in hexv])
++                try:
++                    r, g, b = int(hexv[0:2], 16), int(hexv[2:4], 16), int(hexv[4:6], 16)
++                except Exception:
++                    r, g, b = (255, 214, 0)
++                pdf.set_fill_color(r, g, b)
++                pdf.set_text_color(0, 0, 0)
++                w = pdf.get_string_width(inner_safe) + 2
++                pdf.cell(w, 6, txt=inner_safe, border=0, ln=0, fill=True)
++                pdf.set_text_color(0, 0, 0)
++            else:
++                if part:
++                    safe_part = _safe_for_pdf(part)
++                    pdf.set_text_color(0, 0, 0)
++                    pdf.cell(pdf.get_string_width(safe_part), 6, txt=safe_part, border=0, ln=0)
++        pdf.ln(6)
++    raw = pdf.output(dest="S")
++    if isinstance(raw, str):
++        return raw.encode("latin-1", "replace")
++    elif isinstance(raw, (bytes, bytearray)):
++        return bytes(raw)
++    else:
++        return str(raw).encode("latin-1", "replace")
++
++# -------------------------
++# ICONS + animation helper
++# -------------------------
++ICON_KEYS = [
++    "login","register","planilha","mapa","anotacoes","graficos",
++    "save","logout","restore","download_backup","upload_file","export",
++    "add_node","del_node","rename_node","down_pdf","busca",
++    "favoritos", "trash", "attachment"
++]
++for k in ICON_KEYS:
++    if f"anim_ts_{k}" not in st.session_state:
++        st.session_state[f"anim_ts_{k}"] = 0.0
++
++def _now():
++    return time.time()
++
++def mark_icon_animate(key):
++    st.session_state[f"anim_ts_{key}"] = _now()
++
++ICON_SVGS = {
++    "planilha": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect class="draw" x="2" y="3" width="20" height="18" rx="2"/><path class="draw" d="M7 8h10M7 12h10M7 16h10"/></svg>',
++    "anotacoes": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M3 21v-3a4 4 0 0 1 4-4h2l6-6 4 4-6 6" /><path class="draw pen" d="M14 7l3 3" /><path class="draw" d="M6 18l4-4"/></svg>',
++    "mapa": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><polyline class="draw" points="3 6 9 3 15 6 21 3"/><polyline class="draw" points="3 18 9 15 15 18 21 15"/><line class="draw" x1="9" y1="3" x2="9" y2="15"/></svg>',
++    "graficos": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><rect class="draw" x="3" y="10" width="4" height="10" rx="1"/><rect class="draw" x="9" y="6" width="4" height="14" rx="1"/><rect class="draw" x="15" y="2" width="4" height="18" rx="1"/></svg>',
++    "save": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M5 21h14a1 1 0 0 0 1-1V7L16 3H8L4 7v13a1 1 0 0 0 1 1z"/><path class="draw" d="M9 9h6v6H9z"/></svg>',
++    "logout": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path class="draw" d="M16 17l5-5-5-5"/><path class="draw" d="M21 12H9"/></svg>',
++    "upload_file": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline class="draw" points="17 8 12 3 7 8"/><line class="draw" x1="12" y1="3" x2="12" y2="15"/></svg>',
++    "download_backup": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline class="draw" points="7 10 12 15 17 10"/><line class="draw" x1="12" y1="15" x2="12" y2="3"/></svg>',
++    "export": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M12 3v12"/><polyline class="draw" points="8 7 12 3 16 7"/><rect class="draw" x="3" y="15" width="18" height="6" rx="1"/></svg>',
++    "add_node": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle class="draw" cx="12" cy="12" r="9"/><line class="draw" x1="12" y1="8" x2="12" y2="16"/><line class="draw" x1="8" y1="12" x2="16" y2="12"/></svg>',
++    "del_node": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle class="draw" cx="12" cy="12" r="9"/><line class="draw" x1="9" y1="9" x2="15" y2="15"/><line class="draw" x1="15" y1="9" x2="9" y2="15"/></svg>',
++    "rename_node": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M3 21v-3a4 4 0 0 1 4-4h2"/><path class="draw" d="M14 7l3 3"/><path class="draw" d="M10 14l6-6"/></svg>',
++    "down_pdf": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline class="draw" points="7 10 12 15 17 10"/></svg>',
++    "login": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M12 2a5 5 0 0 1 5 5v3"/><path class="draw" d="M21 21v-6a4 4 0 0 0-4-4H7"/></svg>',
++    "register": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle class="draw" cx="12" cy="8" r="3"/><path class="draw" d="M21 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/></svg>',
++    "restore": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M21 12a9 9 0 1 1-3-6.7"/><polyline class="draw" points="21 6 21 12 15 12"/></svg>',
++    "busca": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="6"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
++    "favoritos": '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path class="draw" d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>',
++    "trash": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>',
++    "attachment": '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>'
++}
++
++def icon_html_svg(key, extra_class="", size=36, color=None):
++    svg = ICON_SVGS.get(key, "")
++    ts = st.session_state.get(f"anim_ts_{key}", 0.0)
++    animate = (_now() - ts) < 1.8
++    classes = f"icon {key}"
++    if extra_class: classes += " " + extra_class
++    if animate: classes += " animate"
++    col = color or "var(--icon-color)"
++    style = f"color:{col}; width:{size}px; height:{size}px; display:inline-block; vertical-align:middle;"
++    return f'<span class="{classes}" style="{style}">{svg}</span>'
++
++# -------------------------
++# Unified action button helper
++# -------------------------
++def action_button(label, icon_key, st_key, expanded_label=None, wide=False):
++    c_icon, c_btn = st.columns([0.15, 0.85])
++    with c_icon:
++        st.markdown(f"<div style='margin-top:6px'>{icon_html_svg(icon_key, size=28)}</div>", unsafe_allow_html=True)
++    with c_btn:
++        clicked = st.button(expanded_label or label, key=st_key, use_container_width=True)
++    if clicked:
++        mark_icon_animate(icon_key)
++    return clicked
++
++# -------------------------
++# NAV and UI
++# -------------------------
++st.markdown("<div style='display:flex; justify-content:center;'><h1 class='consumidia-title'>CONSUMIDIA</h1></div>", unsafe_allow_html=True)
++
++users = load_users()
++
++if not st.session_state.authenticated:
++    st.markdown("<div class='glass-box auth' style='max-width:1100px;margin:0 auto; position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
++    st.subheader("Acesso — Faça login ou cadastre-se")
++    tabs = st.tabs(["Entrar", "Criar conta"])
++    with tabs[0]:
++        login_user = st.text_input("Usuário", key="ui_login_user")
++        login_pass = st.text_input("Senha", type="password", key="ui_login_pass")
++        if st.button("Entrar", "btn_login_main"):
++            if login_user and login_user in users and users[login_user].get("password") == login_pass:
++                st.session_state.authenticated = True
++                st.session_state.username = login_user
++                st.session_state.user_obj = users[login_user]
++                st.rerun()
++            else:
++                st.warning("Usuário ou senha incorretos.")
++    with tabs[1]:
++        reg_name = st.text_input("Nome completo", key="ui_reg_name")
++        reg_user = st.text_input("Escolha um username", key="ui_reg_user")
++        if st.button("Criar conta", "btn_register_main"):
++            if not reg_user or not reg_user.strip():
++                st.warning("Escolha um username válido.")
++            elif reg_user in users:
++                st.warning("Username já existe.")
++            else:
++                pwd = gen_password(8)
++                users[reg_user] = {"name": reg_name or reg_user, "password": pwd, "created_at": datetime.utcnow().isoformat()}
++                save_users(users)
++                st.success(f"Usuário criado. Username: **{reg_user}** — Senha gerada: **{pwd}**")
++                st.info("Anote a senha.")
++    st.markdown("</div>", unsafe_allow_html=True)
++    st.stop()
++
++
++# -------------------------
++# After auth: per-user variables
++# -------------------------
++USERNAME = st.session_state.username
++USER_OBJ = st.session_state.user_obj or users.get(USERNAME, {})
++USER_STATE = user_state_file(USERNAME)
++
++# try auto restore
++if not st.session_state.restored_from_saved and os.path.exists(USER_STATE):
++    try:
++        load_state_for_user(USERNAME)
++        st.success("Estado salvo do usuário restaurado automaticamente.")
++    except Exception:
++        pass
++
++# -------------------------
++# Top controls + nav
++# -------------------------
++st.markdown("<div class='glass-box' style='padding-top:10px; padding-bottom:10px;'><div class='specular'></div>", unsafe_allow_html=True)
++
++top1, top2 = st.columns([0.6, 0.4])
++with top1:
++    st.markdown(f"<div style='color:var(--muted-text);font-weight:700; padding-top:8px;'>Usuário: {USER_OBJ.get('name','')}</div>", unsafe_allow_html=True)
++with top2:
++    nav_right1, nav_right2, nav_right3 = st.columns([1,1,1])
++    with nav_right1:
++        ui_aut = st.checkbox("Auto-save", value=st.session_state.autosave, key="ui_autosave")
++        st.session_state.autosave = ui_aut
++    with nav_right2:
++        if st.button("Salvar", key=f"btn_save_now", use_container_width=True):
++            p = save_state_for_user(USERNAME)
++            st.success(f"Progresso salvo.")
++    with nav_right3:
++        if st.button("Sair", key=f"btn_logout", use_container_width=True):
++            for key in list(st.session_state.keys()): del st.session_state[key]
++            st.rerun()
++
++st.markdown("<div style='margin-top:-20px'>", unsafe_allow_html=True)
++nav1, nav2, nav3, nav4, nav5, nav6 = st.columns(6)
++with nav1:
++    if st.button("Planilha", key="nav_planilha", use_container_width=True):
++        st.session_state.page = "planilha"
++        st.rerun()
++with nav2:
++    if st.button("Mapa", key="nav_mapa", use_container_width=True):
++        st.session_state.page = "mapa"
++        st.rerun()
++with nav3:
++    if st.button("Anotações", key="nav_anotacoes", use_container_width=True):
++        st.session_state.page = "anotacoes"
++        st.rerun()
++with nav4:
++    if st.button("Gráficos", key="nav_graficos", use_container_width=True):
++        st.session_state.page = "graficos"
++        st.rerun()
++with nav5:
++    if st.button("Pesquisa IA", key="nav_busca", use_container_width=True):
++        st.session_state.page = "busca"
++        st.rerun()
++with nav6:
++    if st.button("Análise IA", key="nav_analise", use_container_width=True):
++        st.session_state.page = "analise"
++        st.rerun()
++st.markdown("</div></div>", unsafe_allow_html=True)
++st.markdown("---")
++
++
++# -------------------------
++# Page content dispatcher
++# -------------------------
++if st.session_state.page == "planilha":
++    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
++    st.subheader("Planilha / Backup")
++    col1, col2 = st.columns([1,3])
++    with col1:
++        if st.button("Restaurar estado salvo", key="btn_restore_state"):
++            ok = load_state_for_user(USERNAME)
++            if ok:
++                st.success("Estado salvo restaurado (grafo + anotações).")
++            else:
++                st.info("Nenhum estado salvo encontrado.")
++    with col2:
++        meta = None
++        if os.path.exists(USER_STATE):
++            try:
++                with open(USER_STATE, "r", encoding="utf-8") as f:
++                    meta = json.load(f)
++            except Exception:
++                meta = None
++        if meta and meta.get("backup_csv") and os.path.exists(meta.get("backup_csv")):
++            st.write("Backup CSV encontrado:")
++            st.text(meta.get("backup_csv"))
++            with open(meta.get("backup_csv"), "rb") as fp:
++                st.download_button("⬇ Baixar backup CSV", data=fp, file_name=os.path.basename(meta.get("backup_csv")), mime="text/csv")
++        else:
++            st.write("Nenhum backup CSV automático encontrado ainda.")
++
++    uploaded = st.file_uploader("Carregue .csv ou .xlsx (cada linha será um nó)", type=["csv", "xlsx"], key=f"u_{USERNAME}")
++    if uploaded:
++        try:
++            df = read_spreadsheet(uploaded)
++            st.session_state.df = df
++            st.session_state.uploaded_name = uploaded.name
++            st.session_state.G = criar_grafo(df)
++            st.success("Planilha carregada com sucesso.")
++            if st.session_state.autosave:
++                save_state_for_user(USERNAME)
++        except Exception as e:
++            st.error(f"Erro ao ler planilha: {e}")
++
++    if st.session_state.df is not None:
++        st.write("Visualização da planilha:")
++        st.dataframe(st.session_state.df, use_container_width=True)
++    st.markdown("</div>", unsafe_allow_html=True)
++
++elif st.session_state.page == "mapa":
++    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
++    st.subheader("Mapa Mental 3D — Editor")
++
++    if st.session_state.G.nodes():
++        with st.expander("Editar Nós do Mapa"):
++            left, right = st.columns([2,1])
++            with left:
++                new_node = st.text_input("Nome do novo nó", value="", key=f"nm_name_{USERNAME}")
++                new_tipo = st.selectbox("Tipo", ["Outro", "Autor", "Título", "Ano", "Tema"], index=0, key=f"nm_tipo_{USERNAME}")
++                connect_to = st.selectbox("Conectar a (opcional)", options=["Nenhum"] + list(st.session_state.G.nodes), index=0, key=f"nm_connect_{USERNAME}")
++                if st.button("Adicionar nó", key=f"btn_add_{USERNAME}"):
++                    n = new_node.strip()
++                    if not n: st.warning("Nome inválido.")
++                    elif n in st.session_state.G.nodes: st.warning("Nó já existe.")
++                    else:
++                        st.session_state.G.add_node(n, tipo=new_tipo, label=n)
++                        if connect_to != "Nenhum":
++                            st.session_state.G.add_edge(n, connect_to)
++                        st.success(f"Nó '{n}' adicionado.")
++                        if st.session_state.autosave: save_state_for_user(USERNAME)
++                        st.rerun()
++            with right:
++                del_n = st.selectbox("Excluir nó", options=[""] + list(st.session_state.G.nodes), key=f"del_{USERNAME}")
++                if st.button("Excluir nó", key=f"btn_del_{USERNAME}"):
++                    if del_n and del_n in st.session_state.G:
++                        st.session_state.G.remove_node(del_n)
++                        st.success(f"Nó '{del_n}' removido.")
++                        if st.session_state.autosave: save_state_for_user(USERNAME)
++                        st.rerun()
++                st.markdown("---")
++                r_old = st.selectbox("Renomear: selecione nó", options=[""] + list(st.session_state.G.nodes), key=f"r_old_{USERNAME}")
++                r_new = st.text_input("Novo nome", key=f"r_new_{USERNAME}")
++                if st.button("Renomear", key=f"btn_ren_{USERNAME}"):
++                    if r_old and r_new and r_old in st.session_state.G and r_new not in st.session_state.G:
++                        nx.relabel_nodes(st.session_state.G, {r_old: r_new}, copy=False)
++                        st.success(f"'{r_old}' → '{r_new}'")
++                        if st.session_state.autosave: save_state_for_user(USERNAME)
++                        st.rerun()
++
++    st.markdown("### Visualização 3D")
++    try:
++        fig = graph_to_plotly_3d(st.session_state.G, show_labels=False, height=700)
++        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": True})
++    except Exception as e:
++        st.error(f"Erro ao renderizar grafo: {e}")
++    st.markdown("</div>", unsafe_allow_html=True)
++
++elif st.session_state.page == "anotacoes":
++    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
++    st.subheader("Anotações com Marca-texto")
++    st.info("Use ==texto== para marcar (destacar) trechos que serão realçados no PDF.")
++    notes = st.text_area("Digite suas anotações (use ==texto== para destacar)", value=st.session_state.notes, height=260, key=f"notes_{USERNAME}")
++    st.session_state.notes = notes
++
++    pdf_bytes = generate_pdf_with_highlights(st.session_state.notes)
++    st.download_button("Baixar Anotações (PDF)", data=pdf_bytes, file_name="anotacoes_consumidia.pdf", mime="application/pdf")
++
++    st.markdown("</div>", unsafe_allow_html=True)
++
++elif st.session_state.page == "graficos":
++    st.markdown("<div class='glass-box' style='position:relative;'><div class='specular'></div>", unsafe_allow_html=True)
++    st.subheader("Gráficos Personalizados")
++    if st.session_state.df is None:
++        st.warning("Carregue uma planilha na aba 'Planilha' para gerar gráficos.")
++    else:
++        df = st.session_state.df.copy()
++        cols = df.columns.tolist()
++        c1, c2 = st.columns(2)
++        with c1:
++            eixo_x = st.selectbox("Eixo X", options=cols, index=0, key=f"x_{USERNAME}")
++        with c2:
++            numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
++            eixo_y = st.selectbox("Eixo Y (Opcional)", options=[None] + numeric_cols, key=f"y_{USERNAME}")
++
++        if st.button("Gerar Gráfico"):
++            try:
++                if eixo_y:
++                    fig = px.bar(df, x=eixo_x, y=eixo_y, title=f"{eixo_y} por {eixo_x}")
++                else:
++                    fig = px.histogram(df, x=eixo_x, title=f"Contagem por {eixo_x}")
++
++                fig.update_layout(plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#d6d9dc"))
++                st.plotly_chart(fig, use_container_width=True)
++            except Exception as e:
++                st.error(f"Erro ao gerar gráficos: {e}")
++    st.markdown("</div>", unsafe_allow_html=True)
++
++elif st.session_state.page == "busca":
++    st.markdown("<div class='glass-box' style='position:relative; padding:12px;'><div class='specular'></div>", unsafe_allow_html=True)
++    st.subheader("Pesquisa IA Unificada")
++
++    backups_df = None
++    base = Path("backups")
++    if base.exists():
++        dfs = []
++        for user_dir in sorted(base.iterdir()):
++            if not user_dir.is_dir():
++                continue
++            csvs = sorted(user_dir.glob("*.csv"), key=lambda p: p.stat().st_mtime, reverse=True)
++            if not csvs:
++                continue
++            try:
++                part = pd.read_csv(csvs[0], encoding="utf-8", on_bad_lines="skip")
++            except Exception:
++                continue
++            part["_artemis_username"] = user_dir.name
++            dfs.append(part)
++        if dfs:
++            backups_df = pd.concat(dfs, ignore_index=True)
++
++    if backups_df is None or backups_df.empty:
++        st.warning("Nenhum conteúdo indexado ainda. Faça upload e salve para habilitar a busca inteligente.")
++    else:
++        query = st.text_input("Tema ou pergunta de pesquisa", placeholder="Ex.: impactos da IA na educação superior")
++        c1, c2 = st.columns([1, 1])
++        with c1:
++            run_search = st.button("Executar busca semântica", use_container_width=True)
++        with c2:
++            run_articles = st.button("Sugerir artigos da internet", use_container_width=True)
++
++        if run_search and query:
++            results = semantic_search(backups_df.drop(columns=[c for c in ["_score"] if c in backups_df.columns]), query, top_k=25)
++            st.session_state.search_results = results
++
++        results = st.session_state.get("search_results", pd.DataFrame())
++        if isinstance(results, pd.DataFrame) and not results.empty:
++            st.markdown(f"**{len(results)} resultados semânticos encontrados.**")
++            show = results.head(20).copy()
++            if "_doc_text" in show.columns:
++                show = show.drop(columns=["_doc_text"])
++            st.dataframe(show, use_container_width=True)
++
++            st.markdown("### Conexões entre pesquisas semelhantes")
++            link_graph = nx.Graph()
++            top_res = results.head(15)
++            for i, row in top_res.iterrows():
++                label = str(row.get("Título", row.get("titulo", f"Registro {i}")))[:80]
++                link_graph.add_node(label)
++            labels = list(link_graph.nodes())
++            for i in range(len(labels)):
++                for j in range(i + 1, len(labels)):
++                    a, b = labels[i], labels[j]
++                    sim = SequenceMatcher(None, _normalize_text(a), _normalize_text(b)).ratio()
++                    if sim >= 0.5:
++                        link_graph.add_edge(a, b, weight=sim)
++            st.plotly_chart(graph_to_plotly_3d(link_graph, show_labels=True, height=550), use_container_width=True)
++
++        if run_articles and query:
++            web_items = suggest_web_articles(query, max_results=8)
++            st.markdown("### Sugestões de artigos na internet")
++            if not web_items:
++                st.info("Não foi possível buscar artigos externos no momento.")
++            for item in web_items:
++                st.markdown(f"- **{item['title']}** ({item.get('year') or 's/d'}) — {item.get('link','')}")
++
++        if query:
++            st.markdown("### Termos sugeridos para refinar a pesquisa")
++            terms = suggest_related_terms(backups_df, query)
++            if terms:
++                st.write(", ".join(terms))
++            else:
++                st.caption("Sem termos suficientes para sugerir no momento.")
++
++            st.markdown("### Busca de imagens semelhantes (pastas de usuários + internet)")
++            image_idx = build_image_index()
++            local_hits = [p for p in image_idx if _normalize_text(query) in _normalize_text(p.name)]
++            if local_hits:
++                st.write("Arquivos locais semelhantes:")
++                for p in local_hits[:12]:
++                    st.markdown(f"- {p}")
++            else:
++                st.caption("Nenhuma imagem local semelhante encontrada pelo nome do arquivo.")
++            st.markdown(f"Pesquise imagens externas: https://www.google.com/search?tbm=isch&q={quote_plus(query)}")
++
++    st.markdown("</div>", unsafe_allow_html=True)
++
++elif st.session_state.page == "analise":
++    st.markdown("<div class='glass-box' style='position:relative; padding:12px;'><div class='specular'></div>", unsafe_allow_html=True)
++    st.subheader("Análise completa da pesquisa")
++
++    if st.session_state.df is None or st.session_state.df.empty:
++        st.warning("Carregue uma planilha para gerar análise completa por ano, tema, autor e nacionalidade.")
++    else:
++        df = st.session_state.df.copy()
++        cols_map = {c.lower(): c for c in df.columns}
++
++        c_ano = cols_map.get("ano")
++        c_tema = cols_map.get("tema")
++        c_autor = cols_map.get("autor")
++        c_nat = cols_map.get("nacionalidade")
++        c_resumo = cols_map.get("resumo")
++
++        if c_ano:
++            fig_ano = px.histogram(df, x=c_ano, title="Distribuição por ano")
++            fig_ano.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
++            st.plotly_chart(fig_ano, use_container_width=True)
++
++        if c_tema:
++            top_tema = df[c_tema].astype(str).value_counts().head(12).reset_index()
++            top_tema.columns = ["tema", "qtd"]
++            fig_tema = px.bar(top_tema, x="tema", y="qtd", title="Temas mais recorrentes")
++            fig_tema.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
++            st.plotly_chart(fig_tema, use_container_width=True)
++
++        if c_autor:
++            top_autor = df[c_autor].astype(str).value_counts().head(12).reset_index()
++            top_autor.columns = ["autor", "qtd"]
++            fig_autor = px.bar(top_autor, x="autor", y="qtd", title="Autores com mais artigos")
++            fig_autor.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
++            st.plotly_chart(fig_autor, use_container_width=True)
++
++        if c_nat:
++            nat_count = df[c_nat].astype(str).map(_normalize_text).value_counts().reset_index()
++            nat_count.columns = ["nacionalidade", "qtd"]
++            nat_count["lat"] = nat_count["nacionalidade"].map(lambda n: NATIONALITY_COORDS.get(n, (None, None))[0])
++            nat_count["lon"] = nat_count["nacionalidade"].map(lambda n: NATIONALITY_COORDS.get(n, (None, None))[1])
++            geo_df = nat_count.dropna(subset=["lat", "lon"])
++            if not geo_df.empty:
++                fig_geo = px.scatter_geo(
++                    geo_df,
++                    lat="lat", lon="lon", size="qtd", color="qtd",
++                    hover_name="nacionalidade", projection="orthographic",
++                    title="Mapa 3D de nacionalidade dos autores"
++                )
++                fig_geo.update_geos(showland=True, showcountries=True)
++                fig_geo.update_layout(paper_bgcolor="rgba(0,0,0,0)")
++                st.plotly_chart(fig_geo, use_container_width=True)
++            else:
++                st.info("Não foi possível mapear nacionalidades automaticamente. Use nomes de países no campo 'nacionalidade'.")
++
++        if c_resumo:
++            st.markdown("### Resumos dos artigos")
++            for i, resumo in enumerate(df[c_resumo].dropna().astype(str).head(20), start=1):
++                st.markdown(f"**Resumo {i}:** {resumo}")
++
++    st.markdown("</div>", unsafe_allow_html=True)
