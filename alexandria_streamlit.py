@@ -3,16 +3,18 @@ import re
 import io
 import json
 import math
-import base64
-import zipfile
 import hashlib
+import base64
 from pathlib import Path
 from datetime import datetime
 from collections import Counter, defaultdict
+from difflib import SequenceMatcher
 
 import streamlit as st
 
-# Dependências opcionais com fallbacks
+# =============================
+# Optional dependencies
+# =============================
 try:
     import requests
 except Exception:
@@ -29,18 +31,16 @@ except Exception:
     pd = None
 
 try:
-    from PIL import Image
+    from PIL import Image, ImageOps
 except Exception:
     Image = None
+    ImageOps = None
 
 try:
     import plotly.graph_objects as go
-except Exception:
-    go = None
-
-try:
     import plotly.express as px
 except Exception:
+    go = None
     px = None
 
 try:
@@ -54,1331 +54,1573 @@ except Exception:
     openpyxl = None
 
 try:
+    from docx import Document
+except Exception:
+    Document = None
+
+try:
     from sklearn.feature_extraction.text import TfidfVectorizer
     from sklearn.metrics.pairwise import cosine_similarity
 except Exception:
     TfidfVectorizer = None
     cosine_similarity = None
 
-APP_TITLE = "Sistema Folksonomia Digital"
-APP_SUBTITLE = "Plataforma de pesquisa, repositório e análise acadêmica"
-BASE_DIR = Path("folksonomia_liquid_storage")
-DB_FILE = BASE_DIR / "state.json"
-FILES_DIR = BASE_DIR / "files"
-BASE_DIR.mkdir(exist_ok=True)
+try:
+    import networkx as nx
+except Exception:
+    nx = None
+
+# =============================
+# App config
+# =============================
+APP_NAME = "Nebula"
+APP_TAGLINE = "Pesquisa acadêmica, repositório inteligente e análise conectada"
+DATA_DIR = Path("nebula_data")
+USERS_FILE = DATA_DIR / "users.json"
+REPOS_FILE = DATA_DIR / "repositories.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
+FILES_DIR = DATA_DIR / "files"
+DATA_DIR.mkdir(exist_ok=True)
 FILES_DIR.mkdir(exist_ok=True)
 
+st.set_page_config(
+    page_title=APP_NAME,
+    page_icon="🔬",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+# =============================
+# Dictionaries and metadata
+# =============================
 STOPWORDS = {
     "de","da","do","das","dos","a","o","as","os","e","em","para","por","com","um","uma","uns","umas",
-    "ao","aos","na","no","nas","nos","que","se","como","mais","menos","entre","sobre","sob","sem",
+    "ao","aos","na","no","nas","nos","que","se","como","mais","menos","entre","sobre","sem","ser","são",
     "the","of","and","or","in","to","for","by","with","on","at","from","an","is","are","be","this","that",
-    "study","paper","research","article","using","used","use","based","analysis","system","model","models"
+    "paper","study","research","article","using","used","analysis","results","method","methods","data",
+    "uma","esse","essa","esses","essas","também","ainda","entre","cada","foram","sendo","após"
 }
 
 TOPIC_LEXICON = {
-    "Inteligência Artificial": [
-        "inteligência artificial","ia","machine learning","deep learning","llm","neural","rede neural",
-        "modelo de linguagem","aprendizado","classificação","transformer","visão computacional"
-    ],
-    "Museologia": [
-        "museologia","museu","acervo","patrimônio","coleção","documentação museológica","folksonomia",
-        "curadoria","exposição","museal","salvaguarda","catalogação"
-    ],
-    "Ciência da Informação": [
-        "informação","indexação","metadados","ontologia","repositório","descrição","documentação","taxonomia",
-        "folksonomia","organização da informação","recuperação da informação"
-    ],
-    "Biologia": [
-        "célula","celular","proteína","gene","genômica","dna","rna","crispr","microscopia","tecido","organismo"
-    ],
-    "Medicina": [
-        "clínico","clínica","paciente","diagnóstico","tratamento","doença","hospital","terapia","sintoma"
-    ],
-    "Computação": [
-        "algoritmo","software","sistema","python","streamlit","dados","banco de dados","api","deploy"
-    ],
-    "Física": [
-        "quântico","física","partícula","energia","lente gravitacional","cosmologia","astrofísica","matéria escura"
-    ],
-    "Psicologia": [
-        "cognitivo","psicologia","comportamento","memória","emoção","percepção","viés","aprendizagem"
-    ],
-    "Educação": [
-        "ensino","aprendizagem","escola","universidade","educação","didática","currículo","discente"
-    ],
-    "Humanidades Digitais": [
-        "humanidades digitais","digital","preservação digital","arquivo digital","interoperabilidade","acesso aberto"
-    ],
+    "Museologia": ["museologia","museu","acervo","coleção","documentação museológica","patrimônio","curadoria","folksonomia","catalogação","exposição"],
+    "Ciência da Informação": ["metadados","indexação","ontologia","repositório","recuperação da informação","descrição","classificação","taxonomia","folksonomia"],
+    "Inteligência Artificial": ["inteligência artificial","machine learning","deep learning","rede neural","llm","modelo de linguagem","aprendizado de máquina","visão computacional"],
+    "Preservação Digital": ["preservação digital","arquivo digital","acesso aberto","interoperabilidade","digitalização","dados digitais"],
+    "Humanidades Digitais": ["humanidades digitais","humanidades","acervos digitais","digital humanities"],
+    "Biologia": ["célula","genômica","gene","proteína","rna","dna","microscopia","organismo","tecido"],
+    "Medicina": ["clínico","paciente","diagnóstico","tratamento","hospital","terapia","doença"],
+    "Computação": ["algoritmo","software","banco de dados","streamlit","python","api","deploy","sistema"],
+    "Educação": ["educação","aprendizagem","ensino","didática","currículo","escola","universidade"],
+    "Psicologia": ["cognitivo","psicologia","comportamento","percepção","emoção","memória"],
 }
 
 METHOD_LEXICON = {
-    "Experimental": ["experimento","experimental","ensaio","amostra","laboratório","coleta","medição","teste"],
-    "Revisão": ["revisão","estado da arte","scoping review","systematic review","revisão bibliográfica"],
-    "Qualitativa": ["entrevista","grupo focal","análise temática","observação","qualitativa","etnográfica"],
-    "Quantitativa": ["estatística","quantitativa","amostra","regressão","survey","questionário","variável"],
-    "Computacional": ["algoritmo","pipeline","simulação","modelo","rede neural","software","script","streamlit"],
-    "Estudo de Caso": ["estudo de caso","case study","caso","instituição","museu específico"],
+    "Revisão": ["revisão","estado da arte","systematic review","scoping review","revisão bibliográfica"],
+    "Qualitativa": ["entrevista","grupo focal","observação","análise temática","qualitativa","etnográfica"],
+    "Quantitativa": ["quantitativa","estatística","survey","questionário","regressão","amostra","variável"],
+    "Computacional": ["algoritmo","pipeline","modelo","rede neural","simulação","script","python","streamlit"],
+    "Experimental": ["experimental","ensaio","laboratório","coleta","medição","teste","protocolo"],
+    "Estudo de Caso": ["estudo de caso","case study","instituição","museu específico"],
 }
 
-COUNTRY_CODE_TO_NAME = {
-    "BR": "Brasil", "US": "Estados Unidos", "GB": "Reino Unido", "FR": "França", "DE": "Alemanha",
-    "ES": "Espanha", "PT": "Portugal", "IT": "Itália", "CA": "Canadá", "MX": "México", "AR": "Argentina",
-    "CL": "Chile", "CO": "Colômbia", "PE": "Peru", "UY": "Uruguai", "PY": "Paraguai", "JP": "Japão",
-    "CN": "China", "KR": "Coreia do Sul", "IN": "Índia", "AU": "Austrália", "NL": "Países Baixos",
-    "BE": "Bélgica", "CH": "Suíça", "SE": "Suécia", "NO": "Noruega", "DK": "Dinamarca", "FI": "Finlândia",
-    "AT": "Áustria", "IE": "Irlanda", "ZA": "África do Sul"
+COUNTRIES = {
+    "Brasil": {"aliases": ["brasil","brazil","brasileiro","brasileira","rio de janeiro","são paulo","unirio","usp","ufrj","ufmg","unicamp","fiocruz"], "lat": -14.2350, "lon": -51.9253},
+    "Estados Unidos": {"aliases": ["estados unidos","united states","usa","u.s.","mit","harvard","stanford","new york"], "lat": 39.8283, "lon": -98.5795},
+    "Reino Unido": {"aliases": ["reino unido","united kingdom","uk","england","oxford","cambridge","london"], "lat": 55.3781, "lon": -3.4360},
+    "Portugal": {"aliases": ["portugal","lisboa","porto","universidade lusófona"], "lat": 39.3999, "lon": -8.2245},
+    "Espanha": {"aliases": ["espanha","spain","madrid","barcelona"], "lat": 40.4637, "lon": -3.7492},
+    "França": {"aliases": ["frança","france","paris"], "lat": 46.2276, "lon": 2.2137},
+    "Alemanha": {"aliases": ["alemanha","germany","berlin","munich"], "lat": 51.1657, "lon": 10.4515},
+    "Itália": {"aliases": ["itália","italy","rome","roma","milan"], "lat": 41.8719, "lon": 12.5674},
+    "Canadá": {"aliases": ["canadá","canada","toronto","montreal"], "lat": 56.1304, "lon": -106.3468},
+    "Japão": {"aliases": ["japão","japan","tokyo","kyoto"], "lat": 36.2048, "lon": 138.2529},
+    "China": {"aliases": ["china","beijing","shanghai"], "lat": 35.8617, "lon": 104.1954},
+    "Índia": {"aliases": ["índia","india","new delhi","mumbai"], "lat": 20.5937, "lon": 78.9629},
+    "Argentina": {"aliases": ["argentina","buenos aires"], "lat": -38.4161, "lon": -63.6167},
+    "México": {"aliases": ["méxico","mexico","cdmx","ciudad de méxico"], "lat": 23.6345, "lon": -102.5528},
+    "Chile": {"aliases": ["chile","santiago"], "lat": -35.6751, "lon": -71.5430},
+    "Colômbia": {"aliases": ["colômbia","colombia","bogotá"], "lat": 4.5709, "lon": -74.2973},
 }
 
-DEMO_USER = {
-    "demo@folksonomia.ai": {
+DEMO_USERS = {
+    "demo@nebula.ai": {
         "name": "Usuário Demo",
         "password": hashlib.sha256("demo123".encode()).hexdigest(),
-        "area": "Museologia e Ciência da Informação",
-        "bio": "Conta de demonstração",
-        "history": [],
-        "saved_articles": []
+        "area": "Museologia e Inteligência Artificial",
+        "bio": "Conta de demonstração do Nebula.",
+        "saved_articles": [],
+        "search_history": [],
+        "interest_profile": {}
     }
 }
 
+NAV_ITEMS = [
+    ("workspace", "Visão Geral"),
+    ("search", "Pesquisa Inteligente"),
+    ("repository", "Repositório"),
+    ("analytics", "Análises"),
+    ("connections", "Conexões"),
+    ("account", "Conta"),
+]
+
+# =============================
+# Utilities
+# =============================
 def sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
+
 def now_str() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M")
+
+
+def slugify(text: str) -> str:
+    text = re.sub(r"[^\w\s-]", "", (text or "").lower(), flags=re.UNICODE).strip()
+    text = re.sub(r"[-\s]+", "-", text)
+    return text or "item"
+
+
+def normalize_spaces(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip()
+
+
+def strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", text or "")
+
+
+def safe_json_load(path: Path, default):
+    if path.exists():
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return default
+    return default
+
+
+def save_json(path: Path, data):
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
 
 def ensure_repo_dir(repo_slug: str) -> Path:
     p = FILES_DIR / repo_slug
     p.mkdir(parents=True, exist_ok=True)
     return p
 
-def slugify(text: str) -> str:
-    text = re.sub(r"[^\w\s-]", "", text.lower(), flags=re.UNICODE).strip()
-    text = re.sub(r"[-\s]+", "-", text)
-    return text or "repositorio"
 
 def initials(name: str) -> str:
     parts = [p for p in (name or "?").split() if p.strip()]
     return "".join(p[0].upper() for p in parts[:2]) or "U"
 
-def load_state():
-    if DB_FILE.exists():
-        try:
-            data = json.loads(DB_FILE.read_text(encoding="utf-8"))
-            if not isinstance(data, dict):
-                return {}
-            return data
-        except Exception:
-            return {}
-    return {}
-
-def save_state():
-    data = {
-        "users": st.session_state.users,
-        "repositories": st.session_state.repositories,
-        "saved_articles_global": st.session_state.saved_articles_global,
-    }
-    DB_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-def init_state():
-    disk = load_state()
-    st.session_state.setdefault("users", {**DEMO_USER, **disk.get("users", {})})
-    st.session_state.setdefault("repositories", disk.get("repositories", {}))
-    st.session_state.setdefault("saved_articles_global", disk.get("saved_articles_global", []))
-    st.session_state.setdefault("logged_in", False)
-    st.session_state.setdefault("current_user", None)
-    st.session_state.setdefault("page", "dashboard")
-    st.session_state.setdefault("search_cache", {})
-    st.session_state.setdefault("discovery_result", None)
-    st.session_state.setdefault("connections_cache", None)
-    st.session_state.setdefault("analysis_cache", None)
-
-def user_data():
-    email = st.session_state.get("current_user")
-    return st.session_state.users.get(email, {})
 
 def tokenize(text: str):
-    text = (text or "").lower()
+    text = strip_html((text or "").lower())
     text = re.sub(r"[^\w\sáàâãéêíóôõúçü-]", " ", text, flags=re.UNICODE)
-    toks = [t for t in text.split() if len(t) > 2 and t not in STOPWORDS]
-    return toks
+    return [t for t in text.split() if len(t) > 2 and t not in STOPWORDS]
 
-def keyword_scores(text: str, limit: int = 20):
+
+def keyword_scores(text: str, limit: int = 18):
     counts = Counter(tokenize(text))
     return counts.most_common(limit)
 
-def extract_keywords(text: str, limit: int = 20):
+
+def extract_keywords(text: str, limit: int = 18):
     return [k for k, _ in keyword_scores(text, limit)]
 
-def normalize_spaces(text: str):
-    return re.sub(r"\s+", " ", (text or "")).strip()
 
 def split_sentences(text: str):
     text = normalize_spaces(text)
     if not text:
         return []
-    return re.split(r"(?<=[\.\!\?])\s+", text)
+    return re.split(r"(?<=[\.!?])\s+", text)
 
-def summarize_text(text: str, max_sentences: int = 4):
-    sentences = [s.strip() for s in split_sentences(text) if len(s.strip()) > 35]
-    if not sentences:
-        return ""
-    scores = Counter(tokenize(text))
-    ranked = []
-    for idx, sent in enumerate(sentences):
-        sent_tokens = tokenize(sent)
-        if not sent_tokens:
-            continue
-        score = sum(scores[t] for t in sent_tokens) / max(len(sent_tokens), 1)
-        ranked.append((score, idx, sent))
-    chosen = sorted(sorted(ranked, reverse=True)[:max_sentences], key=lambda x: x[1])
-    summary = " ".join(item[2] for item in chosen)
-    return summary[:1200]
 
-def detect_topics(text: str):
-    base = text.lower()
-    topic_scores = {}
-    for topic, terms in TOPIC_LEXICON.items():
-        score = 0
-        for term in terms:
-            if term in base:
-                score += 3
-            else:
-                toks = term.split()
-                score += sum(1 for tok in toks if tok in base)
-        if score:
-            topic_scores[topic] = score
-    if not topic_scores:
-        topic_scores["Pesquisa Geral"] = 1
-    return dict(sorted(topic_scores.items(), key=lambda x: x[1], reverse=True))
+def similarity_ratio(a: str, b: str) -> float:
+    return SequenceMatcher(None, (a or "").lower(), (b or "").lower()).ratio()
 
-def detect_methodology(text: str):
-    base = text.lower()
-    scores = {}
-    for method, terms in METHOD_LEXICON.items():
-        score = sum(base.count(term) for term in terms)
-        if score:
-            scores[method] = score
-    if not scores:
-        return "Indefinida", {}
-    best = max(scores.items(), key=lambda x: x[1])[0]
-    return best, scores
 
-def detect_years(text: str):
-    years = re.findall(r"\b(19\d{2}|20\d{2})\b", text or "")
-    filtered = [int(y) for y in years if 1900 <= int(y) <= datetime.now().year + 1]
-    return Counter(filtered)
+def to_download_bytes(obj) -> bytes:
+    return json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
 
-def guess_title(fname: str, text: str):
-    sentences = split_sentences(text[:2000])
-    cleaned_name = Path(fname).stem.replace("_", " ").replace("-", " ").strip()
-    candidates = []
-    for line in text[:1500].splitlines():
-        line = normalize_spaces(line)
-        if 12 < len(line) < 180:
-            candidates.append(line)
-    for cand in candidates[:12]:
-        if len(cand.split()) >= 4 and cand.lower() not in {"abstract", "resumo"}:
-            return cand[:180]
-    return cleaned_name[:180]
+# =============================
+# State management
+# =============================
+def load_state():
+    users = safe_json_load(USERS_FILE, {})
+    repos = safe_json_load(REPOS_FILE, {})
+    settings = safe_json_load(SETTINGS_FILE, {})
+    if not isinstance(users, dict):
+        users = {}
+    if not isinstance(repos, dict):
+        repos = {}
+    if not isinstance(settings, dict):
+        settings = {}
+    return users, repos, settings
 
-def guess_authors(text: str):
-    header = text[:1500]
-    lines = [normalize_spaces(l) for l in header.splitlines() if normalize_spaces(l)]
-    patterns = [
-        r"(?:autor(?:es)?|authors?)\s*[:\-]\s*([^\n]+)",
-        r"(?:por|by)\s+([A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][^\n]{5,120})"
-    ]
-    for pat in patterns:
-        m = re.search(pat, header, flags=re.IGNORECASE)
-        if m:
-            line = normalize_spaces(m.group(1))
-            parts = re.split(r",|;| and | e ", line)
-            authors = [p.strip() for p in parts if 3 < len(p.strip()) < 60]
-            if authors:
-                return authors[:8]
-    candidates = []
-    for line in lines[:8]:
-        if re.search(r"[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]+ [A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]+", line):
-            if "universidade" not in line.lower() and "abstract" not in line.lower():
-                candidates.append(line)
-    joined = " ".join(candidates[:2])
-    found = re.findall(r"([A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]+(?:\s+[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]+)+)", joined)
-    return found[:6]
 
-def extract_pdf_text(file_bytes: bytes):
+def save_state():
+    save_json(USERS_FILE, st.session_state.users)
+    save_json(REPOS_FILE, st.session_state.repositories)
+    save_json(SETTINGS_FILE, st.session_state.settings)
+
+
+def init_state():
+    users_disk, repos_disk, settings_disk = load_state()
+    st.session_state.setdefault("users", {**DEMO_USERS, **users_disk})
+    st.session_state.setdefault("repositories", repos_disk)
+    st.session_state.setdefault("settings", settings_disk)
+    st.session_state.setdefault("logged_in", False)
+    st.session_state.setdefault("current_user", None)
+    st.session_state.setdefault("page", "workspace")
+    st.session_state.setdefault("search_results", None)
+    st.session_state.setdefault("local_matches", [])
+    st.session_state.setdefault("external_matches", [])
+    st.session_state.setdefault("external_images", [])
+    st.session_state.setdefault("image_matches", [])
+    st.session_state.setdefault("analysis_cache", None)
+    st.session_state.setdefault("connections_cache", None)
+    st.session_state.setdefault("last_uploaded_image_name", "")
+
+
+def current_user_data():
+    email = st.session_state.get("current_user")
+    return st.session_state.users.get(email, {})
+
+
+def update_user_interest(query: str, keywords=None, topics=None):
+    email = st.session_state.get("current_user")
+    if not email or email not in st.session_state.users:
+        return
+    u = st.session_state.users[email]
+    profile = u.setdefault("interest_profile", {})
+    for item in (keywords or [])[:10]:
+        profile[item.lower()] = round(profile.get(item.lower(), 0) + 1.0, 2)
+    for item in (topics or [])[:6]:
+        profile[item.lower()] = round(profile.get(item.lower(), 0) + 1.5, 2)
+    hist = u.setdefault("search_history", [])
+    if query.strip():
+        hist.insert(0, {"query": query.strip(), "date": now_str()})
+        u["search_history"] = hist[:40]
+    save_state()
+
+# =============================
+# UI helpers
+# =============================
+def microscope_logo_svg(size: int = 26) -> str:
+    return f"""
+    <svg width="{size}" height="{size}" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="nebulaMic" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+          <stop stop-color="#89C9FF"/>
+          <stop offset="1" stop-color="#CDB7FF"/>
+        </linearGradient>
+      </defs>
+      <path d="M19 48H47" stroke="url(#nebulaMic)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M27 48C27 42 31 38 38 36" stroke="url(#nebulaMic)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M33 18L42 27" stroke="url(#nebulaMic)" stroke-width="6" stroke-linecap="round"/>
+      <path d="M26 12L36 22" stroke="url(#nebulaMic)" stroke-width="6" stroke-linecap="round"/>
+      <path d="M24 14C21 17 21 22 24 25L31 32" stroke="url(#nebulaMic)" stroke-width="4" stroke-linecap="round"/>
+      <path d="M34 32L44 22C47 19 47 14 44 11" stroke="url(#nebulaMic)" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="45" cy="41" r="6" stroke="url(#nebulaMic)" stroke-width="4"/>
+      <path d="M20 54H52" stroke="url(#nebulaMic)" stroke-width="4" stroke-linecap="round"/>
+    </svg>
+    """
+
+
+def inject_css():
+    st.markdown(
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap');
+
+        :root {
+          --bg:#040812;
+          --panel:rgba(12,19,34,.68);
+          --panel-2:rgba(18,29,50,.74);
+          --line:rgba(255,255,255,.10);
+          --line-2:rgba(255,255,255,.06);
+          --txt:#EAF2FF;
+          --muted:#99A8C7;
+          --soft:#7482A1;
+          --blue:#8BC8FF;
+          --purple:#CBB6FF;
+          --pink:#F5B2E6;
+          --shadow:0 14px 44px rgba(0,0,0,.38);
+          --radius:22px;
+          --radius-sm:14px;
+        }
+
+        html, body, .stApp {
+          background:
+            radial-gradient(circle at 0% 0%, rgba(139,200,255,.10), transparent 35%),
+            radial-gradient(circle at 100% 10%, rgba(203,182,255,.12), transparent 32%),
+            linear-gradient(180deg, #03070f 0%, #071225 55%, #08182f 100%) !important;
+          color: var(--txt) !important;
+          font-family: 'Inter', sans-serif !important;
+        }
+
+        header, #MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="collapsedControl"] {
+          display:none !important;
+        }
+
+        .block-container {
+          padding-top: .7rem !important;
+          padding-bottom: 2.2rem !important;
+          max-width: 1520px !important;
+        }
+
+        section[data-testid="stSidebar"] {
+          width: 255px !important;
+          min-width: 255px !important;
+          max-width: 255px !important;
+          border-right: 1px solid rgba(255,255,255,.08) !important;
+          background: rgba(6,10,19,.78) !important;
+          backdrop-filter: blur(24px) saturate(160%) !important;
+          -webkit-backdrop-filter: blur(24px) saturate(160%) !important;
+          box-shadow: 8px 0 32px rgba(0,0,0,.34) !important;
+        }
+
+        section[data-testid="stSidebar"] > div {
+          width: 255px !important;
+          padding-top: .8rem !important;
+        }
+
+        [data-testid="stSidebarCollapseButton"] {
+          display:none !important;
+        }
+
+        .nebula-side-brand {
+          display:flex;
+          align-items:center;
+          gap:12px;
+          margin: .4rem .1rem 1.1rem .1rem;
+          padding: .2rem .35rem;
+        }
+
+        .nebula-side-logo {
+          width:42px;
+          height:42px;
+          border-radius:14px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          background: linear-gradient(135deg, rgba(139,200,255,.14), rgba(203,182,255,.16));
+          border:1px solid rgba(255,255,255,.12);
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 8px 20px rgba(0,0,0,.24);
+        }
+
+        .nebula-side-name {
+          font-family:'Syne', sans-serif;
+          font-size:1.14rem;
+          font-weight:800;
+          letter-spacing:-.03em;
+          color:#EAF2FF;
+          line-height:1;
+        }
+
+        .nebula-side-sub {
+          font-size:.70rem;
+          color:#91A2C7;
+          margin-top:2px;
+        }
+
+        .section-label {
+          font-size:.64rem;
+          color:#7F90B5;
+          letter-spacing:.14em;
+          text-transform:uppercase;
+          font-weight:700;
+          margin: .7rem .25rem .35rem .25rem;
+        }
+
+        section[data-testid="stSidebar"] .stButton > button,
+        .stButton > button {
+          border-radius: 16px !important;
+          border: 1px solid rgba(255,255,255,.10) !important;
+          background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.04)) !important;
+          backdrop-filter: blur(18px) saturate(160%) !important;
+          -webkit-backdrop-filter: blur(18px) saturate(160%) !important;
+          color: #DCE7FF !important;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,.11), 0 10px 24px rgba(0,0,0,.20) !important;
+          transition: .18s ease all !important;
+          font-weight: 600 !important;
+          min-height: 44px !important;
+        }
+
+        section[data-testid="stSidebar"] .stButton > button:hover,
+        .stButton > button:hover {
+          transform: translateY(-1px);
+          border-color: rgba(139,200,255,.28) !important;
+          background: linear-gradient(180deg, rgba(139,200,255,.14), rgba(203,182,255,.08)) !important;
+        }
+
+        .glass-card {
+          background: linear-gradient(180deg, rgba(18,29,50,.72), rgba(11,19,36,.62));
+          border:1px solid rgba(255,255,255,.10);
+          border-radius:22px;
+          box-shadow: var(--shadow);
+          backdrop-filter: blur(20px) saturate(170%);
+          -webkit-backdrop-filter: blur(20px) saturate(170%);
+          position:relative;
+          overflow:hidden;
+        }
+
+        .glass-card::before {
+          content:"";
+          position:absolute;
+          top:0; left:0; right:0;
+          height:1px;
+          background: linear-gradient(90deg, transparent, rgba(255,255,255,.20), transparent);
+        }
+
+        .page-head {
+          display:flex;
+          align-items:flex-start;
+          justify-content:space-between;
+          gap:18px;
+          margin-bottom: 1rem;
+        }
+
+        .page-title {
+          font-family:'Syne', sans-serif;
+          font-size:2.05rem;
+          line-height:1;
+          font-weight:800;
+          letter-spacing:-.04em;
+          color:#F4F7FF;
+          margin:0;
+        }
+
+        .page-sub {
+          color:#93A4C6;
+          margin-top:.34rem;
+          font-size:.95rem;
+        }
+
+        .metric-card {
+          padding: 1.05rem 1.1rem;
+          min-height: 120px;
+        }
+
+        .metric-label {
+          font-size:.68rem;
+          letter-spacing:.13em;
+          text-transform:uppercase;
+          color:#8EA0C5;
+          font-weight:700;
+        }
+
+        .metric-value {
+          font-family:'Syne', sans-serif;
+          font-size:2rem;
+          line-height:1;
+          font-weight:800;
+          margin-top:1rem;
+          color:#EAF2FF;
+        }
+
+        .metric-foot {
+          color:#8291B3;
+          font-size:.82rem;
+          margin-top:.55rem;
+        }
+
+        .chip {
+          display:inline-flex;
+          align-items:center;
+          gap:6px;
+          padding: 5px 10px;
+          border-radius:999px;
+          border:1px solid rgba(255,255,255,.10);
+          background: rgba(255,255,255,.05);
+          color:#D7E2FB;
+          font-size:.76rem;
+          margin: 0 6px 6px 0;
+        }
+
+        .mini-title {
+          font-family:'Syne', sans-serif;
+          font-size:1rem;
+          font-weight:700;
+          color:#F2F6FF;
+          margin-bottom:.65rem;
+        }
+
+        .repo-item,
+        .result-item,
+        .connection-item {
+          padding: 1rem 1rem;
+          border-radius: 18px;
+          border:1px solid rgba(255,255,255,.08);
+          background: rgba(255,255,255,.04);
+          margin-bottom: .6rem;
+        }
+
+        .repo-item:hover,
+        .result-item:hover,
+        .connection-item:hover {
+          border-color: rgba(139,200,255,.24);
+          background: rgba(255,255,255,.055);
+        }
+
+        .tiny {
+          color:#8FA0C4;
+          font-size:.78rem;
+        }
+
+        .search-panel {
+          padding: 1.1rem 1.1rem 1rem 1.1rem;
+          margin-bottom: .9rem;
+        }
+
+        .auth-shell {
+          max-width: 980px;
+          margin: 2rem auto 0 auto;
+        }
+
+        .auth-card {
+          padding: 1.3rem;
+        }
+
+        .auth-brand {
+          display:flex;
+          align-items:center;
+          gap:16px;
+          margin-bottom:1rem;
+        }
+
+        .auth-title {
+          font-family:'Syne', sans-serif;
+          font-size:2rem;
+          font-weight:800;
+          letter-spacing:-.05em;
+          color:#F2F7FF;
+        }
+
+        .auth-sub {
+          color:#90A2C8;
+          margin-top:.22rem;
+        }
+
+        .account-name {
+          font-weight:700;
+          color:#EEF4FF;
+          margin-bottom:2px;
+        }
+
+        .stTextInput > div > div > input,
+        .stTextArea textarea,
+        .stSelectbox > div > div,
+        .stFileUploader section,
+        .stMultiSelect > div > div {
+          border-radius: 16px !important;
+          background: rgba(255,255,255,.05) !important;
+          border:1px solid rgba(255,255,255,.10) !important;
+          color:#EAF2FF !important;
+        }
+
+        .stTextInput label,
+        .stTextArea label,
+        .stSelectbox label,
+        .stFileUploader label,
+        .stMultiSelect label,
+        .stCheckbox label {
+          color:#9DB0D7 !important;
+        }
+
+        .stTabs [data-baseweb="tab-list"] {
+          background: rgba(255,255,255,.04);
+          border:1px solid rgba(255,255,255,.08);
+          border-radius: 16px;
+          padding:4px;
+          gap:4px;
+        }
+
+        .stTabs [data-baseweb="tab"] {
+          color:#93A4C9;
+          border-radius: 12px;
+          font-weight:600;
+        }
+
+        .stTabs [aria-selected="true"] {
+          background: linear-gradient(180deg, rgba(139,200,255,.16), rgba(203,182,255,.10)) !important;
+          color:#F1F6FF !important;
+        }
+
+        hr {
+          border:none;
+          border-top:1px solid rgba(255,255,255,.08);
+          margin:.75rem 0 1rem 0;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def glass_open(extra_style: str = ""):
+    st.markdown(f'<div class="glass-card" style="{extra_style}">', unsafe_allow_html=True)
+
+
+def glass_close():
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
+def page_header(title: str, subtitle: str):
+    st.markdown(
+        f"""
+        <div class="page-head">
+          <div>
+            <div class="page-title">{title}</div>
+            <div class="page-sub">{subtitle}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def sidebar_brand():
+    st.markdown(
+        f"""
+        <div class="nebula-side-brand">
+          <div class="nebula-side-logo">{microscope_logo_svg(24)}</div>
+          <div>
+            <div class="nebula-side-name">Nebula</div>
+            <div class="nebula-side-sub">laboratório de pesquisa</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sidebar():
+    with st.sidebar:
+        sidebar_brand()
+        user = current_user_data()
+        st.markdown('<div class="section-label">Navegação</div>', unsafe_allow_html=True)
+        for key, label in NAV_ITEMS:
+            if st.button(label, key=f"nav_{key}", use_container_width=True):
+                st.session_state.page = key
+                st.rerun()
+        st.markdown('<div class="section-label">Conta</div>', unsafe_allow_html=True)
+        st.markdown(
+            f"""
+            <div class="repo-item" style="padding:.8rem .9rem; margin-bottom:.8rem;">
+              <div class="account-name">{user.get('name','Usuário')}</div>
+              <div class="tiny">{user.get('area','Sem área definida')}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if st.button("Sair do sistema", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.current_user = None
+            st.session_state.page = "workspace"
+            st.rerun()
+
+# =============================
+# File extraction and analysis
+# =============================
+def file_type(name: str) -> str:
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    mapping = {
+        "pdf": "PDF",
+        "txt": "Texto",
+        "md": "Markdown",
+        "docx": "Word",
+        "csv": "CSV",
+        "xlsx": "Planilha",
+        "xls": "Planilha",
+        "png": "Imagem",
+        "jpg": "Imagem",
+        "jpeg": "Imagem",
+        "webp": "Imagem",
+        "bmp": "Imagem",
+        "gif": "Imagem",
+        "py": "Código",
+        "json": "JSON",
+    }
+    return mapping.get(ext, "Arquivo")
+
+
+def read_pdf_bytes(raw: bytes) -> str:
     if PyPDF2 is None:
         return ""
     try:
-        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+        reader = PyPDF2.PdfReader(io.BytesIO(raw))
         texts = []
-        for page in reader.pages[:30]:
+        for page in reader.pages[:40]:
             try:
                 texts.append(page.extract_text() or "")
             except Exception:
-                continue
+                pass
         return "\n".join(texts)
     except Exception:
         return ""
 
-def extract_docx_text(file_bytes: bytes):
+
+def read_docx_bytes(raw: bytes) -> str:
+    if Document is None:
+        return ""
     try:
-        with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
-            xml = zf.read("word/document.xml").decode("utf-8", errors="ignore")
-        xml = re.sub(r"</w:p>", "\n", xml)
-        xml = re.sub(r"<[^>]+>", " ", xml)
-        return normalize_spaces(xml)
+        doc = Document(io.BytesIO(raw))
+        return "\n".join(p.text for p in doc.paragraphs)
     except Exception:
         return ""
 
-def extract_xlsx_text(file_bytes: bytes):
-    if openpyxl is None:
-        return ""
-    try:
-        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
-        chunks = []
-        for ws in wb.worksheets[:8]:
-            for row in ws.iter_rows(values_only=True):
-                vals = [str(v) for v in row if v is not None]
-                if vals:
-                    chunks.append(" | ".join(vals))
-        return "\n".join(chunks)
-    except Exception:
-        return ""
 
-def extract_csv_text(file_bytes: bytes):
+def read_csv_bytes(raw: bytes) -> str:
     if pd is None:
-        try:
-            return file_bytes.decode("utf-8", errors="ignore")
-        except Exception:
-            return ""
-    for sep in [",", ";", "\t"]:
-        try:
-            df = pd.read_csv(io.BytesIO(file_bytes), sep=sep)
-            return df.astype(str).head(300).to_csv(index=False)
-        except Exception:
-            continue
+        return raw.decode("utf-8", errors="ignore")
     try:
-        return file_bytes.decode("utf-8", errors="ignore")
+        df = pd.read_csv(io.BytesIO(raw))
+        return df.astype(str).head(500).to_csv(index=False)
+    except Exception:
+        try:
+            df = pd.read_csv(io.BytesIO(raw), sep=";")
+            return df.astype(str).head(500).to_csv(index=False)
+        except Exception:
+            return raw.decode("utf-8", errors="ignore")
+
+
+def read_xlsx_bytes(raw: bytes) -> str:
+    if pd is None:
+        return ""
+    try:
+        xl = pd.ExcelFile(io.BytesIO(raw))
+        parts = []
+        for sheet in xl.sheet_names[:5]:
+            df = xl.parse(sheet).astype(str).head(300)
+            parts.append(f"Planilha: {sheet}\n{df.to_csv(index=False)}")
+        return "\n\n".join(parts)
     except Exception:
         return ""
 
-def extract_txt_text(file_bytes: bytes):
-    try:
-        return file_bytes.decode("utf-8", errors="ignore")
-    except Exception:
+
+def read_textual_bytes(name: str, raw: bytes) -> str:
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if ext == "pdf":
+        return read_pdf_bytes(raw)
+    if ext == "docx":
+        return read_docx_bytes(raw)
+    if ext in {"csv"}:
+        return read_csv_bytes(raw)
+    if ext in {"xlsx", "xls"}:
+        return read_xlsx_bytes(raw)
+    if ext in {"txt", "md", "py", "json"}:
+        return raw.decode("utf-8", errors="ignore")
+    return raw.decode("utf-8", errors="ignore")
+
+
+def summarize_text(text: str, max_sentences: int = 3) -> str:
+    if not text:
         return ""
+    text = normalize_spaces(strip_html(text))
+    m = re.search(r"\b(resumo|abstract)\b[:\s-]*(.{80,900})", text, flags=re.I)
+    if m:
+        candidate = m.group(2)
+        sents = split_sentences(candidate)
+        if sents:
+            return " ".join(sents[:max_sentences])[:900]
+    sents = split_sentences(text)
+    if not sents:
+        return text[:420]
+    return " ".join(sents[:max_sentences])[:900]
 
-def file_type(filename: str):
-    ext = Path(filename).suffix.lower().strip(".")
-    mapping = {
-        "pdf": "PDF", "docx": "DOCX", "txt": "TXT", "csv": "CSV", "xlsx": "XLSX",
-        "xls": "XLSX", "md": "TXT", "py": "TXT", "json": "TXT", "jpg": "IMG",
-        "jpeg": "IMG", "png": "IMG", "webp": "IMG", "bmp": "IMG", "tif": "IMG", "tiff": "IMG"
-    }
-    return mapping.get(ext, "OUTRO")
 
-def safe_request(url: str, params=None, headers=None, timeout: int = 12):
-    if requests is None:
+def detect_topics(text: str):
+    text_l = (text or "").lower()
+    scores = []
+    for topic, terms in TOPIC_LEXICON.items():
+        score = sum(2 if t in text_l else 0 for t in terms)
+        score += sum(1 for kw in extract_keywords(text, 18) if any(t in kw for t in terms))
+        if score > 0:
+            scores.append((topic, score))
+    scores.sort(key=lambda x: x[1], reverse=True)
+    return [t for t, _ in scores[:5]]
+
+
+def detect_method(text: str) -> str:
+    text_l = (text or "").lower()
+    best = ("Indefinido", 0)
+    for method, terms in METHOD_LEXICON.items():
+        score = sum(1 for t in terms if t in text_l)
+        if score > best[1]:
+            best = (method, score)
+    return best[0]
+
+
+def guess_title(name: str, text: str) -> str:
+    lines = [normalize_spaces(l) for l in (text or "").splitlines() if normalize_spaces(l)]
+    for line in lines[:8]:
+        if 12 <= len(line) <= 180 and not re.search(r"^(resumo|abstract|palavras-chave|keywords)\b", line, flags=re.I):
+            return line
+    return Path(name).stem.replace("_", " ").replace("-", " ").strip().title()
+
+
+def guess_year(text: str) -> int | None:
+    years = re.findall(r"\b(19\d{2}|20\d{2})\b", text or "")
+    if not years:
         return None
-    try:
-        r = requests.get(url, params=params, headers=headers or {}, timeout=timeout)
-        if r.status_code == 200:
-            return r
-    except Exception:
+    counts = Counter(int(y) for y in years if 1900 <= int(y) <= 2100)
+    if not counts:
         return None
-    return None
+    return counts.most_common(1)[0][0]
 
-def semantic_scholar_search(query: str, limit: int = 6):
-    cache_key = f"ss::{query}::{limit}"
-    if cache_key in st.session_state.search_cache:
-        return st.session_state.search_cache[cache_key]
-    url = "https://api.semanticscholar.org/graph/v1/paper/search"
-    params = {
-        "query": query,
-        "limit": limit,
-        "fields": "title,authors,year,abstract,venue,citationCount,url,externalIds"
+
+def guess_authors(text: str):
+    text = normalize_spaces(strip_html(text or ""))
+    patterns = [
+        r"(?:autores?|authors?)\s*[:\-]\s*([^\.\n]{5,220})",
+        r"(?:por|by)\s+([A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][^\.\n]{5,180})",
+    ]
+    candidates = []
+    for pat in patterns:
+        m = re.search(pat, text, flags=re.I)
+        if m:
+            chunk = m.group(1)
+            pieces = re.split(r",|;| and | e ", chunk)
+            for p in pieces:
+                p = normalize_spaces(p)
+                if 4 <= len(p) <= 60 and re.search(r"[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ]", p):
+                    candidates.append(p)
+    if candidates:
+        return list(dict.fromkeys(candidates))[:6]
+    proper = re.findall(r"\b[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]+\s+[A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][a-záàâãéêíóôõúç]+\b", text)
+    proper = [p for p in proper if len(p.split()) == 2]
+    return list(dict.fromkeys(proper))[:5]
+
+
+def detect_countries(text: str):
+    text_l = (text or "").lower()
+    found = []
+    for country, meta in COUNTRIES.items():
+        if any(alias in text_l for alias in meta["aliases"]):
+            found.append(country)
+    return found
+
+
+def analyze_document(name: str, text: str, source: str = "local", url: str = ""):
+    clean = normalize_spaces(strip_html(text or ""))
+    kws = extract_keywords(clean, 18)
+    title = guess_title(name, clean)
+    summary = summarize_text(clean, 3)
+    topics = detect_topics(clean)
+    method = detect_method(clean)
+    year = guess_year(clean)
+    authors = guess_authors(clean)
+    countries = detect_countries(clean)
+    return {
+        "name": name,
+        "title": title,
+        "summary": summary,
+        "keywords": kws,
+        "topics": topics,
+        "method": method,
+        "year": year,
+        "authors": authors,
+        "countries": countries,
+        "text_length": len(clean),
+        "source": source,
+        "url": url,
     }
+
+# =============================
+# Local repositories
+# =============================
+def all_local_documents():
+    docs = []
+    for repo_id, repo in st.session_state.repositories.items():
+        repo_name = repo.get("name", repo_id)
+        for file_item in repo.get("files", []):
+            item = dict(file_item)
+            item["repo_id"] = repo_id
+            item["repo_name"] = repo_name
+            docs.append(item)
+    return docs
+
+
+def analyzed_local_documents():
+    docs = []
+    for item in all_local_documents():
+        ana = item.get("analysis") or {}
+        if ana:
+            row = dict(item)
+            row.update(ana)
+            docs.append(row)
+    return docs
+
+
+def store_uploaded_file(repo_id: str, uploaded_file):
+    repo_dir = ensure_repo_dir(repo_id)
+    raw = uploaded_file.getvalue()
+    digest = hashlib.sha1(raw).hexdigest()
+    fname = uploaded_file.name
+    ext = fname.rsplit(".", 1)[-1].lower() if "." in fname else "bin"
+    saved_name = f"{digest[:12]}_{slugify(Path(fname).stem)}.{ext}"
+    dest = repo_dir / saved_name
+    dest.write_bytes(raw)
+
+    extracted_text = ""
+    analysis = {}
+    if file_type(fname) != "Imagem":
+        extracted_text = read_textual_bytes(fname, raw)
+        analysis = analyze_document(fname, extracted_text, source="local") if extracted_text else {}
+    else:
+        analysis = {
+            "name": fname,
+            "title": Path(fname).stem,
+            "summary": "Arquivo de imagem carregado no repositório.",
+            "keywords": [],
+            "topics": [],
+            "method": "Indefinido",
+            "year": None,
+            "authors": [],
+            "countries": [],
+            "text_length": 0,
+            "source": "local-image",
+            "url": "",
+        }
+
+    item = {
+        "original_name": fname,
+        "stored_name": saved_name,
+        "path": str(dest),
+        "type": file_type(fname),
+        "size": len(raw),
+        "sha1": digest,
+        "uploaded_at": now_str(),
+        "text": extracted_text,
+        "analysis": analysis,
+    }
+    return item
+
+# =============================
+# Search intelligence
+# =============================
+def infer_query_intent(query: str, user_profile: dict):
+    q = (query or "").lower()
+    intent = "exploratória"
+    if any(t in q for t in ["comparar", "diferença", "versus", "vs"]):
+        intent = "comparativa"
+    elif any(t in q for t in ["metodologia", "método", "protocolo"]):
+        intent = "metodológica"
+    elif any(t in q for t in ["imagem", "microscopia", "figura", "foto"]):
+        intent = "visual"
+    elif any(t in q for t in ["artigos", "papers", "referências", "bibliografia"]):
+        intent = "bibliográfica"
+
+    base_keywords = extract_keywords(query, 8)
+    interests = sorted((user_profile or {}).items(), key=lambda x: x[1], reverse=True)
+    suggestions = []
+    for kw in base_keywords:
+        suggestions.extend([
+            f"{kw} revisão sistemática",
+            f"{kw} estudo de caso",
+            f"{kw} metadados",
+        ])
+    for kw, _ in interests[:4]:
+        if kw not in " ".join(base_keywords):
+            suggestions.append(f"{query} {kw}")
+    suggestions = list(dict.fromkeys([s for s in suggestions if len(s) < 80]))[:8]
+
+    topics = detect_topics(query)
+    return {
+        "intent": intent,
+        "keywords": base_keywords,
+        "topics": topics,
+        "suggestions": suggestions,
+    }
+
+
+def local_search(query: str, docs: list, top_n: int = 18):
+    if not query.strip() or not docs:
+        return []
+    corpus = []
+    for d in docs:
+        ana = d.get("analysis") or {}
+        content = " ".join([
+            d.get("original_name", ""),
+            ana.get("title", ""),
+            ana.get("summary", ""),
+            " ".join(ana.get("keywords", [])),
+            " ".join(ana.get("topics", [])),
+            d.get("text", "")[:6000],
+        ])
+        corpus.append(content)
+
+    scores = []
+    if TfidfVectorizer is not None and cosine_similarity is not None:
+        try:
+            vec = TfidfVectorizer(max_features=4000)
+            mat = vec.fit_transform(corpus + [query])
+            sims = cosine_similarity(mat[-1], mat[:-1]).flatten().tolist()
+            scores = sims
+        except Exception:
+            scores = []
+
+    if not scores:
+        q_terms = set(tokenize(query))
+        scores = []
+        for content in corpus:
+            c_terms = set(tokenize(content))
+            overlap = len(q_terms & c_terms)
+            score = overlap / max(len(q_terms), 1)
+            scores.append(score)
+
     results = []
-    r = safe_request(url, params=params)
-    if r is not None:
-        data = r.json().get("data", [])
-        for item in data:
-            doi = (item.get("externalIds") or {}).get("DOI", "")
-            authors = ", ".join(a.get("name", "") for a in item.get("authors", [])[:4])
+    for d, score in zip(docs, scores):
+        ana = d.get("analysis") or {}
+        title = (ana.get("title") or d.get("original_name", "")).lower()
+        bonus = 0
+        for piece in query.lower().split():
+            if piece and piece in title:
+                bonus += 0.08
+        final = round(float(score) + bonus, 4)
+        if final > 0:
             results.append({
-                "source": "Semantic Scholar",
-                "title": item.get("title", "Sem título"),
-                "authors": authors or "Não identificado",
-                "year": item.get("year"),
-                "abstract": item.get("abstract", "") or "",
-                "citations": item.get("citationCount", 0) or 0,
-                "url": item.get("url") or (f"https://doi.org/{doi}" if doi else ""),
+                "score": final,
+                "repo_name": d.get("repo_name", ""),
+                "path": d.get("path", ""),
+                "original_name": d.get("original_name", ""),
+                "analysis": ana,
+                "type": d.get("type", "Arquivo"),
+            })
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:top_n]
+
+# =============================
+# External research APIs
+# =============================
+def scholar_search_semantic_scholar(query: str, limit: int = 8):
+    if requests is None or not query.strip():
+        return []
+    try:
+        resp = requests.get(
+            "https://api.semanticscholar.org/graph/v1/paper/search",
+            params={
+                "query": query,
+                "limit": limit,
+                "fields": "title,authors,year,abstract,venue,externalIds,openAccessPdf,citationCount"
+            },
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return []
+        items = []
+        for paper in resp.json().get("data", []):
+            authors = ", ".join(a.get("name", "") for a in (paper.get("authors") or [])[:4])
+            ext = paper.get("externalIds") or {}
+            doi = ext.get("DOI", "")
+            arxiv = ext.get("ArXiv", "")
+            pdf = paper.get("openAccessPdf") or {}
+            url = pdf.get("url", "") or (f"https://doi.org/{doi}" if doi else (f"https://arxiv.org/abs/{arxiv}" if arxiv else ""))
+            text = " ".join([
+                paper.get("title", ""),
+                authors,
+                paper.get("abstract", "") or "",
+                paper.get("venue", "") or "",
+            ])
+            analysis = analyze_document(paper.get("title", "Sem título"), text, source="semantic", url=url)
+            analysis["summary"] = paper.get("abstract", "") or analysis.get("summary", "")
+            analysis["year"] = paper.get("year") or analysis.get("year")
+            analysis["authors"] = [a.get("name", "") for a in (paper.get("authors") or [])[:6]]
+            items.append({
+                "origin": "Semantic Scholar",
+                "score": paper.get("citationCount", 0),
+                "url": url,
                 "doi": doi,
+                "analysis": analysis,
             })
-    st.session_state.search_cache[cache_key] = results
-    return results
+        return items
+    except Exception:
+        return []
 
-def crossref_search(query: str, limit: int = 6):
-    cache_key = f"cr::{query}::{limit}"
-    if cache_key in st.session_state.search_cache:
-        return st.session_state.search_cache[cache_key]
-    url = "https://api.crossref.org/works"
-    params = {
-        "query": query,
-        "rows": limit,
-        "select": "title,author,issued,DOI,abstract,container-title,is-referenced-by-count,URL"
-    }
-    headers = {"User-Agent": "SistemaFolksonomiaDigital/1.0 (mailto:demo@example.com)"}
-    results = []
-    r = safe_request(url, params=params, headers=headers)
-    if r is not None:
-        for item in r.json().get("message", {}).get("items", []):
-            title = ((item.get("title") or ["Sem título"])[0] or "Sem título")
-            author_parts = []
-            for a in item.get("author", [])[:4]:
-                nm = " ".join(part for part in [a.get("given", ""), a.get("family", "")] if part).strip()
-                if nm:
-                    author_parts.append(nm)
-            year = None
-            try:
-                year = item.get("issued", {}).get("date-parts", [[None]])[0][0]
-            except Exception:
-                year = None
-            abs_text = re.sub(r"<[^>]+>", " ", item.get("abstract", "") or "")
-            results.append({
-                "source": "Crossref",
-                "title": title,
-                "authors": ", ".join(author_parts) or "Não identificado",
-                "year": year,
-                "abstract": normalize_spaces(abs_text),
-                "citations": item.get("is-referenced-by-count", 0) or 0,
-                "url": item.get("URL", "") or "",
-                "doi": item.get("DOI", "") or "",
-            })
-    st.session_state.search_cache[cache_key] = results
-    return results
 
-def openalex_search(query: str, limit: int = 4):
-    cache_key = f"oa::{query}::{limit}"
-    if cache_key in st.session_state.search_cache:
-        return st.session_state.search_cache[cache_key]
-    url = "https://api.openalex.org/works"
-    params = {"search": query, "per-page": limit}
-    results = []
-    r = safe_request(url, params=params)
-    if r is not None:
-        for item in r.json().get("results", []):
-            authorships = item.get("authorships", []) or []
+def scholar_search_crossref(query: str, limit: int = 6):
+    if requests is None or not query.strip():
+        return []
+    try:
+        resp = requests.get(
+            "https://api.crossref.org/works",
+            params={
+                "query": query,
+                "rows": limit,
+                "select": "title,author,issued,abstract,DOI,container-title,is-referenced-by-count",
+                "mailto": "nebula@example.com",
+            },
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return []
+        items = []
+        for work in resp.json().get("message", {}).get("items", []):
+            title = (work.get("title") or ["Sem título"])[0]
+            authors = work.get("author") or []
             author_names = []
-            countries = []
-            geo_points = []
-            for auth in authorships[:8]:
-                author = (auth.get("author") or {}).get("display_name")
-                if author:
-                    author_names.append(author)
-                for inst in auth.get("institutions", [])[:2]:
-                    cc = inst.get("country_code")
-                    geo = inst.get("geo") or {}
-                    if cc:
-                        countries.append(cc)
-                    if geo and geo.get("latitude") is not None and geo.get("longitude") is not None:
-                        geo_points.append({
-                            "country_code": cc,
-                            "country": COUNTRY_CODE_TO_NAME.get(cc or "", cc or "País não identificado"),
-                            "lat": geo.get("latitude"),
-                            "lon": geo.get("longitude"),
-                            "institution": inst.get("display_name", "")
-                        })
-            results.append({
-                "source": "OpenAlex",
-                "title": item.get("display_name", "Sem título"),
-                "authors": ", ".join(author_names[:4]) or "Não identificado",
-                "year": item.get("publication_year"),
-                "abstract": "",
-                "citations": item.get("cited_by_count", 0) or 0,
-                "url": item.get("primary_location", {}).get("landing_page_url", "") or item.get("id", ""),
-                "doi": item.get("doi", "") or "",
-                "countries": list(dict.fromkeys(countries)),
-                "geo_points": geo_points,
+            for a in authors[:6]:
+                joined = " ".join(p for p in [a.get("given", ""), a.get("family", "")] if p).strip()
+                if joined:
+                    author_names.append(joined)
+            year = None
+            date_parts = (work.get("issued", {}) or {}).get("date-parts") or []
+            if date_parts and date_parts[0]:
+                year = date_parts[0][0]
+            doi = work.get("DOI", "")
+            url = f"https://doi.org/{doi}" if doi else ""
+            abstract = strip_html(work.get("abstract", "") or "")
+            text = " ".join([title, " ".join(author_names), abstract, " ".join(work.get("container-title") or [])])
+            analysis = analyze_document(title, text, source="crossref", url=url)
+            analysis["summary"] = abstract or analysis.get("summary", "")
+            analysis["year"] = year or analysis.get("year")
+            analysis["authors"] = author_names
+            items.append({
+                "origin": "Crossref",
+                "score": work.get("is-referenced-by-count", 0),
+                "url": url,
+                "doi": doi,
+                "analysis": analysis,
             })
-    st.session_state.search_cache[cache_key] = results
-    return results
+        return items
+    except Exception:
+        return []
 
-def search_related_articles(query: str, limit: int = 8):
-    ss = semantic_scholar_search(query, limit=limit)
-    cr = crossref_search(query, limit=max(4, limit // 2))
-    oa = openalex_search(query, limit=max(4, limit // 2))
-    merged = []
-    seen = set()
-    for group in [ss, cr, oa]:
-        for item in group:
-            key = normalize_spaces(item.get("title", "").lower())
-            if key and key not in seen:
-                merged.append(item)
-                seen.add(key)
-    merged.sort(key=lambda x: (x.get("citations") or 0, x.get("year") or 0), reverse=True)
-    return merged[:limit]
 
-def find_best_metadata_match(title: str):
-    if not title:
-        return {}
-    candidates = search_related_articles(title, limit=5)
-    title_norm = normalize_spaces(title.lower())
-    scored = []
-    for item in candidates:
-        item_norm = normalize_spaces(item.get("title", "").lower())
-        overlap = len(set(tokenize(title_norm)) & set(tokenize(item_norm)))
-        scored.append((overlap, item))
-    if not scored:
-        return {}
-    return sorted(scored, key=lambda x: x[0], reverse=True)[0][1]
+def scholar_search(query: str):
+    results = scholar_search_semantic_scholar(query, 8) + scholar_search_crossref(query, 6)
+    dedup = {}
+    for item in results:
+        title = slugify(item.get("analysis", {}).get("title", "sem-titulo"))
+        if title not in dedup or item.get("score", 0) > dedup[title].get("score", 0):
+            dedup[title] = item
+    merged = list(dedup.values())
+    merged.sort(key=lambda x: (x.get("score", 0), x.get("analysis", {}).get("year") or 0), reverse=True)
+    return merged[:12]
 
-def average_hash(image_obj, hash_size=8):
-    if Image is None or np is None:
+# =============================
+# External image API (Wikimedia Commons)
+# =============================
+def commons_image_search(query: str, limit: int = 10):
+    if requests is None or not query.strip():
+        return []
+    try:
+        resp = requests.get(
+            "https://commons.wikimedia.org/w/api.php",
+            params={
+                "action": "query",
+                "format": "json",
+                "generator": "search",
+                "gsrsearch": query,
+                "gsrnamespace": 6,
+                "gsrlimit": limit,
+                "prop": "imageinfo",
+                "iiprop": "url",
+            },
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            return []
+        pages = (resp.json().get("query") or {}).get("pages") or {}
+        items = []
+        for _, page in pages.items():
+            info = (page.get("imageinfo") or [{}])[0]
+            url = info.get("url", "")
+            if url:
+                items.append({
+                    "title": page.get("title", "Arquivo"),
+                    "url": url,
+                    "source": "Wikimedia Commons",
+                })
+        return items[:limit]
+    except Exception:
+        return []
+
+# =============================
+# Image similarity
+# =============================
+def open_image_safe(path: str):
+    if Image is None:
         return None
-    img = image_obj.convert("L").resize((hash_size, hash_size))
-    arr = np.asarray(img, dtype=np.float32)
-    mean = arr.mean()
-    return "".join("1" if p > mean else "0" for p in arr.flatten())
+    try:
+        return Image.open(path).convert("RGB")
+    except Exception:
+        return None
+
+
+def average_hash(img, size: int = 8):
+    if Image is None or ImageOps is None:
+        return None
+    try:
+        gray = ImageOps.grayscale(img).resize((size, size))
+        if np is None:
+            pixels = list(gray.getdata())
+            avg = sum(pixels) / max(len(pixels), 1)
+            bits = "".join("1" if p >= avg else "0" for p in pixels)
+            return bits
+        arr = np.array(gray)
+        avg = arr.mean()
+        return "".join("1" if v >= avg else "0" for v in arr.flatten())
+    except Exception:
+        return None
+
 
 def hamming_distance(a, b):
     if not a or not b or len(a) != len(b):
         return 999
     return sum(ch1 != ch2 for ch1, ch2 in zip(a, b))
 
-def image_descriptor(image_bytes: bytes):
-    if Image is None or np is None:
-        return {}
-    try:
-        img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        arr = np.asarray(img, dtype=np.float32)
-        brightness = float(arr.mean())
-        contrast = float(arr.std())
-        hist_r = np.histogram(arr[:, :, 0], bins=16, range=(0, 255))[0].tolist()
-        hist_g = np.histogram(arr[:, :, 1], bins=16, range=(0, 255))[0].tolist()
-        hist_b = np.histogram(arr[:, :, 2], bins=16, range=(0, 255))[0].tolist()
-        return {
-            "width": img.size[0],
-            "height": img.size[1],
-            "brightness": round(brightness, 2),
-            "contrast": round(contrast, 2),
-            "hash": average_hash(img),
-            "hist_r": hist_r,
-            "hist_g": hist_g,
-            "hist_b": hist_b,
-        }
-    except Exception:
-        return {}
 
-def hist_similarity(a, b):
-    if not a or not b:
-        return 0.0
-    if np is None:
-        return 0.0
-    va = np.array(a, dtype=np.float32)
-    vb = np.array(b, dtype=np.float32)
-    if va.sum() == 0 or vb.sum() == 0:
-        return 0.0
-    va = va / (va.sum() + 1e-9)
-    vb = vb / (vb.sum() + 1e-9)
-    return float(1 - np.mean(np.abs(va - vb)))
-
-def search_local_similar_images(target_bytes: bytes):
-    target = image_descriptor(target_bytes)
-    if not target:
+def local_image_similarity(uploaded_bytes: bytes, docs: list):
+    if Image is None or not uploaded_bytes:
         return []
-    results = []
-    for repo_name, repo in st.session_state.repositories.items():
-        for file_item in repo.get("files", []):
-            if file_item.get("kind") != "IMG":
-                continue
-            fp = Path(file_item.get("path", ""))
-            if not fp.exists():
-                continue
-            other_bytes = fp.read_bytes()
-            desc = file_item.get("image_descriptor") or image_descriptor(other_bytes)
-            dist = hamming_distance(target.get("hash"), desc.get("hash"))
-            sim_hash = max(0, 100 - dist * 4)
-            sim_hist = 100 * (
-                hist_similarity(target.get("hist_r"), desc.get("hist_r")) * 0.34 +
-                hist_similarity(target.get("hist_g"), desc.get("hist_g")) * 0.33 +
-                hist_similarity(target.get("hist_b"), desc.get("hist_b")) * 0.33
-            )
-            score = round(sim_hash * 0.55 + sim_hist * 0.45, 2)
-            results.append({
-                "repository": repo_name,
-                "filename": file_item.get("filename"),
-                "path": file_item.get("path"),
-                "score": score,
-                "descriptor": desc
+    try:
+        ref = Image.open(io.BytesIO(uploaded_bytes)).convert("RGB")
+    except Exception:
+        return []
+    ref_hash = average_hash(ref)
+    if not ref_hash:
+        return []
+    matches = []
+    for doc in docs:
+        if doc.get("type") != "Imagem":
+            continue
+        img = open_image_safe(doc.get("path", ""))
+        if img is None:
+            continue
+        img_hash = average_hash(img)
+        dist = hamming_distance(ref_hash, img_hash)
+        sim = max(0.0, 1 - dist / max(len(ref_hash), 1))
+        if sim > 0.45:
+            matches.append({
+                "similarity": round(sim, 3),
+                "repo_name": doc.get("repo_name", ""),
+                "original_name": doc.get("original_name", ""),
+                "path": doc.get("path", ""),
             })
-    return sorted(results, key=lambda x: x["score"], reverse=True)[:12]
+    matches.sort(key=lambda x: x["similarity"], reverse=True)
+    return matches[:12]
 
-def wikimedia_image_search(query: str, limit: int = 8):
-    url = "https://commons.wikimedia.org/w/api.php"
-    params = {
-        "action": "query",
-        "generator": "search",
-        "gsrsearch": query,
-        "gsrnamespace": 6,
-        "prop": "imageinfo",
-        "iiprop": "url",
-        "iiurlwidth": 800,
-        "format": "json",
-        "gsrlimit": limit,
-        "origin": "*"
-    }
-    results = []
-    r = safe_request(url, params=params, timeout=15)
-    if r is not None:
-        pages = (r.json().get("query") or {}).get("pages", {})
-        for _, page in pages.items():
-            info = (page.get("imageinfo") or [{}])[0]
-            if info.get("thumburl") or info.get("url"):
-                results.append({
-                    "title": page.get("title", "").replace("File:", ""),
-                    "image_url": info.get("thumburl") or info.get("url"),
-                    "page_url": info.get("descriptionurl") or info.get("url") or "",
-                    "source": "Wikimedia Commons"
-                })
-    return results[:limit]
-
-def extract_text_from_file(filename: str, file_bytes: bytes):
-    kind = file_type(filename)
-    if kind == "PDF":
-        return extract_pdf_text(file_bytes)
-    if kind == "DOCX":
-        return extract_docx_text(file_bytes)
-    if kind == "CSV":
-        return extract_csv_text(file_bytes)
-    if kind == "XLSX":
-        return extract_xlsx_text(file_bytes)
-    if kind == "TXT":
-        return extract_txt_text(file_bytes)
-    return ""
-
-def infer_repository_theme(repo):
-    analyses = [f.get("analysis", {}) for f in repo.get("files", []) if f.get("analysis")]
-    counter = Counter()
-    for an in analyses:
-        for topic, score in (an.get("topics") or {}).items():
-            counter[topic] += score
-    if not counter:
-        return "Pesquisa"
-    return counter.most_common(1)[0][0]
-
-def analyze_document(filename: str, file_bytes: bytes, area_hint: str = ""):
-    kind = file_type(filename)
-    text = extract_text_from_file(filename, file_bytes)
-    analysis = {
-        "filename": filename,
-        "kind": kind,
-        "word_count": 0,
-        "reading_time": 0,
-        "title": Path(filename).stem,
-        "authors": [],
-        "year": None,
-        "summary": "",
-        "keywords": [],
-        "topics": {},
-        "methodology": "Indefinida",
-        "method_scores": {},
-        "relevance_score": 50,
-        "citations": 0,
-        "doi": "",
-        "source_url": "",
-        "countries": [],
-        "geo_points": [],
-        "raw_excerpt": text[:2500],
-    }
-    if kind == "IMG":
-        desc = image_descriptor(file_bytes)
-        analysis.update({
-            "title": Path(filename).stem.replace("_", " "),
-            "summary": "Arquivo de imagem carregado no repositório.",
-            "keywords": extract_keywords(Path(filename).stem.replace("_", " "), 8),
-            "topics": {"Imagem de Pesquisa": 1},
-            "image_descriptor": desc,
-            "relevance_score": 55
+# =============================
+# Analytics and connections
+# =============================
+def docs_dataframe(docs: list):
+    if pd is None:
+        return None
+    rows = []
+    for d in docs:
+        rows.append({
+            "Título": d.get("title", d.get("original_name", "")),
+            "Ano": d.get("year") or "Não identificado",
+            "Método": d.get("method") or "Indefinido",
+            "Tema principal": ", ".join(d.get("topics", [])[:2]) or "Não identificado",
+            "Autores": ", ".join(d.get("authors", [])[:3]) or "Não identificado",
+            "Países": ", ".join(d.get("countries", [])[:3]) or "Não identificado",
+            "Repositório": d.get("repo_name", ""),
+            "Resumo": d.get("summary", ""),
         })
-        return analysis
+    return pd.DataFrame(rows)
 
-    text = normalize_spaces(text)
-    analysis["word_count"] = len(text.split())
-    analysis["reading_time"] = max(1, round(analysis["word_count"] / 220)) if analysis["word_count"] else 0
-    analysis["title"] = guess_title(filename, text)
-    analysis["authors"] = guess_authors(text)
-    years = detect_years(text)
-    analysis["year"] = years.most_common(1)[0][0] if years else None
-    analysis["keywords"] = extract_keywords(text, 24)
-    analysis["topics"] = detect_topics(" ".join(analysis["keywords"]) + " " + text[:5000])
-    analysis["summary"] = summarize_text(text, max_sentences=4) or "Resumo automático indisponível."
-    methodology, method_scores = detect_methodology(text[:12000])
-    analysis["methodology"] = methodology
-    analysis["method_scores"] = method_scores
 
-    title_match = find_best_metadata_match(analysis["title"])
-    if title_match:
-        analysis["citations"] = title_match.get("citations", 0) or 0
-        analysis["doi"] = title_match.get("doi", "") or ""
-        analysis["source_url"] = title_match.get("url", "") or ""
-        if not analysis["year"]:
-            analysis["year"] = title_match.get("year")
-        if not analysis["authors"]:
-            authors = [a.strip() for a in (title_match.get("authors") or "").split(",") if a.strip()]
-            analysis["authors"] = authors[:8]
-        if title_match.get("countries"):
-            analysis["countries"] = [COUNTRY_CODE_TO_NAME.get(c, c) for c in title_match.get("countries", [])]
-        if title_match.get("geo_points"):
-            analysis["geo_points"] = title_match.get("geo_points", [])
-
-    area_hint_norm = area_hint.lower()
-    topic_overlap = sum(1 for topic in analysis["topics"] if topic.lower() in area_hint_norm)
-    kw_overlap = sum(1 for kw in analysis["keywords"][:12] if kw.lower() in area_hint_norm)
-    quality = 0
-    quality += 25 if analysis["word_count"] > 800 else 10
-    quality += 20 if len(analysis["keywords"]) > 12 else 5
-    quality += 20 if analysis["summary"] else 0
-    quality += 10 if analysis["year"] else 0
-    quality += 15 if analysis["authors"] else 0
-    quality += 10 if analysis["citations"] else 0
-    analysis["relevance_score"] = min(99, max(35, quality + topic_overlap * 6 + kw_overlap * 3))
-    return analysis
-
-def record_user_interest(query: str, topics=None):
-    email = st.session_state.get("current_user")
-    if not email:
-        return
-    hist = st.session_state.users[email].setdefault("history", [])
-    hist.append({
-        "query": query,
-        "topics": list((topics or {}).keys())[:6] if isinstance(topics, dict) else [],
-        "time": now_str()
-    })
-    hist[:] = hist[-120:]
-    save_state()
-
-def current_interest_profile():
-    email = st.session_state.get("current_user")
-    user = st.session_state.users.get(email, {})
-    area = user.get("area", "")
+def aggregate_statistics(docs: list):
+    years = Counter()
+    methods = Counter()
     topics = Counter()
-    kws = Counter(tokenize(area))
-    for item in user.get("history", [])[-50:]:
-        for topic in item.get("topics", []):
-            topics[topic] += 2
-        for tok in tokenize(item.get("query", "")):
-            kws[tok] += 1
-    for repo in st.session_state.repositories.values():
-        for f in repo.get("files", []):
-            an = f.get("analysis", {})
-            for topic, score in (an.get("topics") or {}).items():
-                topics[topic] += score
-            for kw in an.get("keywords", [])[:10]:
-                kws[kw] += 1
+    authors = Counter()
+    countries = Counter()
+    for d in docs:
+        if d.get("year"):
+            years[d["year"]] += 1
+        methods[d.get("method") or "Indefinido"] += 1
+        for t in d.get("topics", [])[:4]:
+            topics[t] += 1
+        for a in d.get("authors", [])[:4]:
+            authors[a] += 1
+        for c in d.get("countries", [])[:4]:
+            countries[c] += 1
     return {
-        "topics": dict(topics.most_common(8)),
-        "keywords": [k for k, _ in kws.most_common(18)]
+        "years": years,
+        "methods": methods,
+        "topics": topics,
+        "authors": authors,
+        "countries": countries,
     }
 
-def local_document_corpus():
-    docs = []
-    for repo_name, repo in st.session_state.repositories.items():
-        for file_item in repo.get("files", []):
-            an = file_item.get("analysis", {})
-            if not an or file_item.get("kind") == "IMG":
-                continue
-            text_blob = " ".join([
-                an.get("title", ""),
-                an.get("summary", ""),
-                " ".join(an.get("keywords", [])),
-                " ".join((an.get("topics") or {}).keys()),
-                an.get("methodology", ""),
-                repo_name,
-                repo.get("description", "")
-            ])
-            docs.append({
-                "repository": repo_name,
-                "filename": file_item.get("filename"),
-                "path": file_item.get("path"),
-                "analysis": an,
-                "text_blob": text_blob,
-            })
-    return docs
 
-def local_semantic_search(query: str, limit: int = 12):
-    docs = local_document_corpus()
+def pairwise_connections(docs: list):
     if not docs:
         return []
-    q_blob = normalize_spaces(query)
-    if TfidfVectorizer is None or cosine_similarity is None:
-        q_tokens = set(tokenize(q_blob))
-        scored = []
-        for item in docs:
-            d_tokens = set(tokenize(item["text_blob"]))
-            inter = len(q_tokens & d_tokens)
-            union = len(q_tokens | d_tokens) or 1
-            score = inter / union
-            scored.append((score, item))
-        return [
-            {
-                **item,
-                "score": round(score * 100, 2)
-            }
-            for score, item in sorted(scored, key=lambda x: x[0], reverse=True)[:limit]
-            if score > 0
-        ]
+    corpus = []
+    labels = []
+    for d in docs:
+        labels.append(d.get("title") or d.get("original_name", "Arquivo"))
+        corpus.append(" ".join([
+            d.get("title", ""),
+            d.get("summary", ""),
+            " ".join(d.get("keywords", [])),
+            " ".join(d.get("topics", [])),
+            " ".join(d.get("authors", [])),
+        ]))
 
-    corpus = [d["text_blob"] for d in docs] + [q_blob]
-    vec = TfidfVectorizer(stop_words=None, ngram_range=(1, 2), min_df=1)
-    matrix = vec.fit_transform(corpus)
-    sims = cosine_similarity(matrix[-1], matrix[:-1]).flatten()
-    ranked = []
-    for score, item in sorted(zip(sims, docs), key=lambda x: x[0], reverse=True)[:limit]:
-        if score <= 0:
-            continue
-        ranked.append({
-            **item,
-            "score": round(float(score) * 100, 2)
-        })
-    return ranked
+    matrix = None
+    if TfidfVectorizer is not None and cosine_similarity is not None and len(corpus) >= 2:
+        try:
+            vec = TfidfVectorizer(max_features=4000)
+            mat = vec.fit_transform(corpus)
+            matrix = cosine_similarity(mat)
+        except Exception:
+            matrix = None
 
-def derive_query_suggestions(query: str, profile: dict, local_hits, web_hits):
-    suggestions = []
-    topics = list(profile.get("topics", {}).keys())
-    kws = profile.get("keywords", [])[:6]
-    if topics:
-        suggestions.append(f"{query} {' '.join(topics[:2])}".strip())
-    if kws:
-        suggestions.append(f"{query} {' '.join(kws[:3])}".strip())
-    if local_hits:
-        best_topics = list((local_hits[0].get("analysis", {}).get("topics") or {}).keys())[:2]
-        if best_topics:
-            suggestions.append(" ".join(best_topics))
-    if web_hits:
-        latest = [w for w in web_hits if w.get("year")]
-        if latest:
-            suggestions.append(f"{query} revisão {sorted([w['year'] for w in latest if w.get('year')], reverse=True)[0]}")
-    seen = []
-    for s in suggestions:
-        s = normalize_spaces(s)
-        if s and s not in seen and s.lower() != query.lower():
-            seen.append(s)
-    return seen[:5]
-
-def discover(query: str, image_bytes=None):
-    profile = current_interest_profile()
-    query_topics = detect_topics(query)
-    local_hits = local_semantic_search(query, limit=12)
-    web_hits = search_related_articles(query, limit=12)
-    local_images = search_local_similar_images(image_bytes) if image_bytes else []
-    online_images = wikimedia_image_search(query, limit=8) if query else []
-
-    record_user_interest(query, query_topics)
-    result = {
-        "query": query,
-        "query_topics": query_topics,
-        "local_hits": local_hits,
-        "web_hits": web_hits,
-        "local_images": local_images,
-        "online_images": online_images,
-        "profile": profile,
-        "suggestions": derive_query_suggestions(query, profile, local_hits, web_hits)
-    }
-    st.session_state.discovery_result = result
-    return result
-
-def all_analyses():
-    rows = []
-    for repo_name, repo in st.session_state.repositories.items():
-        for file_item in repo.get("files", []):
-            an = file_item.get("analysis")
-            if an:
-                rows.append({
-                    "repository": repo_name,
-                    "filename": file_item.get("filename"),
-                    **an
+    connections = []
+    for i in range(len(docs)):
+        for j in range(i + 1, len(docs)):
+            d1 = docs[i]
+            d2 = docs[j]
+            score = 0.0
+            if matrix is not None:
+                score += float(matrix[i][j]) * 0.65
+            overlap_k = set(d1.get("keywords", [])) & set(d2.get("keywords", []))
+            overlap_t = set(d1.get("topics", [])) & set(d2.get("topics", []))
+            overlap_a = set(d1.get("authors", [])) & set(d2.get("authors", []))
+            score += min(len(overlap_k) * 0.08, 0.24)
+            score += min(len(overlap_t) * 0.10, 0.20)
+            score += min(len(overlap_a) * 0.06, 0.12)
+            if d1.get("year") and d2.get("year") and abs(int(d1["year"]) - int(d2["year"])) <= 2:
+                score += 0.05
+            common_patterns = sorted(list(overlap_k | overlap_t | overlap_a))[:10]
+            if score >= 0.18:
+                connections.append({
+                    "a": d1.get("title") or d1.get("original_name", "Arquivo A"),
+                    "b": d2.get("title") or d2.get("original_name", "Arquivo B"),
+                    "score": round(score, 3),
+                    "patterns": common_patterns,
+                    "topics": sorted(list(overlap_t)),
                 })
-    return rows
+    connections.sort(key=lambda x: x["score"], reverse=True)
+    return connections
 
-def compute_connections():
-    docs = local_document_corpus()
-    if len(docs) < 2:
-        return {"nodes": docs, "edges": []}
-    edges = []
-    texts = [d["text_blob"] for d in docs]
-    if TfidfVectorizer is not None and cosine_similarity is not None:
-        vec = TfidfVectorizer(stop_words=None, ngram_range=(1, 2), min_df=1)
-        mat = vec.fit_transform(texts)
-        sims = cosine_similarity(mat)
-        for i in range(len(docs)):
-            for j in range(i + 1, len(docs)):
-                score = float(sims[i, j])
-                if score >= 0.20:
-                    shared_topics = list(
-                        set((docs[i]["analysis"].get("topics") or {}).keys())
-                        & set((docs[j]["analysis"].get("topics") or {}).keys())
-                    )
-                    shared_keywords = list(
-                        set(docs[i]["analysis"].get("keywords", [])[:18])
-                        & set(docs[j]["analysis"].get("keywords", [])[:18])
-                    )
-                    edges.append({
-                        "source": i,
-                        "target": j,
-                        "score": round(score * 100, 2),
-                        "shared_topics": shared_topics[:5],
-                        "shared_keywords": shared_keywords[:8],
-                    })
+
+def connection_graph_figure(docs: list, connections: list):
+    if go is None or not docs:
+        return None
+    names = [d.get("title") or d.get("original_name", "Arquivo") for d in docs]
+    if nx is not None:
+        G = nx.Graph()
+        for name in names:
+            G.add_node(name)
+        for c in connections[:40]:
+            G.add_edge(c["a"], c["b"], weight=c["score"])
+        pos = nx.spring_layout(G, seed=14, k=1.1)
+        nodes = list(G.nodes())
     else:
-        for i in range(len(docs)):
-            for j in range(i + 1, len(docs)):
-                kw1 = set(docs[i]["analysis"].get("keywords", [])[:18])
-                kw2 = set(docs[j]["analysis"].get("keywords", [])[:18])
-                union = len(kw1 | kw2) or 1
-                inter = len(kw1 & kw2)
-                score = inter / union
-                if score >= 0.15:
-                    edges.append({
-                        "source": i,
-                        "target": j,
-                        "score": round(score * 100, 2),
-                        "shared_topics": list(set((docs[i]["analysis"].get("topics") or {}).keys()) & set((docs[j]["analysis"].get("topics") or {}).keys())),
-                        "shared_keywords": list(kw1 & kw2)[:8],
-                    })
-    return {"nodes": docs, "edges": sorted(edges, key=lambda x: x["score"], reverse=True)}
+        nodes = names
+        pos = {}
+        n = max(len(nodes), 1)
+        for idx, node in enumerate(nodes):
+            angle = 2 * math.pi * idx / n
+            pos[node] = (math.cos(angle), math.sin(angle))
 
-def metrics_snapshot():
-    repos = st.session_state.repositories
-    total_repos = len(repos)
-    total_files = sum(len(repo.get("files", [])) for repo in repos.values())
-    analyses = all_analyses()
-    total_analyzed = len(analyses)
-    total_topics = len(set(topic for row in analyses for topic in (row.get("topics") or {}).keys()))
-    return {
-        "repos": total_repos,
-        "files": total_files,
-        "analyzed": total_analyzed,
-        "topics": total_topics
-    }
+    edge_x, edge_y = [], []
+    for c in connections[:40]:
+        if c["a"] in pos and c["b"] in pos:
+            x0, y0 = pos[c["a"]]
+            x1, y1 = pos[c["b"]]
+            edge_x.extend([x0, x1, None])
+            edge_y.extend([y0, y1, None])
 
-def build_analysis_dataset():
-    rows = all_analyses()
-    year_counter = Counter()
-    theme_counter = Counter()
-    author_counter = Counter()
-    method_counter = Counter()
-    country_counter = Counter()
-    globe_points = []
-    for row in rows:
-        if row.get("year"):
-            year_counter[int(row["year"])] += 1
-        if row.get("topics"):
-            for topic, score in row["topics"].items():
-                theme_counter[topic] += score
-        for author in row.get("authors", [])[:6]:
-            author_counter[author] += 1
-        if row.get("methodology"):
-            method_counter[row["methodology"]] += 1
-        for country in row.get("countries", [])[:8]:
-            country_counter[country] += 1
-        for gp in row.get("geo_points", []):
-            globe_points.append(gp)
-    return {
-        "rows": rows,
-        "year_counter": year_counter,
-        "theme_counter": theme_counter,
-        "author_counter": author_counter,
-        "method_counter": method_counter,
-        "country_counter": country_counter,
-        "globe_points": globe_points,
-    }
+    node_x = [pos[n][0] for n in nodes if n in pos]
+    node_y = [pos[n][1] for n in nodes if n in pos]
+    node_text = [n for n in nodes if n in pos]
 
-def suggest_articles_for_repository(repo_name: str):
-    repo = st.session_state.repositories.get(repo_name, {})
-    texts = []
-    for item in repo.get("files", []):
-        an = item.get("analysis", {})
-        texts.extend(an.get("keywords", [])[:8])
-        texts.extend(list((an.get("topics") or {}).keys())[:4])
-    query = " ".join(list(dict.fromkeys(texts))[:8]) or repo_name
-    return search_related_articles(query, limit=8)
-
-def apply_file_analysis(repo_name: str, file_index: int):
-    repo = st.session_state.repositories[repo_name]
-    file_item = repo["files"][file_index]
-    file_path = Path(file_item["path"])
-    if not file_path.exists():
-        return
-    file_bytes = file_path.read_bytes()
-    area = user_data().get("area", "")
-    analysis = analyze_document(file_item["filename"], file_bytes, area)
-    file_item["analysis"] = analysis
-    if file_item["kind"] == "IMG":
-        file_item["image_descriptor"] = analysis.get("image_descriptor") or image_descriptor(file_bytes)
-    save_state()
-
-def batch_analyze_repository(repo_name: str):
-    repo = st.session_state.repositories[repo_name]
-    for idx in range(len(repo.get("files", []))):
-        apply_file_analysis(repo_name, idx)
-
-def liquid_css():
-    st.markdown(
-        """
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap');
-
-        :root{
-            --bg:#050814;
-            --bg2:#0a1324;
-            --bg3:#101c31;
-            --glass:rgba(255,255,255,.055);
-            --glass2:rgba(255,255,255,.08);
-            --border:rgba(255,255,255,.11);
-            --text:#eef3ff;
-            --muted:#99a6c7;
-            --muted2:#7382a5;
-            --accent:#6bd0ff;
-            --accent2:#88b3ff;
-            --accent3:#d0b5ff;
-            --danger:#ff6b8a;
-        }
-
-        html, body, .stApp{
-            background:
-                radial-gradient(circle at 10% 0%, rgba(137,183,255,.10), transparent 32%),
-                radial-gradient(circle at 100% 0%, rgba(107,208,255,.08), transparent 28%),
-                radial-gradient(circle at 50% 100%, rgba(208,181,255,.07), transparent 38%),
-                linear-gradient(180deg, #050814 0%, #08101f 100%);
-            color: var(--text);
-            font-family: 'Inter', sans-serif;
-        }
-
-        header, #MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"]{
-            display:none !important;
-        }
-
-        .block-container{
-            padding-top:0.55rem !important;
-            max-width:1450px !important;
-        }
-
-        section[data-testid="stSidebar"]{
-            background: rgba(7, 12, 24, .88) !important;
-            border-right: 1px solid rgba(255,255,255,.06) !important;
-            backdrop-filter: blur(32px) saturate(170%) !important;
-        }
-
-        section[data-testid="stSidebar"] > div{
-            padding-top: 1rem !important;
-        }
-
-        .shell-top{
-            background: linear-gradient(90deg, rgba(255,255,255,.03), rgba(255,255,255,.02));
-            border: 1px solid rgba(255,255,255,.07);
-            border-radius: 24px;
-            padding: 18px 24px;
-            backdrop-filter: blur(24px);
-            box-shadow: 0 8px 30px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.05);
-            margin-bottom: 18px;
-        }
-
-        .shell-title{
-            font-family: 'Syne', sans-serif;
-            font-size: 2.05rem;
-            font-weight: 800;
-            letter-spacing: -.04em;
-            color: var(--text);
-        }
-
-        .shell-brand{
-            font-family: 'Syne', sans-serif;
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: #d7e3ff;
-            margin-bottom: 4px;
-        }
-
-        .muted{
-            color: var(--muted);
-            font-size: .92rem;
-        }
-
-        .hero{
-            text-align:center;
-            padding: 8px 0 18px 0;
-        }
-
-        .hero h1{
-            font-family:'Syne', sans-serif !important;
-            font-size:3rem !important;
-            font-weight:800 !important;
-            letter-spacing:-.05em !important;
-            color: #f7fbff !important;
-            margin-bottom:.2rem !important;
-        }
-
-        .hero p{
-            color: var(--muted);
-            font-size: 1rem;
-            margin-bottom: 0;
-        }
-
-        .glass-card{
-            background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.04));
-            border: 1px solid var(--border);
-            border-radius: 26px;
-            padding: 20px 20px;
-            backdrop-filter: blur(28px) saturate(160%);
-            box-shadow: 0 12px 38px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.08);
-            margin-bottom: 12px;
-        }
-
-        .metric-card{
-            background: linear-gradient(180deg, rgba(255,255,255,.065), rgba(255,255,255,.045));
-            border: 1px solid rgba(255,255,255,.10);
-            border-radius: 22px;
-            padding: 24px 18px;
-            min-height: 145px;
-            box-shadow: 0 10px 28px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.06);
-        }
-
-        .metric-label{
-            color:#d6deef;
-            font-size:.86rem;
-            text-transform:uppercase;
-            letter-spacing:.14em;
-            font-weight:700;
-            opacity:.95;
-        }
-
-        .metric-value{
-            font-family:'Syne', sans-serif;
-            font-size:3rem;
-            font-weight:800;
-            letter-spacing:-.04em;
-            margin-top:16px;
-            color:#eaf4ff;
-        }
-
-        .metric-caption{
-            color: var(--muted);
-            font-size: .9rem;
-            margin-top: 10px;
-        }
-
-        .soft-title{
-            font-family:'Syne', sans-serif;
-            font-weight:700;
-            font-size:1.9rem;
-            letter-spacing:-.03em;
-            margin-bottom:.4rem;
-        }
-
-        .subline{
-            color: var(--muted);
-            font-size: .95rem;
-            margin-bottom: .8rem;
-        }
-
-        .stButton > button, .stDownloadButton > button, .stFormSubmitButton > button{
-            background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.06)) !important;
-            border: 1px solid rgba(255,255,255,.15) !important;
-            border-radius: 18px !important;
-            color: #f6fbff !important;
-            box-shadow: 0 8px 20px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.08) !important;
-            backdrop-filter: blur(18px) !important;
-            font-weight: 600 !important;
-            padding: .55rem .95rem !important;
-        }
-
-        .stButton > button:hover, .stDownloadButton > button:hover, .stFormSubmitButton > button:hover{
-            border-color: rgba(107,208,255,.36) !important;
-            background: linear-gradient(180deg, rgba(107,208,255,.17), rgba(255,255,255,.07)) !important;
-        }
-
-        .stTextInput input, .stTextArea textarea, .stSelectbox [data-baseweb="select"], .stNumberInput input{
-            background: rgba(255,255,255,.05) !important;
-            color: #eef3ff !important;
-            border: 1px solid rgba(255,255,255,.12) !important;
-            border-radius: 18px !important;
-        }
-
-        .stTabs [data-baseweb="tab-list"]{
-            gap: 6px;
-            background: rgba(255,255,255,.04);
-            border: 1px solid rgba(255,255,255,.08);
-            border-radius: 20px;
-            padding: 8px;
-        }
-
-        .stTabs [data-baseweb="tab"]{
-            height: 44px;
-            border-radius: 14px !important;
-            color: var(--muted) !important;
-            font-weight: 600;
-        }
-
-        .stTabs [aria-selected="true"]{
-            background: linear-gradient(180deg, rgba(255,255,255,.11), rgba(107,208,255,.10)) !important;
-            color: #ffffff !important;
-            border: 1px solid rgba(255,255,255,.16) !important;
-        }
-
-        .table-chip{
-            display:inline-block;
-            padding: 4px 10px;
-            border-radius: 999px;
-            background: rgba(255,255,255,.08);
-            border: 1px solid rgba(255,255,255,.10);
-            color:#eef3ff;
-            margin: 2px 5px 2px 0;
-            font-size: .78rem;
-        }
-
-        .repo-row, .article-row, .insight-row{
-            background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
-            border: 1px solid rgba(255,255,255,.09);
-            border-radius: 18px;
-            padding: 16px 18px;
-            margin-bottom: 10px;
-        }
-
-        .mini{
-            color: var(--muted);
-            font-size: .84rem;
-        }
-
-        .stFileUploader section{
-            background: rgba(255,255,255,.04) !important;
-            border: 1.5px dashed rgba(255,255,255,.16) !important;
-            border-radius: 18px !important;
-        }
-
-        .nav-name{
-            font-family:'Syne', sans-serif;
-            font-size: 1.2rem;
-            font-weight: 700;
-            letter-spacing:-.03em;
-            color:#f1f6ff;
-            margin-bottom: .2rem;
-        }
-
-        .nav-mini{
-            color: var(--muted);
-            font-size: .84rem;
-        }
-
-        .profile-badge{
-            width:54px;height:54px;border-radius:18px;display:flex;align-items:center;justify-content:center;
-            background: linear-gradient(180deg, rgba(255,255,255,.11), rgba(107,208,255,.12));
-            border:1px solid rgba(255,255,255,.14);
-            font-family:'Syne', sans-serif;font-weight:800;font-size:1.1rem;color:#fff;
-        }
-
-        .auth-shell{
-            max-width: 560px;
-            margin: 4rem auto 0 auto;
-            padding: 28px;
-            border-radius: 28px;
-            background: linear-gradient(180deg, rgba(255,255,255,.07), rgba(255,255,255,.04));
-            border: 1px solid rgba(255,255,255,.10);
-            backdrop-filter: blur(30px);
-            box-shadow: 0 16px 48px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
-        }
-
-        .auth-brand{
-            text-align:center;
-            margin-bottom: 22px;
-        }
-
-        .auth-brand h1{
-            font-family:'Syne', sans-serif !important;
-            font-size:2.4rem !important;
-            font-weight:800 !important;
-            letter-spacing:-.05em !important;
-            margin-bottom:.25rem !important;
-        }
-
-        .auth-brand p{
-            color: var(--muted);
-            margin-bottom: 0;
-        }
-
-        .section-sep{
-            color: var(--muted2);
-            text-transform: uppercase;
-            letter-spacing: .15em;
-            font-weight: 700;
-            font-size: .74rem;
-            margin: .25rem 0 .7rem 0;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=edge_x, y=edge_y, mode="lines",
+        line=dict(width=1, color="rgba(180,210,255,.38)"),
+        hoverinfo="none",
+        showlegend=False,
+    ))
+    fig.add_trace(go.Scatter(
+        x=node_x, y=node_y, mode="markers+text",
+        text=node_text,
+        textposition="top center",
+        hovertext=node_text,
+        marker=dict(size=18, color="#8BC8FF", line=dict(width=1, color="#EAF2FF")),
+        showlegend=False,
+    ))
+    fig.update_layout(
+        height=520,
+        margin=dict(l=10, r=10, t=10, b=10),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(visible=False),
+        yaxis=dict(visible=False),
     )
+    return fig
 
-def render_shell(page_title: str, subtitle: str = ""):
+
+def countries_globe_figure(country_counter: Counter):
+    if go is None or not country_counter:
+        return None
+    lats, lons, sizes, texts = [], [], [], []
+    for country, count in country_counter.items():
+        meta = COUNTRIES.get(country)
+        if not meta:
+            continue
+        lats.append(meta["lat"])
+        lons.append(meta["lon"])
+        sizes.append(10 + count * 6)
+        texts.append(f"{country} — {count}")
+    if not lats:
+        return None
+    fig = go.Figure(go.Scattergeo(
+        lat=lats,
+        lon=lons,
+        text=texts,
+        mode="markers",
+        marker=dict(
+            size=sizes,
+            color="#CBB6FF",
+            line=dict(width=1, color="#FFFFFF"),
+            opacity=0.86,
+        ),
+    ))
+    fig.update_layout(
+        height=540,
+        margin=dict(l=0, r=0, t=0, b=0),
+        paper_bgcolor="rgba(0,0,0,0)",
+        geo=dict(
+            projection_type="orthographic",
+            showland=True,
+            landcolor="rgba(80,102,140,.45)",
+            showocean=True,
+            oceancolor="rgba(5,14,28,.85)",
+            showcountries=True,
+            countrycolor="rgba(255,255,255,.18)",
+            bgcolor="rgba(0,0,0,0)",
+            lataxis_showgrid=True,
+            lonaxis_showgrid=True,
+            coastlinecolor="rgba(255,255,255,.18)",
+        ),
+    )
+    return fig
+
+# =============================
+# Repository suggestions
+# =============================
+def repo_research_suggestions(repo: dict):
+    docs = repo.get("files", [])
+    keywords = []
+    topics = []
+    for item in docs:
+        ana = item.get("analysis") or {}
+        keywords.extend(ana.get("keywords", [])[:8])
+        topics.extend(ana.get("topics", [])[:4])
+    kw_counter = Counter(keywords)
+    topic_counter = Counter(topics)
+    base = [k for k, _ in kw_counter.most_common(5)] + [t for t, _ in topic_counter.most_common(3)]
+    base = list(dict.fromkeys(base))
+    suggestions = []
+    for item in base:
+        suggestions.extend([
+            f"{item} revisão sistemática",
+            f"{item} estado da arte",
+            f"{item} estudo comparativo",
+        ])
+    return suggestions[:8]
+
+# =============================
+# Renderers
+# =============================
+def render_metric(label: str, value: str, foot: str):
     st.markdown(
         f"""
-        <div class="shell-top">
-            <div class="shell-brand">{APP_TITLE}</div>
-            <div class="muted">{APP_SUBTITLE}</div>
-        </div>
-        <div class="hero">
-            <h1>{page_title}</h1>
-            <p>{subtitle}</p>
+        <div class="glass-card metric-card">
+          <div class="metric-label">{label}</div>
+          <div class="metric-value">{value}</div>
+          <div class="metric-foot">{foot}</div>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
-def render_nav():
-    with st.sidebar:
-        user = user_data()
-        st.markdown('<div class="nav-name">Sistema Folksonomia Digital</div>', unsafe_allow_html=True)
-        st.markdown('<div class="nav-mini">Ambiente de pesquisa, busca e análise</div>', unsafe_allow_html=True)
-        st.write("")
-        col_a, col_b = st.columns([1, 3])
-        with col_a:
-            st.markdown(f'<div class="profile-badge">{initials(user.get("name","U"))}</div>', unsafe_allow_html=True)
-        with col_b:
-            st.markdown(f'<div style="font-weight:700;color:#f3f7ff">{user.get("name","Usuário")}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div class="nav-mini">{user.get("area","Sem área definida")}</div>', unsafe_allow_html=True)
-        st.write("")
-        nav_items = [
-            ("dashboard", "Dashboard"),
-            ("discovery", "Pesquisa Inteligente"),
-            ("repositories", "Repositórios"),
-            ("connections", "Conexões"),
-            ("analytics", "Análises"),
-            ("account", "Conta"),
-        ]
-        for key, label in nav_items:
-            if st.button(label, key=f"nav_{key}", use_container_width=True):
-                st.session_state.page = key
-                st.rerun()
-        st.write("")
-        if st.button("Sair do sistema", use_container_width=True):
-            st.session_state.logged_in = False
-            st.session_state.current_user = None
-            st.rerun()
 
+def render_keyword_chips(items: list[str]):
+    if not items:
+        st.caption("Nenhum item disponível.")
+        return
+    html = "".join([f'<span class="chip">{x}</span>' for x in items])
+    st.markdown(html, unsafe_allow_html=True)
+
+
+def render_local_result(item: dict):
+    ana = item.get("analysis") or {}
+    st.markdown(
+        f"""
+        <div class="result-item">
+          <div class="mini-title">{ana.get('title', item.get('original_name', 'Arquivo'))}</div>
+          <div class="tiny">Repositório: {item.get('repo_name','')} · Tipo: {item.get('type','Arquivo')} · Similaridade: {item.get('score',0):.2f}</div>
+          <div style="margin-top:.55rem; color:#D7E1F8;">{ana.get('summary','')}</div>
+          <div style="margin-top:.6rem;">{"".join([f'<span class="chip">{k}</span>' for k in ana.get('keywords',[])[:8]])}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_external_result(item: dict):
+    ana = item.get("analysis") or {}
+    url = item.get("url", "")
+    title = ana.get("title", "Sem título")
+    title_html = f'<a href="{url}" target="_blank" style="color:#F2F6FF;text-decoration:none;">{title}</a>' if url else title
+    st.markdown(
+        f"""
+        <div class="result-item">
+          <div class="mini-title">{title_html}</div>
+          <div class="tiny">Fonte: {item.get('origin','')} · Ano: {ana.get('year') or 'n/d'} · DOI: {item.get('doi') or 'n/d'}</div>
+          <div class="tiny" style="margin-top:.28rem;">Autores: {', '.join(ana.get('authors',[])[:4]) or 'Não identificado'}</div>
+          <div style="margin-top:.55rem; color:#D7E1F8;">{ana.get('summary','')}</div>
+          <div style="margin-top:.6rem;">{"".join([f'<span class="chip">{k}</span>' for k in ana.get('keywords',[])[:8]])}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_repo_card(repo_id: str, repo: dict):
+    files = repo.get("files", [])
+    analyzed_count = sum(1 for f in files if (f.get("analysis") or {}).get("title"))
+    st.markdown(
+        f"""
+        <div class="repo-item">
+          <div class="mini-title">{repo.get('name','Repositório')}</div>
+          <div class="tiny">{repo.get('description','')} · {len(files)} arquivo(s) · {analyzed_count} analisado(s)</div>
+          <div style="margin-top:.55rem;">{"".join([f'<span class="chip">{t}</span>' for t in repo.get('tags',[])])}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# =============================
+# Pages
+# =============================
 def page_login():
     st.markdown('<div class="auth-shell">', unsafe_allow_html=True)
     st.markdown(
-        """
+        f"""
         <div class="auth-brand">
-            <h1>Sistema Folksonomia Digital</h1>
-            <p>Plataforma redesenhada sem feed social, com foco em pesquisa, repositório e análise acadêmica.</p>
+          <div class="nebula-side-logo" style="width:56px;height:56px;border-radius:18px;">{microscope_logo_svg(30)}</div>
+          <div>
+            <div class="auth-title">Nebula</div>
+            <div class="auth-sub">Ambiente redesenhado sem feed social, sem campo de instituição no cadastro e com pesquisa inteligente unificada.</div>
+          </div>
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
+    glass_open("padding:1rem 1rem 1.15rem 1rem;")
     tab_login, tab_signup = st.tabs(["Entrar", "Criar conta"])
     with tab_login:
-        with st.form("login_form"):
+        with st.form("form_login"):
             email = st.text_input("E-mail", placeholder="seuemail@dominio.com")
             password = st.text_input("Senha", type="password")
             submit = st.form_submit_button("Entrar", use_container_width=True)
@@ -1391,685 +1633,479 @@ def page_login():
                 else:
                     st.session_state.logged_in = True
                     st.session_state.current_user = email
-                    st.session_state.page = "dashboard"
+                    st.session_state.page = "workspace"
                     st.rerun()
-        st.caption("Conta de demonstração: demo@folksonomia.ai | senha: demo123")
+        st.caption("Conta de demonstração: demo@nebula.ai · senha: demo123")
     with tab_signup:
-        with st.form("signup_form"):
+        with st.form("form_signup"):
             name = st.text_input("Nome completo")
             email = st.text_input("E-mail")
-            area = st.text_input("Área de pesquisa")
+            area = st.text_input("Área de pesquisa", placeholder="Ex.: Museologia, IA, Preservação Digital")
+            bio = st.text_area("Bio", height=100)
             password = st.text_input("Senha", type="password")
-            password_2 = st.text_input("Confirmar senha", type="password")
+            password2 = st.text_input("Confirmar senha", type="password")
             submit = st.form_submit_button("Criar conta", use_container_width=True)
             if submit:
-                if not all([name, email, area, password, password_2]):
-                    st.error("Preencha todos os campos.")
-                elif password != password_2:
+                if not all([name.strip(), email.strip(), area.strip(), password.strip(), password2.strip()]):
+                    st.error("Preencha os campos obrigatórios.")
+                elif password != password2:
                     st.error("As senhas não coincidem.")
                 elif email in st.session_state.users:
                     st.error("Este e-mail já está cadastrado.")
                 else:
                     st.session_state.users[email] = {
-                        "name": name,
+                        "name": name.strip(),
                         "password": sha(password),
-                        "area": area,
-                        "bio": "",
-                        "history": [],
-                        "saved_articles": []
+                        "area": area.strip(),
+                        "bio": bio.strip(),
+                        "saved_articles": [],
+                        "search_history": [],
+                        "interest_profile": {},
                     }
                     save_state()
-                    st.session_state.logged_in = True
-                    st.session_state.current_user = email
-                    st.session_state.page = "dashboard"
-                    st.rerun()
+                    st.success("Conta criada. Agora você já pode entrar no Nebula.")
+    glass_close()
     st.markdown('</div>', unsafe_allow_html=True)
 
-def dashboard_metrics():
-    snap = metrics_snapshot()
-    cols = st.columns(4)
-    data = [
-        ("TOTAL DE REPOSITÓRIOS", snap["repos"], "repositórios cadastrados"),
-        ("ARQUIVOS INDEXADOS", snap["files"], "itens no sistema"),
-        ("ARQUIVOS ANALISADOS", snap["analyzed"], "com leitura automática"),
-        ("TEMAS IDENTIFICADOS", snap["topics"], "eixos temáticos"),
-    ]
-    for col, (label, value, caption) in zip(cols, data):
-        with col:
-            st.markdown(
-                f"""
-                <div class="metric-card">
-                    <div class="metric-label">{label}</div>
-                    <div class="metric-value">{value}</div>
-                    <div class="metric-caption">{caption}</div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
 
-def page_dashboard():
-    render_shell("Dashboard Administrativo", f"Bem-vindo, {user_data().get('name','usuário')}")
-    dashboard_metrics()
-    analysis_data = build_analysis_dataset()
-    c1, c2 = st.columns([1.2, 1])
+def page_workspace():
+    page_header("Nebula", "Interface lateral em liquid glass, repositório acadêmico e análise conectada em um único ambiente.")
+    docs = analyzed_local_documents()
+    all_docs = all_local_documents()
+    user = current_user_data()
+    stats = aggregate_statistics(docs)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="soft-title">Resumo do sistema</div>', unsafe_allow_html=True)
-        st.markdown('<div class="subline">Visão consolidada das pesquisas armazenadas e das preferências mais recentes do usuário.</div>', unsafe_allow_html=True)
-        profile = current_interest_profile()
-        if profile["topics"]:
-            st.markdown('<div class="section-sep">Temas dominantes</div>', unsafe_allow_html=True)
-            for topic, score in profile["topics"].items():
-                st.markdown(f'<span class="table-chip">{topic} ({score})</span>', unsafe_allow_html=True)
-        else:
-            st.info("Ainda não há histórico suficiente para perfil temático.")
-        if profile["keywords"]:
-            st.markdown('<div class="section-sep">Palavras-chave predominantes</div>', unsafe_allow_html=True)
-            for kw in profile["keywords"][:12]:
-                st.markdown(f'<span class="table-chip">{kw}</span>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="soft-title">Sugestões para começar</div>', unsafe_allow_html=True)
-        suggestions = []
-        if profile["keywords"]:
-            suggestions.extend([
-                " ".join(profile["keywords"][:4]),
-                " ".join(profile["keywords"][:3] + ["revisão"]),
-            ])
-        if analysis_data["theme_counter"]:
-            top_theme = analysis_data["theme_counter"].most_common(1)[0][0]
-            suggestions.append(f"{top_theme} artigos recentes")
-        if not suggestions:
-            suggestions = [
-                "folksonomia museus documentação",
-                "inteligência artificial preservação digital",
-                "análise de repositório acadêmico"
-            ]
-        for s in suggestions[:5]:
-            if st.button(s, key=f"dash_sug_{s}", use_container_width=True):
-                st.session_state.page = "discovery"
-                st.session_state.discovery_prefill = s
-                st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+        render_metric("Repositórios", str(len(st.session_state.repositories)), "Pastas inteligentes disponíveis")
     with c2:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="soft-title">Repositórios</div>', unsafe_allow_html=True)
-        if not st.session_state.repositories:
-            st.info("Crie seu primeiro repositório para iniciar a indexação.")
+        render_metric("Arquivos", str(len(all_docs)), "Documentos e imagens no sistema")
+    with c3:
+        render_metric("Análises", str(len(docs)), "Arquivos com análise estruturada")
+    with c4:
+        render_metric("Temas", str(len(stats["topics"])), "Temas inferidos pelo algoritmo")
+
+    left, right = st.columns([1.3, 1])
+    with left:
+        glass_open("padding:1rem 1rem .9rem 1rem; margin-top:.85rem;")
+        st.markdown('<div class="mini-title">Perfil de interesse do usuário</div>', unsafe_allow_html=True)
+        interests = sorted((user.get("interest_profile") or {}).items(), key=lambda x: x[1], reverse=True)
+        render_keyword_chips([k for k, _ in interests[:12]])
+        st.markdown('<hr>', unsafe_allow_html=True)
+        st.markdown('<div class="mini-title">Histórico recente</div>', unsafe_allow_html=True)
+        history = user.get("search_history") or []
+        if history:
+            for row in history[:8]:
+                st.markdown(f'<div class="repo-item"><div>{row["query"]}</div><div class="tiny">{row["date"]}</div></div>', unsafe_allow_html=True)
         else:
-            for repo_name, repo in st.session_state.repositories.items():
-                analyzed = sum(1 for f in repo.get("files", []) if f.get("analysis"))
-                theme = infer_repository_theme(repo)
-                st.markdown(
-                    f"""
-                    <div class="repo-row">
-                        <div style="font-weight:700;color:#f2f7ff">{repo_name}</div>
-                        <div class="mini">{repo.get("description","Sem descrição")}</div>
-                        <div class="mini" style="margin-top:6px">Arquivos: {len(repo.get("files", []))} | Analisados: {analyzed} | Tema principal: {theme}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-        st.markdown('</div>', unsafe_allow_html=True)
+            st.caption("Ainda não há buscas registradas.")
+        glass_close()
+    with right:
+        glass_open("padding:1rem 1rem .9rem 1rem; margin-top:.85rem;")
+        st.markdown('<div class="mini-title">Pulso da base</div>', unsafe_allow_html=True)
+        render_keyword_chips([k for k, _ in stats["topics"].most_common(10)])
+        st.markdown('<hr>', unsafe_allow_html=True)
+        st.markdown('<div class="mini-title">Métodos mais frequentes</div>', unsafe_allow_html=True)
+        render_keyword_chips([f"{k} ({v})" for k, v in stats["methods"].most_common(8)])
+        glass_close()
 
-def render_article_card(article: dict, save_key: str = ""):
-    st.markdown('<div class="article-row">', unsafe_allow_html=True)
-    st.markdown(f"**{article.get('title','Sem título')}**")
-    meta = " | ".join([
-        str(article.get("year") or "Ano não identificado"),
-        article.get("authors") or "Autores não identificados",
-        article.get("source") or "Fonte não identificada"
-    ])
-    st.caption(meta)
-    if article.get("abstract"):
-        st.write(article["abstract"][:900])
-    c1, c2 = st.columns([1, 1])
-    with c1:
-        if article.get("url"):
-            st.link_button("Abrir referência", article["url"], use_container_width=True)
-    with c2:
-        if st.button("Salvar referência", key=save_key, use_container_width=True):
-            st.session_state.saved_articles_global.append(article)
-            user = user_data()
-            user.setdefault("saved_articles", []).append(article)
-            save_state()
-            st.success("Referência salva.")
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def page_discovery():
-    render_shell("Pesquisa Inteligente", "Busca unificada para artigos, arquivos do sistema e imagens relacionadas")
-    if "discovery_prefill" in st.session_state:
-        default_q = st.session_state.pop("discovery_prefill")
+    glass_open("padding:1rem 1rem .9rem 1rem; margin-top:.9rem;")
+    st.markdown('<div class="mini-title">Repositórios do sistema</div>', unsafe_allow_html=True)
+    if st.session_state.repositories:
+        for repo_id, repo in st.session_state.repositories.items():
+            render_repo_card(repo_id, repo)
     else:
-        default_q = ""
+        st.caption("Nenhum repositório criado ainda. Vá em Repositório para criar o primeiro.")
+    glass_close()
 
-    top_left, top_right = st.columns([2.2, 1])
-    with top_left:
-        query = st.text_input("Consulta", value=default_q, placeholder="Digite tema, pergunta, conceito ou problema de pesquisa", key="discovery_query")
-    with top_right:
-        image_file = st.file_uploader("Imagem opcional para busca visual", type=["png", "jpg", "jpeg", "webp", "bmp"], key="discovery_image")
 
-    if st.button("Executar busca integrada", use_container_width=True):
-        if query.strip():
-            image_bytes = image_file.read() if image_file else None
-            with st.spinner("Analisando consulta e cruzando sistema com internet..."):
-                discover(query.strip(), image_bytes=image_bytes)
-        else:
-            st.warning("Digite uma consulta para iniciar a busca.")
+def page_search():
+    page_header("Pesquisa Inteligente", "Busca unificada para artigos, documentos locais, imagens semelhantes e sugestões de pesquisa.")
+    user_profile = current_user_data().get("interest_profile") or {}
 
-    result = st.session_state.get("discovery_result")
-    if not result:
-        st.markdown('<div class="glass-card"><div class="soft-title">Busca integrada</div><div class="subline">Esta tela substitui a antiga separação entre busca textual e visão computacional. Agora a mesma consulta verifica arquivos locais, internet e imagens relacionadas.</div></div>', unsafe_allow_html=True)
-        return
-
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="soft-title">Entendimento da consulta</div>', unsafe_allow_html=True)
-    st.caption(f"Consulta analisada: {result['query']}")
-    for topic, score in result["query_topics"].items():
-        st.markdown(f'<span class="table-chip">{topic} ({score})</span>', unsafe_allow_html=True)
-    if result["suggestions"]:
-        st.markdown('<div class="section-sep">Sugestões de refinamento</div>', unsafe_allow_html=True)
-        sug_cols = st.columns(min(5, len(result["suggestions"])))
-        for col, sug in zip(sug_cols, result["suggestions"]):
-            with col:
-                if st.button(sug, key=f"q_sug_{sug}", use_container_width=True):
-                    st.session_state.discovery_prefill = sug
-                    st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    tabs = st.tabs([
-        f"Sistema ({len(result['local_hits'])})",
-        f"Internet ({len(result['web_hits'])})",
-        f"Imagens locais ({len(result['local_images'])})",
-        f"Imagens relacionadas ({len(result['online_images'])})",
-    ])
-
-    with tabs[0]:
-        if not result["local_hits"]:
-            st.info("Nenhum arquivo local compatível foi localizado. Analise seus arquivos dentro dos repositórios para habilitar a busca semântica.")
-        else:
-            for idx, hit in enumerate(result["local_hits"]):
-                an = hit["analysis"]
-                st.markdown(
-                    f"""
-                    <div class="repo-row">
-                        <div style="font-weight:700;color:#f7fbff">{an.get('title', hit['filename'])}</div>
-                        <div class="mini">Repositório: {hit['repository']} | Arquivo: {hit['filename']} | Similaridade: {hit['score']:.1f}</div>
-                        <div class="mini">Autores: {", ".join(an.get('authors', [])[:4]) if an.get('authors') else "Não identificados"} | Ano: {an.get('year') or "Não identificado"} | Método: {an.get('methodology')}</div>
-                        <div style="margin-top:10px">{an.get('summary', '')[:900]}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                if an.get("keywords"):
-                    for kw in an["keywords"][:10]:
-                        st.markdown(f'<span class="table-chip">{kw}</span>', unsafe_allow_html=True)
-
-    with tabs[1]:
-        if not result["web_hits"]:
-            st.info("Nenhuma referência externa foi encontrada no momento.")
-        else:
-            for idx, article in enumerate(result["web_hits"]):
-                render_article_card(article, save_key=f"save_article_{idx}")
-
-    with tabs[2]:
-        if not result["local_images"]:
-            st.info("Nenhuma imagem semelhante foi encontrada dentro dos repositórios do sistema.")
-        else:
-            cols = st.columns(2)
-            for i, item in enumerate(result["local_images"]):
-                with cols[i % 2]:
-                    st.markdown(
-                        f"""
-                        <div class="repo-row">
-                            <div style="font-weight:700;color:#f2f8ff">{item['filename']}</div>
-                            <div class="mini">Repositório: {item['repository']} | Similaridade visual: {item['score']:.1f}</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-                    try:
-                        st.image(item["path"], use_container_width=True)
-                    except Exception:
-                        pass
-
-    with tabs[3]:
-        if not result["online_images"]:
-            st.info("Não foi possível localizar imagens relacionadas na internet para esta consulta.")
-        else:
-            cols = st.columns(2)
-            for i, item in enumerate(result["online_images"]):
-                with cols[i % 2]:
-                    st.markdown(f'<div class="repo-row"><div style="font-weight:700;color:#f2f8ff">{item["title"]}</div><div class="mini">{item["source"]}</div></div>', unsafe_allow_html=True)
-                    if item.get("image_url"):
-                        st.image(item["image_url"], use_container_width=True)
-                    if item.get("page_url"):
-                        st.link_button("Abrir página", item["page_url"], use_container_width=True)
-
-def page_repositories():
-    render_shell("Repositórios", "Gestão de arquivos, análise automática e sugestões de leitura relacionadas")
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="soft-title">Criar novo repositório</div>', unsafe_allow_html=True)
-    c1, c2 = st.columns([2, 3])
+    glass_open("padding:1rem 1rem .9rem 1rem; margin-bottom:.9rem;")
+    st.markdown('<div class="mini-title">Motor de busca unificado</div>', unsafe_allow_html=True)
+    c1, c2 = st.columns([2.3, 1])
     with c1:
-        repo_name = st.text_input("Nome do repositório", key="new_repo_name", placeholder="Ex: Estudo de público e museologia")
+        query = st.text_input("Consulta", placeholder="Ex.: folksonomia em museus, preservação digital, IA em documentação museológica")
     with c2:
-        repo_desc = st.text_input("Descrição", key="new_repo_desc", placeholder="Objetivo, escopo ou problema de pesquisa")
-    if st.button("Criar repositório", use_container_width=True):
-        if not repo_name.strip():
-            st.warning("Informe o nome do repositório.")
-        elif repo_name in st.session_state.repositories:
-            st.warning("Já existe um repositório com esse nome.")
-        else:
-            slug = slugify(repo_name)
-            st.session_state.repositories[repo_name] = {
-                "slug": slug,
-                "description": repo_desc,
-                "created_at": now_str(),
-                "files": []
-            }
-            ensure_repo_dir(slug)
-            save_state()
-            st.success("Repositório criado com sucesso.")
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+        search_web = st.checkbox("Buscar também na internet", value=True)
+    uploaded_image = st.file_uploader("Imagem de referência para busca visual", type=["png", "jpg", "jpeg", "webp", "bmp"])
+
+    repo_options = ["Todos"] + [r.get("name", rid) for rid, r in st.session_state.repositories.items()]
+    repo_choice = st.selectbox("Escopo local", repo_options)
+
+    run = st.button("Executar busca", use_container_width=True)
+    if run:
+        intelligence = infer_query_intent(query, user_profile)
+        local_docs = all_local_documents()
+        if repo_choice != "Todos":
+            local_docs = [d for d in local_docs if d.get("repo_name") == repo_choice]
+        local_results = local_search(query, local_docs)
+        external_results = scholar_search(query) if search_web else []
+        external_images = commons_image_search(query, 10) if search_web else []
+        image_matches = local_image_similarity(uploaded_image.getvalue(), local_docs) if uploaded_image else []
+
+        if uploaded_image:
+            st.session_state.last_uploaded_image_name = uploaded_image.name
+        st.session_state.search_results = intelligence
+        st.session_state.local_matches = local_results
+        st.session_state.external_matches = external_results
+        st.session_state.external_images = external_images
+        st.session_state.image_matches = image_matches
+        update_user_interest(query, intelligence.get("keywords"), intelligence.get("topics"))
+
+    intelligence = st.session_state.get("search_results")
+    if intelligence:
+        left, right = st.columns([1.15, 1])
+        with left:
+            glass_open("padding:1rem 1rem .9rem 1rem;")
+            st.markdown('<div class="mini-title">Leitura da consulta</div>', unsafe_allow_html=True)
+            st.markdown(f"<div class='tiny'>Intenção inferida: <strong>{intelligence.get('intent','exploratória')}</strong></div>", unsafe_allow_html=True)
+            st.markdown("<div style='margin-top:.7rem' class='tiny'>Palavras-chave centrais</div>", unsafe_allow_html=True)
+            render_keyword_chips(intelligence.get("keywords") or [])
+            st.markdown("<div style='margin-top:.45rem' class='tiny'>Temas relacionados</div>", unsafe_allow_html=True)
+            render_keyword_chips(intelligence.get("topics") or [])
+            glass_close()
+        with right:
+            glass_open("padding:1rem 1rem .9rem 1rem;")
+            st.markdown('<div class="mini-title">Sugestões de expansão</div>', unsafe_allow_html=True)
+            render_keyword_chips(intelligence.get("suggestions") or [])
+            glass_close()
+
+        tabs = st.tabs(["Resultados locais", "Artigos da internet", "Imagens semelhantes", "Imagens da internet"])
+        with tabs[0]:
+            if st.session_state.local_matches:
+                for item in st.session_state.local_matches:
+                    render_local_result(item)
+            else:
+                st.caption("Nenhum resultado local encontrado para esta consulta.")
+        with tabs[1]:
+            if st.session_state.external_matches:
+                for item in st.session_state.external_matches:
+                    render_external_result(item)
+            else:
+                st.caption("Nenhum artigo externo encontrado.")
+        with tabs[2]:
+            if st.session_state.image_matches:
+                for m in st.session_state.image_matches:
+                    st.markdown(f"<div class='result-item'><div class='mini-title'>{m['original_name']}</div><div class='tiny'>Repositório: {m['repo_name']} · Similaridade: {m['similarity']:.2f}</div></div>", unsafe_allow_html=True)
+                    if os.path.exists(m["path"]):
+                        st.image(m["path"], use_container_width=True)
+            else:
+                st.caption("Nenhuma imagem semelhante encontrada nas pastas locais.")
+        with tabs[3]:
+            if st.session_state.external_images:
+                cols = st.columns(2)
+                for idx, img in enumerate(st.session_state.external_images[:8]):
+                    with cols[idx % 2]:
+                        st.markdown(f"<div class='result-item'><div class='mini-title'>{img['title']}</div><div class='tiny'>{img['source']}</div></div>", unsafe_allow_html=True)
+                        st.image(img["url"], use_container_width=True)
+            else:
+                st.caption("Nenhuma imagem externa encontrada para a consulta atual.")
+    glass_close()
+
+
+def page_repository():
+    page_header("Repositório", "Gestão de pastas, ingestão de arquivos, análise automática e sugestões de pesquisa por repositório.")
+
+    c1, c2 = st.columns([1.1, 1.9])
+    with c1:
+        glass_open("padding:1rem 1rem .9rem 1rem;")
+        st.markdown('<div class="mini-title">Novo repositório</div>', unsafe_allow_html=True)
+        with st.form("create_repo"):
+            name = st.text_input("Nome", placeholder="Ex.: Estudos de público")
+            desc = st.text_area("Descrição", height=90)
+            tags = st.text_input("Tags", placeholder="Ex.: museologia, folksonomia, acessibilidade")
+            submit = st.form_submit_button("Criar repositório", use_container_width=True)
+            if submit:
+                if not name.strip():
+                    st.error("Digite um nome para o repositório.")
+                else:
+                    repo_id = slugify(name)
+                    if repo_id in st.session_state.repositories:
+                        st.error("Já existe um repositório com esse nome.")
+                    else:
+                        st.session_state.repositories[repo_id] = {
+                            "name": name.strip(),
+                            "description": desc.strip(),
+                            "tags": [t.strip() for t in tags.split(",") if t.strip()],
+                            "created_at": now_str(),
+                            "files": [],
+                        }
+                        save_state()
+                        st.success("Repositório criado.")
+                        st.rerun()
+        glass_close()
+    with c2:
+        glass_open("padding:1rem 1rem .9rem 1rem;")
+        st.markdown('<div class="mini-title">Resumo do repositório</div>', unsafe_allow_html=True)
+        render_keyword_chips([r.get("name", rid) for rid, r in st.session_state.repositories.items()])
+        glass_close()
 
     if not st.session_state.repositories:
-        st.info("Nenhum repositório cadastrado ainda.")
         return
 
-    for repo_name, repo in list(st.session_state.repositories.items()):
-        analyzed = sum(1 for f in repo.get("files", []) if f.get("analysis"))
-        with st.expander(f"{repo_name} | Arquivos: {len(repo.get('files', []))} | Analisados: {analyzed}", expanded=False):
-            st.caption(repo.get("description", "Sem descrição"))
-            up = st.file_uploader(
-                f"Adicionar arquivos em {repo_name}",
-                key=f"upload_{repo_name}",
-                accept_multiple_files=True
-            )
-            if up:
-                repo_dir = ensure_repo_dir(repo["slug"])
-                existing_names = {item["filename"] for item in repo["files"]}
-                added = 0
-                for uf in up:
-                    if uf.name in existing_names:
-                        continue
-                    content = uf.read()
-                    file_path = repo_dir / uf.name
-                    file_path.write_bytes(content)
-                    item = {
-                        "filename": uf.name,
-                        "path": str(file_path),
-                        "kind": file_type(uf.name),
-                        "uploaded_at": now_str(),
-                        "analysis": {}
-                    }
-                    if item["kind"] == "IMG":
-                        item["image_descriptor"] = image_descriptor(content)
-                    repo["files"].append(item)
-                    added += 1
-                save_state()
-                if added:
-                    st.success(f"{added} arquivo(s) adicionados.")
-                    st.rerun()
+    repo_names = {r.get("name", rid): rid for rid, r in st.session_state.repositories.items()}
+    selected_name = st.selectbox("Escolha um repositório", list(repo_names.keys()))
+    repo_id = repo_names[selected_name]
+    repo = st.session_state.repositories[repo_id]
 
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                if st.button("Analisar tudo", key=f"analyze_all_{repo_name}", use_container_width=True):
-                    with st.spinner("Executando análise automática do repositório..."):
-                        batch_analyze_repository(repo_name)
-                    st.success("Análise concluída.")
-                    st.rerun()
-            with c2:
-                if st.button("Sugerir leituras", key=f"suggest_read_{repo_name}", use_container_width=True):
-                    st.session_state[f"suggested_{repo_name}"] = suggest_articles_for_repository(repo_name)
-            with c3:
-                if st.button("Excluir repositório", key=f"delete_repo_{repo_name}", use_container_width=True):
-                    del st.session_state.repositories[repo_name]
-                    save_state()
-                    st.rerun()
+    glass_open("padding:1rem 1rem .9rem 1rem; margin-top:.9rem;")
+    st.markdown(f'<div class="mini-title">{repo.get("name")}</div>', unsafe_allow_html=True)
+    st.caption(repo.get("description", ""))
+    render_keyword_chips(repo.get("tags", []))
+    uploads = st.file_uploader("Adicionar arquivos", accept_multiple_files=True, key=f"upload_{repo_id}")
+    if uploads:
+        added = 0
+        existing_sha = {f.get("sha1") for f in repo.get("files", [])}
+        for up in uploads:
+            item = store_uploaded_file(repo_id, up)
+            if item["sha1"] not in existing_sha:
+                repo.setdefault("files", []).append(item)
+                existing_sha.add(item["sha1"])
+                added += 1
+        st.session_state.repositories[repo_id] = repo
+        save_state()
+        st.success(f"{added} arquivo(s) adicionados ao repositório.")
+        st.rerun()
+    glass_close()
 
-            if repo.get("files"):
-                for idx, file_item in enumerate(repo["files"]):
-                    analysis = file_item.get("analysis") or {}
-                    st.markdown(
-                        f"""
-                        <div class="repo-row">
-                            <div style="font-weight:700;color:#f7fbff">{file_item['filename']}</div>
-                            <div class="mini">Tipo: {file_item['kind']} | Enviado em: {file_item['uploaded_at']}</div>
-                            <div class="mini">Título identificado: {analysis.get('title','Não analisado')}</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True
-                    )
-                    cols = st.columns([1, 1, 3])
-                    with cols[0]:
-                        if st.button("Analisar arquivo", key=f"an_file_{repo_name}_{idx}", use_container_width=True):
-                            with st.spinner("Lendo arquivo e enriquecendo metadados..."):
-                                apply_file_analysis(repo_name, idx)
-                            st.success("Arquivo analisado.")
-                            st.rerun()
-                    with cols[1]:
-                        if st.button("Excluir arquivo", key=f"del_file_{repo_name}_{idx}", use_container_width=True):
-                            fp = Path(file_item["path"])
-                            try:
-                                if fp.exists():
-                                    fp.unlink()
-                            except Exception:
-                                pass
-                            repo["files"].pop(idx)
-                            save_state()
-                            st.rerun()
-                    with cols[2]:
-                        if analysis:
-                            st.write(f"Resumo: {analysis.get('summary','')[:900]}")
-                            meta = [
-                                f"Ano: {analysis.get('year') or 'Não identificado'}",
-                                f"Método: {analysis.get('methodology') or 'Indefinido'}",
-                                f"Relevância: {analysis.get('relevance_score')}",
-                                f"Citações: {analysis.get('citations') or 0}",
-                            ]
-                            st.caption(" | ".join(meta))
-                            for kw in analysis.get("keywords", [])[:12]:
-                                st.markdown(f'<span class="table-chip">{kw}</span>', unsafe_allow_html=True)
-                        elif file_item["kind"] == "IMG":
-                            st.caption("Arquivo de imagem pronto para busca visual local.")
-                        else:
-                            st.caption("Arquivo ainda não analisado.")
-
-            suggestions = st.session_state.get(f"suggested_{repo_name}", [])
-            if suggestions:
-                st.markdown('<div class="section-sep">Sugestões de leitura relacionadas ao repositório</div>', unsafe_allow_html=True)
-                for idx, article in enumerate(suggestions):
-                    render_article_card(article, save_key=f"save_repo_article_{repo_name}_{idx}")
-
-def page_connections():
-    render_shell("Conexões", "Relações entre pesquisas semelhantes, padrões comuns e proximidades temáticas")
-    graph = compute_connections()
-    nodes = graph["nodes"]
-    edges = graph["edges"]
-    if not nodes:
-        st.info("Analise arquivos nos repositórios para construir a rede de conexões.")
-        return
-
-    if go is not None:
-        n = len(nodes)
-        xs = [math.cos(2 * math.pi * i / max(1, n)) for i in range(n)]
-        ys = [math.sin(2 * math.pi * i / max(1, n)) for i in range(n)]
-        fig = go.Figure()
-        for edge in edges:
-            i = edge["source"]
-            j = edge["target"]
-            fig.add_trace(
-                go.Scatter(
-                    x=[xs[i], xs[j]],
-                    y=[ys[i], ys[j]],
-                    mode="lines",
-                    line=dict(width=max(1, edge["score"] / 18), color="rgba(135,196,255,.42)"),
-                    hoverinfo="none",
-                    showlegend=False
-                )
-            )
-        fig.add_trace(
-            go.Scatter(
-                x=xs,
-                y=ys,
-                mode="markers+text",
-                text=[f"{Path(node['filename']).stem[:18]}" for node in nodes],
-                textposition="top center",
-                marker=dict(size=18, color="#90c5ff", line=dict(color="rgba(255,255,255,.4)", width=1)),
-                hovertemplate=[
-                    f"<b>{node['analysis'].get('title', node['filename'])}</b><br>{node['repository']}<extra></extra>"
-                    for node in nodes
-                ],
-                showlegend=False
-            )
-        )
-        fig.update_layout(
-            height=520,
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=10, r=10, t=10, b=10),
-            xaxis=dict(showgrid=False, zeroline=False, visible=False),
-            yaxis=dict(showgrid=False, zeroline=False, visible=False),
-        )
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">NÓS</div><div class="metric-value">{len(nodes)}</div><div class="metric-caption">documentos na rede</div></div>', unsafe_allow_html=True)
-    with c2:
-        st.markdown(f'<div class="metric-card"><div class="metric-label">ARESTAS</div><div class="metric-value">{len(edges)}</div><div class="metric-caption">conexões significativas</div></div>', unsafe_allow_html=True)
-    with c3:
-        strengths = [edge["score"] for edge in edges]
-        avg = round(sum(strengths) / len(strengths), 1) if strengths else 0
-        st.markdown(f'<div class="metric-card"><div class="metric-label">FORÇA MÉDIA</div><div class="metric-value">{avg}</div><div class="metric-caption">nível médio de semelhança</div></div>', unsafe_allow_html=True)
-
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="soft-title">Relações principais</div>', unsafe_allow_html=True)
-    if not edges:
-        st.info("Ainda não há conexões suficientes para exibir pares relacionados.")
-    else:
-        for edge in edges[:20]:
-            s = nodes[edge["source"]]
-            t = nodes[edge["target"]]
-            shared_topics = ", ".join(edge.get("shared_topics") or []) or "sem tema compartilhado explícito"
-            shared_keywords = ", ".join(edge.get("shared_keywords") or []) or "sem palavras-chave compartilhadas explícitas"
-            st.markdown(
-                f"""
-                <div class="insight-row">
-                    <div style="font-weight:700;color:#f5f9ff">{s['analysis'].get('title', s['filename'])}</div>
-                    <div class="mini">conecta com</div>
-                    <div style="font-weight:700;color:#f5f9ff">{t['analysis'].get('title', t['filename'])}</div>
-                    <div class="mini">Similaridade: {edge['score']:.1f}</div>
-                    <div class="mini">Temas em comum: {shared_topics}</div>
-                    <div class="mini">Padrões em comum: {shared_keywords}</div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def render_simple_bar(counter: Counter, title: str, max_items: int = 10):
-    if go is None or not counter:
-        return
-    items = counter.most_common(max_items)
-    fig = go.Figure(
-        go.Bar(
-            x=[v for _, v in items],
-            y=[k for k, _ in items],
-            orientation="h",
-            text=[v for _, v in items],
-            textposition="outside"
-        )
-    )
-    fig.update_layout(
-        height=320,
-        title=title,
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=10, r=10, t=50, b=10),
-        xaxis=dict(showgrid=False, color="#dbe6ff"),
-        yaxis=dict(showgrid=False, color="#dbe6ff")
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-def render_globe(points):
-    if go is None or not points:
-        st.info("Ainda não há dados geográficos de afiliação para montar o globo.")
-        return
-    grouped = defaultdict(lambda: {"lat": [], "lon": [], "count": 0, "country": ""})
-    for p in points:
-        if p.get("lat") is None or p.get("lon") is None:
-            continue
-        key = f"{round(p['lat'], 2)}|{round(p['lon'], 2)}|{p.get('country','')}"
-        grouped[key]["lat"].append(p["lat"])
-        grouped[key]["lon"].append(p["lon"])
-        grouped[key]["count"] += 1
-        grouped[key]["country"] = p.get("country", "País não identificado")
-    fig = go.Figure(
-        go.Scattergeo(
-            lon=[sum(v["lon"]) / len(v["lon"]) for v in grouped.values()],
-            lat=[sum(v["lat"]) / len(v["lat"]) for v in grouped.values()],
-            text=[f"{v['country']} | {v['count']} ocorrência(s)" for v in grouped.values()],
-            mode="markers",
-            marker=dict(size=[8 + v["count"] * 2 for v in grouped.values()], color="#92d4ff", line=dict(color="#ffffff", width=1), opacity=.9)
-        )
-    )
-    fig.update_layout(
-        title="Mapa global de países de afiliação identificados",
-        height=500,
-        geo=dict(
-            projection_type="orthographic",
-            showland=True,
-            landcolor="rgb(33,47,75)",
-            showcountries=True,
-            countrycolor="rgba(255,255,255,.25)",
-            showocean=True,
-            oceancolor="rgb(6,13,24)",
-            bgcolor="rgba(0,0,0,0)"
-        ),
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=0, r=0, t=50, b=0)
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-def page_analytics():
-    render_shell("Análises", "Leitura global de anos, temas, autores, metodologias, países e síntese das pesquisas")
-    data = build_analysis_dataset()
-    rows = data["rows"]
-    if not rows:
-        st.info("Analise documentos nos repositórios para ativar o painel analítico.")
-        return
-
-    c1, c2, c3, c4 = st.columns(4)
-    stats = [
-        ("DOCUMENTOS", len(rows), "analisados"),
-        ("AUTORES", len(data["author_counter"]), "identificados"),
-        ("PAÍSES", len(data["country_counter"]), "mapeados"),
-        ("MÉTODOS", len(data["method_counter"]), "classificados"),
-    ]
-    for col, (label, value, caption) in zip([c1, c2, c3, c4], stats):
-        with col:
-            st.markdown(f'<div class="metric-card"><div class="metric-label">{label}</div><div class="metric-value">{value}</div><div class="metric-caption">{caption}</div></div>', unsafe_allow_html=True)
-
-    t1, t2, t3, t4, t5 = st.tabs(["Ano", "Tema", "Autores", "Nacionalidade", "Síntese"])
-    with t1:
-        render_simple_bar(data["year_counter"], "Distribuição por ano", max_items=15)
-    with t2:
-        render_simple_bar(data["theme_counter"], "Distribuição por tema", max_items=12)
-        render_simple_bar(data["method_counter"], "Metodologias detectadas", max_items=10)
-    with t3:
-        render_simple_bar(data["author_counter"], "Autores mais recorrentes", max_items=15)
-    with t4:
-        render_simple_bar(data["country_counter"], "Países de afiliação", max_items=15)
-        render_globe(data["globe_points"])
-    with t5:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="soft-title">Síntese automática do corpus</div>', unsafe_allow_html=True)
-        top_year = data["year_counter"].most_common(1)[0][0] if data["year_counter"] else "não identificado"
-        top_theme = data["theme_counter"].most_common(1)[0][0] if data["theme_counter"] else "não identificado"
-        top_method = data["method_counter"].most_common(1)[0][0] if data["method_counter"] else "não identificado"
-        top_country = data["country_counter"].most_common(1)[0][0] if data["country_counter"] else "não identificado"
-        synthesis = (
-            f"O conjunto analisado reúne {len(rows)} documentos. "
-            f"O ano mais recorrente é {top_year}. "
-            f"O tema com maior presença é {top_theme}. "
-            f"A metodologia dominante é {top_method}. "
-            f"O país de afiliação que mais aparece é {top_country}. "
-            f"As conexões entre documentos devem ser observadas principalmente a partir dos temas recorrentes e da sobreposição de palavras-chave."
-        )
-        st.write(synthesis)
-        st.markdown('<div class="section-sep">Resumos dos documentos</div>', unsafe_allow_html=True)
-        for row in rows[:20]:
-            st.markdown(
-                f"""
-                <div class="insight-row">
-                    <div style="font-weight:700;color:#f5f9ff">{row.get('title', row.get('filename','Documento'))}</div>
-                    <div class="mini">{row.get('repository')} | {row.get('year') or 'Ano não identificado'} | {row.get('methodology')}</div>
-                    <div style="margin-top:8px">{row.get('summary','')[:1100]}</div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def page_account():
-    render_shell("Conta", "Dados do usuário, preferências temáticas e histórico de uso")
-    user = user_data()
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="soft-title">Perfil</div>', unsafe_allow_html=True)
-    with st.form("account_form"):
-        name = st.text_input("Nome", value=user.get("name", ""))
-        area = st.text_input("Área de pesquisa", value=user.get("area", ""))
-        bio = st.text_area("Biografia", value=user.get("bio", ""), height=120)
-        submitted = st.form_submit_button("Salvar alterações", use_container_width=True)
-        if submitted:
-            email = st.session_state.current_user
-            st.session_state.users[email]["name"] = name
-            st.session_state.users[email]["area"] = area
-            st.session_state.users[email]["bio"] = bio
-            save_state()
-            st.success("Perfil atualizado.")
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    hist = user.get("history", [])
-    profile = current_interest_profile()
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="soft-title">Interesses inferidos</div>', unsafe_allow_html=True)
-        if profile["topics"]:
-            for topic, score in profile["topics"].items():
-                st.markdown(f'<span class="table-chip">{topic} ({score})</span>', unsafe_allow_html=True)
-        if profile["keywords"]:
-            st.markdown('<div class="section-sep">Palavras recorrentes</div>', unsafe_allow_html=True)
-            for kw in profile["keywords"]:
-                st.markdown(f'<span class="table-chip">{kw}</span>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    with c2:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="soft-title">Histórico recente</div>', unsafe_allow_html=True)
-        if not hist:
-            st.info("Sem histórico de consultas até o momento.")
-        else:
-            for item in reversed(hist[-20:]):
-                topics = ", ".join(item.get("topics", [])) or "sem tema identificado"
+    left, right = st.columns([1.5, 1])
+    with left:
+        glass_open("padding:1rem 1rem .9rem 1rem; margin-top:.8rem;")
+        st.markdown('<div class="mini-title">Arquivos do repositório</div>', unsafe_allow_html=True)
+        if repo.get("files"):
+            for idx, item in enumerate(repo["files"]):
+                ana = item.get("analysis") or {}
                 st.markdown(
                     f"""
-                    <div class="insight-row">
-                        <div style="font-weight:700;color:#f5f9ff">{item.get('query')}</div>
-                        <div class="mini">{item.get('time')}</div>
-                        <div class="mini">Temas: {topics}</div>
+                    <div class="repo-item">
+                      <div class="mini-title">{ana.get('title') or item.get('original_name')}</div>
+                      <div class="tiny">{item.get('type')} · {item.get('uploaded_at')} · {round(item.get('size',0)/1024,1)} KB</div>
+                      <div style="margin-top:.5rem; color:#D7E1F8;">{ana.get('summary','')}</div>
+                      <div style="margin-top:.55rem;">{"".join([f'<span class="chip">{k}</span>' for k in ana.get('keywords',[])[:8]])}</div>
                     </div>
                     """,
-                    unsafe_allow_html=True
+                    unsafe_allow_html=True,
                 )
-        st.markdown('</div>', unsafe_allow_html=True)
+                col_a, col_b = st.columns([1, 1])
+                with col_a:
+                    if item.get("type") == "Imagem" and os.path.exists(item.get("path", "")):
+                        st.image(item["path"], use_container_width=True)
+                    elif item.get("text"):
+                        st.text_area("Conteúdo extraído", value=item["text"][:1800], height=150, key=f"txt_{repo_id}_{idx}")
+                with col_b:
+                    st.download_button(
+                        "Baixar metadados do arquivo",
+                        data=to_download_bytes(item),
+                        file_name=f"{slugify(item.get('original_name','arquivo'))}_metadados.json",
+                        mime="application/json",
+                        key=f"dl_meta_{repo_id}_{idx}",
+                    )
+                    if st.button("Remover arquivo", key=f"rm_file_{repo_id}_{idx}", use_container_width=True):
+                        try:
+                            if os.path.exists(item.get("path", "")):
+                                os.remove(item["path"])
+                        except Exception:
+                            pass
+                        repo["files"].pop(idx)
+                        st.session_state.repositories[repo_id] = repo
+                        save_state()
+                        st.rerun()
+                st.markdown("<hr>", unsafe_allow_html=True)
+        else:
+            st.caption("Nenhum arquivo neste repositório ainda.")
+        glass_close()
+    with right:
+        glass_open("padding:1rem 1rem .9rem 1rem; margin-top:.8rem;")
+        st.markdown('<div class="mini-title">Sugestões de pesquisa</div>', unsafe_allow_html=True)
+        suggestions = repo_research_suggestions(repo)
+        render_keyword_chips(suggestions)
+        if suggestions and requests is not None:
+            st.markdown('<div class="mini-title" style="margin-top:.85rem;">Artigos relacionados</div>', unsafe_allow_html=True)
+            related = scholar_search(suggestions[0])[:4]
+            for item in related:
+                render_external_result(item)
+        glass_close()
 
+
+def page_analytics():
+    page_header("Análises", "Leitura agregada do acervo pesquisado com gráficos por ano, tema, autor, método e distribuição geográfica.")
+    docs = analyzed_local_documents()
+    if not docs:
+        st.info("Adicione arquivos textuais aos repositórios para liberar as análises.")
+        return
+
+    stats = aggregate_statistics(docs)
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        render_metric("Documentos", str(len(docs)), "Arquivos analisados")
+    with c2:
+        render_metric("Autores", str(len(stats["authors"])), "Autores identificados")
+    with c3:
+        render_metric("Países", str(len(stats["countries"])), "Países ou afiliações detectados")
+    with c4:
+        avg_year = int(sum(stats["years"].elements()) / max(sum(stats["years"].values()), 1)) if stats["years"] else 0
+        render_metric("Ano médio", str(avg_year) if avg_year else "n/d", "Centro temporal do corpus")
+
+    tabs = st.tabs(["Resumo", "Gráficos", "Globo", "Tabela"])
+    with tabs[0]:
+        glass_open("padding:1rem 1rem .9rem 1rem;")
+        st.markdown('<div class="mini-title">Síntese da pesquisa</div>', unsafe_allow_html=True)
+        themes = ", ".join(k for k, _ in stats["topics"].most_common(6)) or "não identificados"
+        methods = ", ".join(k for k, _ in stats["methods"].most_common(4)) or "não identificados"
+        authors = ", ".join(k for k, _ in stats["authors"].most_common(5)) or "não identificados"
+        st.write(
+            f"O corpus analisado concentra-se principalmente em {themes}. "
+            f"Os métodos predominantes são {methods}. "
+            f"Entre os autores mais recorrentes aparecem {authors}."
+        )
+        st.markdown('<div class="mini-title" style="margin-top:.9rem;">Temas centrais</div>', unsafe_allow_html=True)
+        render_keyword_chips([f"{k} ({v})" for k, v in stats["topics"].most_common(12)])
+        glass_close()
+    with tabs[1]:
+        if px is not None and go is not None:
+            col_a, col_b = st.columns(2)
+            with col_a:
+                if stats["years"]:
+                    fig = px.bar(x=list(stats["years"].keys()), y=list(stats["years"].values()))
+                    fig.update_layout(height=420, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=20, r=20, t=20, b=20))
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.caption("Não há anos identificados o suficiente para o gráfico.")
+            with col_b:
+                fig = px.bar(x=list(stats["topics"].keys())[:10], y=list(stats["topics"].values())[:10])
+                fig.update_layout(height=420, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=20, r=20, t=20, b=20))
+                st.plotly_chart(fig, use_container_width=True)
+            col_c, col_d = st.columns(2)
+            with col_c:
+                fig = px.bar(x=list(stats["authors"].keys())[:10], y=list(stats["authors"].values())[:10])
+                fig.update_layout(height=420, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=20, r=20, t=20, b=20), xaxis_tickangle=-25)
+                st.plotly_chart(fig, use_container_width=True)
+            with col_d:
+                fig = px.pie(values=list(stats["methods"].values()), names=list(stats["methods"].keys()))
+                fig.update_layout(height=420, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", margin=dict(l=20, r=20, t=20, b=20))
+                st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.caption("Plotly não está disponível no ambiente.")
+    with tabs[2]:
+        fig = countries_globe_figure(stats["countries"])
+        if fig is not None:
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.caption("O corpus ainda não tem países suficientes para montar o globo interativo.")
+    with tabs[3]:
+        df = docs_dataframe(docs)
+        if df is not None:
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.download_button(
+                "Baixar tabela analítica",
+                data=df.to_csv(index=False).encode("utf-8"),
+                file_name="nebula_analises.csv",
+                mime="text/csv",
+            )
+        else:
+            st.caption("Pandas não está disponível para renderizar a tabela.")
+
+
+def page_connections():
+    page_header("Conexões", "Relações entre pesquisas semelhantes, padrões compartilhados e rede de proximidade temática.")
+    docs = analyzed_local_documents()
+    if len(docs) < 2:
+        st.info("São necessários pelo menos dois documentos analisados para calcular conexões.")
+        return
+
+    connections = pairwise_connections(docs)
+    st.session_state.connections_cache = connections
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        render_metric("Conexões", str(len(connections)), "Pares relevantes identificados")
+    with c2:
+        avg_score = round(sum(c["score"] for c in connections) / max(len(connections), 1), 2) if connections else 0
+        render_metric("Força média", f"{avg_score:.2f}", "Intensidade média das ligações")
+    with c3:
+        total_patterns = len({p for c in connections for p in c.get("patterns", [])})
+        render_metric("Padrões", str(total_patterns), "Vocabulário compartilhado entre pesquisas")
+
+    fig = connection_graph_figure(docs, connections)
+    if fig is not None:
+        st.plotly_chart(fig, use_container_width=True)
+
+    glass_open("padding:1rem 1rem .9rem 1rem; margin-top:.4rem;")
+    st.markdown('<div class="mini-title">Ligações mais fortes</div>', unsafe_allow_html=True)
+    for item in connections[:14]:
+        st.markdown(
+            f"""
+            <div class="connection-item">
+              <div class="mini-title" style="font-size:.96rem;">{item['a']}  ·  {item['b']}</div>
+              <div class="tiny">Força da conexão: {item['score']:.2f}</div>
+              <div style="margin-top:.55rem; color:#D7E1F8;">Padrões em comum: {', '.join(item['patterns']) or 'Sem padrões explícitos'}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    if not connections:
+        st.caption("Nenhuma ligação suficientemente forte foi encontrada.")
+    glass_close()
+
+
+def page_account():
+    page_header("Conta", "Dados do usuário e configuração pessoal do ambiente Nebula.")
+    user = current_user_data()
+    email = st.session_state.get("current_user")
+    glass_open("padding:1rem 1rem 1rem 1rem;")
+    col_a, col_b = st.columns([1, 1])
+    with col_a:
+        name = st.text_input("Nome", value=user.get("name", ""))
+        area = st.text_input("Área de pesquisa", value=user.get("area", ""))
+        bio = st.text_area("Bio", value=user.get("bio", ""), height=140)
+    with col_b:
+        st.text_input("E-mail", value=email or "", disabled=True)
+        new_password = st.text_input("Nova senha", type="password")
+        confirm_password = st.text_input("Confirmar nova senha", type="password")
+    if st.button("Salvar alterações", use_container_width=True):
+        if new_password and new_password != confirm_password:
+            st.error("As senhas não coincidem.")
+        else:
+            user["name"] = name.strip()
+            user["area"] = area.strip()
+            user["bio"] = bio.strip()
+            if new_password:
+                user["password"] = sha(new_password)
+            st.session_state.users[email] = user
+            save_state()
+            st.success("Conta atualizada.")
+    glass_close()
+
+# =============================
+# Main app
+# =============================
 def main():
-    st.set_page_config(page_title=APP_TITLE, layout="wide", initial_sidebar_state="expanded")
+    inject_css()
     init_state()
-    liquid_css()
+
     if not st.session_state.logged_in:
         page_login()
         return
-    render_nav()
-    page = st.session_state.get("page", "dashboard")
-    pages = {
-        "dashboard": page_dashboard,
-        "discovery": page_discovery,
-        "repositories": page_repositories,
-        "connections": page_connections,
-        "analytics": page_analytics,
-        "account": page_account,
-    }
-    pages.get(page, page_dashboard)()
+
+    render_sidebar()
+    page = st.session_state.get("page", "workspace")
+
+    if page == "workspace":
+        page_workspace()
+    elif page == "search":
+        page_search()
+    elif page == "repository":
+        page_repository()
+    elif page == "analytics":
+        page_analytics()
+    elif page == "connections":
+        page_connections()
+    elif page == "account":
+        page_account()
+    else:
+        page_workspace()
+
 
 if __name__ == "__main__":
     main()
