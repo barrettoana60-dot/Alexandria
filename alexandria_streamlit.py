@@ -3,10 +3,10 @@ import io
 import re
 import json
 import math
-import base64
-import secrets
 import hashlib
 import zipfile
+import struct
+import zlib
 from datetime import datetime
 from collections import Counter, defaultdict
 from urllib.parse import quote_plus
@@ -20,19 +20,14 @@ import plotly.graph_objects as go
 from PIL import Image
 
 try:
-    from cryptography.fernet import Fernet
+    import PyPDF2
 except Exception:
-    Fernet = None
+    PyPDF2 = None
 
 try:
     import pdfplumber
 except Exception:
     pdfplumber = None
-
-try:
-    import PyPDF2
-except Exception:
-    PyPDF2 = None
 
 # ============================================================
 # CONFIG
@@ -44,34 +39,34 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-DB_FILE = "nebula_research_secure_db.json"
-APP_SCHEMA_VERSION = 4
+DB_FILE = "nebula_research_db.json"
 MAX_TEXT_CHARS = 80000
 
 STOPWORDS = {
-    "de", "a", "o", "que", "e", "do", "da", "em", "um", "para", "é", "com", "uma", "os", "no", "se",
-    "na", "por", "mais", "as", "dos", "como", "mas", "foi", "ao", "ele", "das", "tem", "à", "seu", "sua",
-    "ou", "ser", "muito", "também", "já", "entre", "sobre", "após", "antes", "durante", "cada", "esse", "essa",
-    "isso", "estes", "essas", "this", "be", "or", "by", "from", "an", "at", "we", "our", "their", "into",
-    "using", "use", "used", "the", "of", "and", "to", "in", "is", "it", "that", "for", "on", "as", "with",
-    "are", "between", "after", "before", "during", "were", "was", "has", "have", "had", "been", "will",
-    "would", "could", "should", "may", "might", "shall", "não", "ser", "ter", "fazer", "poder", "dever",
-    "estar", "ir", "ver", "dar", "vir", "querer", "saber", "quando", "onde", "como", "porque", "quem", "qual",
-    "quanto", "todo", "todos", "toda", "todas", "mesmo", "mesma", "seus", "suas", "meu", "minha", "nosso",
-    "nossa", "ela", "eles", "elas", "eu", "você", "nos", "their", "which", "whose", "there", "here",
+    "de","a","o","que","e","do","da","em","um","para","é","com","uma","os","no","se","na","por",
+    "mais","as","dos","como","mas","foi","ao","ele","das","tem","à","seu","sua","ou","ser","muito",
+    "também","já","entre","sobre","após","antes","durante","cada","esse","essa","isso","estes","essas",
+    "this","be","or","by","from","an","at","we","our","their","into","using","use","used",
+    "the","of","and","to","in","is","it","that","for","on","as","with","are","between","after","before","during",
+    "were","was","has","have","had","been","will","would","could","should","may","might","shall",
+    "não","ser","ter","fazer","poder","dever","estar","ir","ver","dar","vir","querer","saber",
+    "quando","onde","como","porque","quem","qual","quanto","todo","todos","toda","todas","mesmo","mesma",
+    "seu","sua","seus","suas","meu","minha","nosso","nossa","ele","ela","eles","elas","eu","você","nos",
 }
 
 TOPIC_RULES = {
-    "Inteligência Artificial": ["ia", "ai", "machine learning", "deep learning", "rede neural", "transformer", "gpt", "bert", "llm", "algoritmo", "visão computacional"],
-    "Museologia": ["museu", "museologia", "acervo", "coleção", "patrimônio", "documentação", "preservação", "museal", "curadoria", "exposição"],
-    "Ciência de Dados": ["dados", "estatística", "análise", "modelo preditivo", "cluster", "classificação", "regressão", "dashboard", "visualização"],
-    "Computação": ["python", "software", "sistema", "api", "código", "programação", "arquitetura", "cloud", "backend", "frontend"],
-    "Educação": ["aprendizagem", "ensino", "estudante", "currículo", "pedagogia", "didática", "escola"],
-    "Psicologia": ["psicologia", "emoção", "cognição", "ansiedade", "atenção", "comportamento"],
-    "Biomedicina": ["célula", "gene", "proteína", "biologia", "biomédica", "genoma", "ensaio clínico"],
-    "Engenharia": ["engenharia", "estrutura", "material", "circuito", "eletrônica", "mecânica"],
-    "Direito": ["direito", "lei", "jurídico", "contrato", "norma", "legislação"],
-    "Economia": ["economia", "mercado", "inflação", "pib", "investimento", "fiscal", "monetária"],
+    "Inteligência Artificial": ["ia","ai","machine learning","deep learning","rede neural","llm","modelo","algoritmo","transformer","gpt","bert","nlp","visão computacional"],
+    "Museologia": ["museu","museologia","acervo","coleção","documentação","patrimônio","preservação","museal","curadoria","exposição"],
+    "Computação": ["python","software","sistema","banco de dados","api","código","computação","programação","arquitetura","cloud"],
+    "Ciência de Dados": ["dados","estatística","análise","modelo preditivo","cluster","classificação","regressão","visualização","dashboard"],
+    "Biomedicina": ["célula","gene","proteína","crispr","biologia","biomédica","terapia","amostra","genoma","ensaio clínico"],
+    "Neurociência": ["neurônio","cérebro","memória","sono","sináptica","cognitivo","neuro","fMRI","dopamina"],
+    "Astrofísica": ["galáxia","cosmologia","matéria escura","lensing","astro","telescópio","gravitacional","buraco negro","exoplaneta"],
+    "Psicologia": ["comportamento","psicologia","viés","atenção","emoção","cognição","ansiedade","depressão","terapia cognitiva"],
+    "Educação": ["aprendizagem","ensino","estudante","escola","didática","educação","currículo","pedagogia"],
+    "Engenharia": ["engenharia","estrutura","material","resistência","circuito","eletrônica","mecânica","termodinâmica"],
+    "Direito": ["direito","lei","jurídico","tribunal","contrato","norma","legislação","constitucional"],
+    "Economia": ["economia","mercado","inflação","pib","investimento","financeiro","fiscal","monetária"],
 }
 
 NATIONALITY_COORDS = {
@@ -98,743 +93,959 @@ NATIONALITY_COORDS = {
 }
 
 # ============================================================
-# CSS
+# CSS — LIQUID GLASS INTERFACE
 # ============================================================
 def inject_css():
-    st.markdown(
-        """
-        <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+    st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-        :root {
-            --bg: #030713;
-            --bg2: #07111f;
-            --glass: rgba(255,255,255,0.06);
-            --glass-border: rgba(147,197,253,0.16);
-            --text: #eef2ff;
-            --muted: #94a3c0;
-            --blue: #60a5fa;
-            --cyan: #67e8f9;
-            --green: #4ade80;
-            --purple: #c084fc;
-            --yellow: #facc15;
-        }
-        * { box-sizing:border-box; }
-        html, body, [class*="css"] { font-family:'Inter', sans-serif; color:var(--text); }
-        .stApp {
-            background:
-                radial-gradient(circle at 15% 10%, rgba(96,165,250,.18), transparent 26%),
-                radial-gradient(circle at 85% 8%, rgba(103,232,249,.12), transparent 22%),
-                radial-gradient(circle at 60% 90%, rgba(59,130,246,.10), transparent 26%),
-                linear-gradient(135deg, #030713 0%, #08111f 40%, #020811 100%);
-            background-size: 180% 180%;
-            animation: gradientShift 18s ease infinite;
-        }
-        @keyframes gradientShift {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        .block-container { max-width: 1400px; padding-top: 0.8rem; }
-        #MainMenu, footer, header { visibility:hidden; }
-        section[data-testid="stSidebar"] { display:none !important; }
-        .glass, .glass-sm {
-            border-radius: 24px;
-            border: 1px solid var(--glass-border);
-            background: linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-            backdrop-filter: blur(18px) saturate(150%);
-            -webkit-backdrop-filter: blur(18px) saturate(150%);
-            box-shadow: 0 20px 45px rgba(2,8,23,.22), inset 0 1px 0 rgba(255,255,255,.06);
-            padding: 1rem 1.1rem;
-            margin-bottom: 1rem;
-        }
-        .glass-sm { padding: .8rem .9rem; border-radius: 18px; }
-        .page-title {
-            font-size: 1.8rem; font-weight: 800; letter-spacing: -.03em; color: #f8fafc;
-            margin-bottom: .25rem;
-        }
-        .page-sub { color: var(--muted); margin-bottom: 1rem; }
-        .section-title { font-size: 1rem; font-weight: 700; margin-bottom: .9rem; color: #dbeafe; }
-        .metric-card {
-            border-radius: 20px; padding: 1rem; min-height: 100px;
-            border: 1px solid rgba(255,255,255,.08);
-            background: linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
-            box-shadow: 0 12px 28px rgba(2,8,23,.18);
-        }
-        .metric-card.blue { border-color: rgba(96,165,250,.22); }
-        .metric-card.cyan { border-color: rgba(103,232,249,.22); }
-        .metric-card.green { border-color: rgba(74,222,128,.22); }
-        .metric-card.purple { border-color: rgba(192,132,252,.22); }
-        .metric-card.yellow { border-color: rgba(250,204,21,.22); }
-        .metric-label { color: var(--muted); font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
-        .metric-value { font-size: 1.75rem; font-weight: 800; margin-top: .25rem; color: #f8fafc; }
-        .metric-desc { font-size: .78rem; color: #bfd7ff; }
-        .privacy-pill, .tag, .chain-badge, .user-chip {
-            display:inline-block; border-radius:999px; padding:.22rem .58rem; font-size:.76rem; margin:.12rem .18rem .12rem 0;
-            background: rgba(96,165,250,.10); color:#dbeafe; border:1px solid rgba(96,165,250,.18);
-        }
-        .privacy-pill { font-weight: 700; }
-        .chain-badge { background: rgba(148,163,184,.08); border-color: rgba(148,163,184,.14); }
-        .doc-card, .doc-mini, .article-card {
-            border-radius: 18px;
-            padding: .85rem .95rem;
-            margin-bottom: .75rem;
-            background: linear-gradient(135deg, rgba(255,255,255,.05), rgba(96,165,250,.04));
-            border: 1px solid rgba(148,163,184,.14);
-        }
-        .article-title { font-weight:700; color:#bfdbfe; margin-bottom:.2rem; }
-        .article-meta, .small-muted { color: var(--muted); font-size: .8rem; }
-        .article-abstract, .chat-text { color:#dbeafe; font-size:.84rem; line-height:1.45; }
-        .notice-box, .insight-box {
-            border-radius: 16px; padding: .85rem 1rem; color:#dbeafe; margin:.65rem 0;
-            background: linear-gradient(135deg, rgba(96,165,250,.10), rgba(103,232,249,.04));
-            border: 1px solid rgba(96,165,250,.18);
-        }
-        .soft-table { width:100%; font-size:.84rem; color:#dbeafe; margin-top:.45rem; }
-        .soft-table td { padding:.34rem .3rem; border-bottom:1px solid rgba(148,163,184,.08); }
-        .sim-bar-wrap { width:100%; height:10px; border-radius:999px; background: rgba(148,163,184,.12); overflow:hidden; margin:.25rem 0 .45rem; }
-        .sim-bar-fill { height:100%; border-radius:999px; background: linear-gradient(90deg, #60a5fa, #67e8f9); }
-        .chat-shell { max-height: 420px; overflow-y:auto; padding-right:.25rem; }
-        .chat-bubble {
-            border-radius: 18px; padding: .75rem .9rem; margin-bottom: .65rem; max-width: 90%;
-            background: linear-gradient(135deg, rgba(255,255,255,.05), rgba(255,255,255,.03));
-            border: 1px solid rgba(148,163,184,.12);
-        }
-        .chat-bubble.me {
-            margin-left:auto;
-            background: linear-gradient(135deg, rgba(96,165,250,.14), rgba(103,232,249,.05));
-            border-color: rgba(96,165,250,.18);
-        }
-        .chat-meta { display:flex; justify-content:space-between; gap:.8rem; color:#94a3c0; font-size:.74rem; margin-bottom:.35rem; }
-        .nebula-nav {
-            position: sticky; top: 0; z-index: 1000; margin-bottom: 1rem; padding: .7rem .9rem;
-            display:flex; align-items:center; justify-content:space-between; gap:1rem;
-            background: rgba(2,8,23,.72); border:1px solid rgba(255,255,255,.06); border-radius:24px;
-            backdrop-filter: blur(18px);
-        }
-        .nebula-logo {
-            font-weight:800; letter-spacing:-.03em; font-size:1.1rem;
-            background: linear-gradient(135deg, #60a5fa, #67e8f9, #93c5fd);
-            -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-        }
-        .nav-user { color:#dbeafe; font-size:.85rem; }
-        .auth-logo-big {
-            font-size: 2.2rem; font-weight: 800; text-align:center; letter-spacing:-.04em;
-            background: linear-gradient(135deg, #60a5fa, #67e8f9, #dbeafe);
-            -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-        }
-        .auth-sub { text-align:center; color:#94a3c0; margin-top:.35rem; }
-        div[data-testid="stButton"] > button {
-            border-radius: 16px !important;
-            border: 1px solid rgba(147,197,253,.18) !important;
-            background: linear-gradient(135deg, rgba(255,255,255,.06), rgba(255,255,255,.03)) !important;
-            color: #eef2ff !important;
-            backdrop-filter: blur(14px) !important;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 12px 24px rgba(2,8,23,.16);
-        }
-        div[data-testid="stButton"] > button[kind="primary"] {
-            background: linear-gradient(135deg, rgba(59,130,246,.32), rgba(103,232,249,.14)) !important;
-        }
-        .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {
-            border-radius: 16px !important;
-            background: rgba(255,255,255,.05) !important;
-            color:#eef2ff !important;
-            border: 1px solid rgba(148,163,184,.18) !important;
-        }
-        .stTabs [data-baseweb="tab-list"] {
-            gap:.35rem;
-        }
-        .stTabs [data-baseweb="tab"] {
-            border-radius: 14px; padding: .5rem .9rem; background: rgba(255,255,255,.04);
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+:root {
+    --bg: #050810;
+    --glass: rgba(255,255,255,0.06);
+    --glass-border: rgba(255,255,255,0.10);
+    --glass-hover: rgba(255,255,255,0.10);
+    --text: #eef2ff;
+    --muted: #94a3c0;
+    --blue: #60a5fa;
+    --cyan: #67e8f9;
+    --green: #4ade80;
+    --yellow: #facc15;
+    --purple: #c084fc;
+    --red: #f87171;
+    --nav-h: 64px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif;
+    color: var(--text);
+}
+
+.stApp {
+    position: relative;
+    overflow-x: hidden;
+    background:
+        radial-gradient(ellipse 80% 50% at 10% -10%, rgba(96,165,250,0.20), transparent),
+        radial-gradient(ellipse 60% 40% at 90% 5%, rgba(103,232,249,0.16), transparent),
+        radial-gradient(ellipse 50% 60% at 50% 110%, rgba(74,222,128,0.06), transparent),
+        linear-gradient(135deg, #020611 0%, #07101f 42%, #020814 100%);
+    background-size: 180% 180%;
+    animation: nebulaShift 18s ease-in-out infinite;
+    min-height: 100vh;
+}
+
+.stApp::before,
+.stApp::after {
+    content: "";
+    position: fixed;
+    inset: auto;
+    width: 34rem;
+    height: 34rem;
+    border-radius: 999px;
+    filter: blur(58px);
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.22;
+}
+
+.stApp::before {
+    top: 8%;
+    left: -10%;
+    background: radial-gradient(circle, rgba(96,165,250,0.45) 0%, rgba(96,165,250,0.0) 70%);
+    animation: floatOrbA 16s ease-in-out infinite;
+}
+
+.stApp::after {
+    bottom: -8%;
+    right: -10%;
+    background: radial-gradient(circle, rgba(103,232,249,0.35) 0%, rgba(103,232,249,0.0) 72%);
+    animation: floatOrbB 18s ease-in-out infinite;
+}
+
+@keyframes nebulaShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+@keyframes floatOrbA {
+    0% { transform: translate3d(0,0,0) scale(1); }
+    50% { transform: translate3d(110px, 30px, 0) scale(1.08); }
+    100% { transform: translate3d(0,0,0) scale(1); }
+}
+
+@keyframes floatOrbB {
+    0% { transform: translate3d(0,0,0) scale(1); }
+    50% { transform: translate3d(-90px, -40px, 0) scale(1.05); }
+    100% { transform: translate3d(0,0,0) scale(1); }
+}
+
+section[data-testid="stSidebar"] { display: none !important; }
+
+.block-container { padding: 0 1.5rem 3rem 1.5rem !important; max-width: 1400px; }
+
+/* ── NAV BAR ── */
+.nebula-nav {
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 1.5rem;
+    height: var(--nav-h);
+    background: rgba(5,8,16,0.72);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-bottom: 1px solid var(--glass-border);
+    margin-bottom: 2rem;
+    margin-left: -1.5rem;
+    margin-right: -1.5rem;
+    width: calc(100% + 3rem);
+}
+
+.nebula-logo {
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #60a5fa, #67e8f9, #4ade80);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    white-space: nowrap;
+}
+
+.nebula-navlinks {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+}
+
+.nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.48rem 1rem;
+    border-radius: 12px;
+    font-size: 0.84rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--muted);
+    transition: all 0.18s ease;
+    white-space: nowrap;
+    text-decoration: none;
+}
+
+.nav-btn:hover {
+    background: var(--glass);
+    border-color: var(--glass-border);
+    color: var(--text);
+}
+
+.nav-btn.active {
+    background: rgba(96,165,250,0.14);
+    border-color: rgba(96,165,250,0.30);
+    color: #93c5fd;
+    backdrop-filter: blur(12px);
+}
+
+.nav-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.nav-user {
+    font-size: 0.82rem;
+    color: var(--muted);
+    padding: 0.3rem 0.75rem;
+    border-radius: 10px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+}
+
+.nav-logout {
+    padding: 0.38rem 0.85rem;
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    background: rgba(248,113,113,0.10);
+    border: 1px solid rgba(248,113,113,0.22);
+    color: #fca5a5;
+    transition: all 0.15s;
+}
+
+.nav-logout:hover {
+    background: rgba(248,113,113,0.20);
+}
+
+/* ── GLASS CARD ── */
+.glass {
+    background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 1.25rem 1.35rem;
+    backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.24);
+    margin-bottom: 1.25rem;
+}
+
+.glass-sm {
+    background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.025));
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    padding: 0.9rem 1rem;
+    backdrop-filter: blur(16px);
+}
+
+/* ── METRIC CARDS ── */
+.metric-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 1rem; margin-bottom: 1.25rem; }
+.metric-card {
+    background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+    border: 1px solid var(--glass-border);
+    border-radius: 18px;
+    padding: 1.1rem 1.2rem;
+    min-height: 110px;
+    position: relative;
+    overflow: hidden;
+    backdrop-filter: blur(16px);
+}
+.metric-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    border-radius: 18px 18px 0 0;
+}
+.metric-card.blue::before { background: linear-gradient(90deg, #60a5fa, transparent); }
+.metric-card.cyan::before { background: linear-gradient(90deg, #67e8f9, transparent); }
+.metric-card.green::before { background: linear-gradient(90deg, #4ade80, transparent); }
+.metric-card.purple::before { background: linear-gradient(90deg, #c084fc, transparent); }
+.metric-card.yellow::before { background: linear-gradient(90deg, #facc15, transparent); }
+
+.metric-label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.09em; margin-bottom: 0.5rem; }
+.metric-value { font-size: 1.9rem; font-weight: 800; color: var(--text); line-height: 1; }
+.metric-desc { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; }
+
+/* ── SECTION TITLE ── */
+.section-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 1rem; color: var(--text); }
+.page-title { font-size: 1.8rem; font-weight: 800; margin-bottom: 0.25rem; letter-spacing: -0.02em; }
+.page-sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+
+/* ── DOC CARDS ── */
+.doc-card {
+    background: linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.02));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 0.9rem 1rem;
+    margin-bottom: 0.7rem;
+    transition: border-color 0.15s;
+}
+.doc-card:hover { border-color: rgba(96,165,250,0.25); }
+
+.tag {
+    display: inline-block;
+    padding: 0.2rem 0.55rem;
+    margin: 0.1rem;
+    border-radius: 999px;
+    background: rgba(96,165,250,0.12);
+    border: 1px solid rgba(96,165,250,0.20);
+    color: #bfdbfe;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.tag-green {
+    background: rgba(74,222,128,0.10);
+    border-color: rgba(74,222,128,0.20);
+    color: #bbf7d0;
+}
+
+.tag-purple {
+    background: rgba(192,132,252,0.10);
+    border-color: rgba(192,132,252,0.20);
+    color: #e9d5ff;
+}
+
+.small-muted { color: var(--muted); font-size: 0.82rem; }
+.divider { border: none; border-top: 1px solid var(--glass-border); margin: 1rem 0; }
+
+/* ── AUTH FORMS ── */
+.auth-wrap {
+    max-width: 440px;
+    margin: 6vh auto 0;
+}
+.auth-logo-big {
+    font-size: 2rem;
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    background: linear-gradient(135deg, #60a5fa, #67e8f9, #4ade80);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-align: center;
+    margin-bottom: 0.3rem;
+}
+.auth-sub {
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.88rem;
+    margin-bottom: 2rem;
+}
+.auth-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+.auth-tab {
+    flex: 1;
+    padding: 0.6rem;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s;
+}
+.auth-tab.active {
+    background: rgba(96,165,250,0.14);
+    border-color: rgba(96,165,250,0.30);
+    color: #93c5fd;
+}
+
+/* ── ARTICLE CARD ── */
+.article-card {
+    background: linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.02));
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    padding: 1rem 1.1rem;
+    margin-bottom: 0.8rem;
+    transition: all 0.15s;
+}
+.article-card:hover { border-color: rgba(96,165,250,0.25); background: rgba(255,255,255,0.07); }
+.article-title { font-size: 0.92rem; font-weight: 600; color: var(--text); margin-bottom: 0.3rem; }
+.article-meta { font-size: 0.78rem; color: var(--muted); margin-bottom: 0.4rem; }
+.article-abstract { font-size: 0.82rem; color: #cbd5e1; line-height: 1.55; }
+
+/* ── STREAMLIT OVERRIDE ── */
+.stButton > button {
+    border-radius: 14px !important;
+    border: 1px solid var(--glass-border) !important;
+    background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03)) !important;
+    color: var(--text) !important;
+    font-weight: 500 !important;
+    transition: all 0.15s !important;
+    backdrop-filter: blur(12px) !important;
+}
+.stButton > button:hover {
+    border-color: rgba(96,165,250,0.30) !important;
+    background: rgba(96,165,250,0.10) !important;
+}
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, rgba(96,165,250,0.22), rgba(103,232,249,0.12)) !important;
+    border-color: rgba(96,165,250,0.40) !important;
+    color: #93c5fd !important;
+}
+
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stSelectbox > div > div {
+    background: rgba(255,255,255,0.05) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 12px !important;
+    color: var(--text) !important;
+}
+
+.stFileUploader > div {
+    background: rgba(255,255,255,0.04) !important;
+    border: 1px dashed var(--glass-border) !important;
+    border-radius: 14px !important;
+}
+
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0.55rem;
+    background: rgba(255,255,255,0.03);
+    padding: 0.35rem;
+    border-radius: 18px;
+    border: 1px solid rgba(148,197,253,0.10);
+}
+.stTabs [data-baseweb="tab"] {
+    border-radius: 14px;
+    background: transparent;
+    color: #cbd5e1;
+    font-weight: 600;
+    min-height: 42px;
+}
+.stTabs [aria-selected="true"] {
+    background: linear-gradient(135deg, rgba(37,99,235,0.18), rgba(14,165,233,0.08)) !important;
+    color: #e0f2fe !important;
+}
+.auth-logo-big {
+    text-shadow: 0 8px 28px rgba(56,189,248,0.10);
+}
+
+[data-testid="stExpander"] {
+    background: var(--glass) !important;
+    border: 1px solid var(--glass-border) !important;
+    border-radius: 14px !important;
+}
+
+.stProgress > div > div > div {
+    background: linear-gradient(90deg, #60a5fa, #67e8f9) !important;
+    border-radius: 99px !important;
+}
+
+.stDataFrame { border-radius: 14px !important; }
+
+/* ── ANALYSIS STATS ── */
+.stat-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+.stat-pill {
+    padding: 0.3rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: rgba(96,165,250,0.10);
+    border: 1px solid rgba(96,165,250,0.18);
+    color: #93c5fd;
+}
+
+/* ── CONNECTION BADGE ── */
+.conn-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.65rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(74,222,128,0.10);
+    border: 1px solid rgba(74,222,128,0.20);
+    color: #86efac;
+}
+
+/* ── SIMILARITY BAR ── */
+.sim-bar-wrap { background: rgba(255,255,255,0.06); border-radius: 999px; height: 5px; margin-top: 0.3rem; }
+.sim-bar-fill { height: 5px; border-radius: 999px; background: linear-gradient(90deg, #60a5fa, #4ade80); }
+
+
+.chat-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    max-height: 560px;
+    overflow-y: auto;
+    padding-right: 0.2rem;
+}
+.chat-bubble {
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    padding: 0.9rem 1rem;
+    background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+    backdrop-filter: blur(14px);
+}
+.chat-bubble.me {
+    border-color: rgba(96,165,250,0.25);
+    box-shadow: 0 0 0 1px rgba(96,165,250,0.08) inset;
+}
+.chat-meta {
+    display:flex;
+    justify-content:space-between;
+    gap:0.8rem;
+    margin-bottom:0.45rem;
+    font-size:0.76rem;
+    color:var(--muted);
+}
+.chat-text {
+    font-size:0.86rem;
+    line-height:1.55;
+    color:#dbe7ff;
+    white-space:pre-wrap;
+}
+.user-chip {
+    display:inline-flex;
+    align-items:center;
+    gap:0.4rem;
+    padding:0.35rem 0.7rem;
+    border-radius:999px;
+    background:rgba(96,165,250,0.10);
+    border:1px solid rgba(96,165,250,0.18);
+    color:#bfdbfe;
+    font-size:0.76rem;
+    font-weight:600;
+    margin:0.15rem 0.2rem 0.15rem 0;
+}
+.notice-box {
+    border-radius:16px;
+    border:1px solid rgba(103,232,249,0.18);
+    background:linear-gradient(135deg, rgba(96,165,250,0.10), rgba(103,232,249,0.05));
+    padding:0.9rem 1rem;
+    color:#dbeafe;
+    font-size:0.84rem;
+}
+
+/* Plotly transparent bg */
+.js-plotly-plot .plotly { background: transparent !important; }
+
+/* Hide streamlit decorations */
+#MainMenu, footer, header { visibility: hidden; }
+.stDeployButton { display: none; }
+</style>
+""", unsafe_allow_html=True)
 
 
 # ============================================================
-# ENCRYPTED STORAGE
+# STATE / PERSISTENCE
 # ============================================================
-def hash_password(value: str) -> str:
-    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+def hash_password(p): return hashlib.sha256(p.encode()).hexdigest()
+
+def blank_workspace():
+    return {"repository": [], "search_history": []}
 
 
-def generate_master_secret() -> str:
-    return base64.urlsafe_b64encode(secrets.token_bytes(32)).decode("utf-8")
-
-
-def _fernet_from_seed(seed_text: str):
-    if Fernet is None:
-        return None
-    seed = hashlib.sha256(seed_text.encode("utf-8")).digest()
-    key = base64.urlsafe_b64encode(seed)
-    return Fernet(key)
-
-
-def global_fernet():
-    secret = st.session_state.get("master_secret") or generate_master_secret()
-    return _fernet_from_seed(f"nebula-global::{secret}")
-
-
-def user_fernet(email: str):
-    secret = st.session_state.get("master_secret") or generate_master_secret()
-    user = st.session_state.get("users", {}).get(email, {})
-    return _fernet_from_seed(f"nebula-user::{secret}::{email}::{user.get('password','')}")
-
-
-def encrypt_payload(payload, email: str | None = None) -> str:
-    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    f = user_fernet(email) if email else global_fernet()
-    if f is None:
-        return base64.urlsafe_b64encode(raw).decode("utf-8")
-    return f.encrypt(raw).decode("utf-8")
-
-
-def decrypt_payload(token: str | None, email: str | None = None, default=None):
-    if default is None:
-        default = {}
-    if not token:
-        return default
-    candidates = []
-    try:
-        candidates.append(user_fernet(email) if email else global_fernet())
-    except Exception:
-        pass
-    candidates.append(None)
-    for f in candidates:
-        try:
-            if f is None:
-                raw = base64.urlsafe_b64decode(str(token).encode("utf-8"))
-            else:
-                raw = f.decrypt(str(token).encode("utf-8"))
-            return json.loads(raw.decode("utf-8"))
-        except Exception:
-            continue
-    return default
-
-
-def default_users() -> dict:
+def normalize_workspace_payload(payload):
+    payload = payload or {}
+    repository = payload.get("repository", []) if isinstance(payload, dict) else []
+    search_history = payload.get("search_history", []) if isinstance(payload, dict) else []
     return {
+        "repository": repository if isinstance(repository, list) else [],
+        "search_history": search_history if isinstance(search_history, list) else [],
+    }
+
+
+def derive_workspace_key(email, password_hash):
+    raw = hashlib.sha256(f"{email}|{password_hash}|{LOCAL_CRYPT_SALT}".encode()).digest()
+    return base64.urlsafe_b64encode(raw)
+
+
+def encrypt_workspace(email, password_hash, workspace):
+    payload = normalize_workspace_payload(workspace)
+    if Fernet is None:
+        return {"mode": "plain", "payload": payload}
+    try:
+        token = Fernet(derive_workspace_key(email, password_hash)).encrypt(
+            json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        ).decode("utf-8")
+        return {"mode": "fernet", "payload": token}
+    except Exception:
+        return {"mode": "plain", "payload": payload}
+
+
+def decrypt_workspace(email, password_hash, encrypted_payload):
+    if not encrypted_payload:
+        return blank_workspace()
+    if isinstance(encrypted_payload, dict) and {"repository", "search_history"}.intersection(encrypted_payload.keys()):
+        return normalize_workspace_payload(encrypted_payload)
+    if isinstance(encrypted_payload, dict) and encrypted_payload.get("mode") == "plain":
+        return normalize_workspace_payload(encrypted_payload.get("payload", {}))
+    if isinstance(encrypted_payload, dict) and encrypted_payload.get("mode") == "fernet" and Fernet is not None:
+        try:
+            raw = Fernet(derive_workspace_key(email, password_hash)).decrypt(
+                encrypted_payload.get("payload", "").encode("utf-8")
+            )
+            return normalize_workspace_payload(json.loads(raw.decode("utf-8")))
+        except Exception:
+            return blank_workspace()
+    return blank_workspace()
+
+
+def load_db():
+    if not os.path.exists(DB_FILE): return {}
+    try:
+        with open(DB_FILE, "r", encoding="utf-8") as f: return json.load(f)
+    except: return {}
+
+
+def ensure_workspace(email):
+    if not email:
+        return blank_workspace()
+    st.session_state.workspaces.setdefault(email, blank_workspace())
+    st.session_state.workspaces[email] = normalize_workspace_payload(st.session_state.workspaces[email])
+    return st.session_state.workspaces[email]
+
+
+def sync_workspace_state(email=None):
+    if not email:
+        st.session_state.repository = []
+        st.session_state.search_history = []
+        return
+    ws = ensure_workspace(email)
+    st.session_state.repository = ws["repository"]
+    st.session_state.search_history = ws["search_history"]
+
+
+def save_db():
+    serialized_workspaces = {}
+    for email, user in st.session_state.users.items():
+        ws = ensure_workspace(email)
+        serialized_workspaces[email] = encrypt_workspace(email, user.get("password", ""), ws)
+
+    data = {
+        "schema_version": APP_SCHEMA_VERSION,
+        "users": st.session_state.users,
+        "workspaces": serialized_workspaces,
+        "user_interest": st.session_state.user_interest,
+        "community_messages": st.session_state.community_messages,
+    }
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def init_state():
+    db = load_db()
+    default_users = {
         "demo@nebula.ai": {
             "name": "Usuário Demo",
             "password": hash_password("demo123"),
             "research": "Inteligência Artificial aplicada à análise de documentos",
-            "profile_visibility": "Conexões",
-            "privacy_mode": "Criptografado",
         }
     }
+    users = db.get("users", default_users) or default_users
 
+    raw_workspaces = db.get("workspaces", {}) or {}
+    workspaces = {}
+    for email, user in users.items():
+        workspaces[email] = decrypt_workspace(email, user.get("password", ""), raw_workspaces.get(email))
 
-def empty_workspace() -> dict:
-    return {"repository": [], "search_history": [], "user_interest": {}}
+    # Migração de versões antigas: evita vazar o repositório global para novos perfis.
+    legacy_repo = db.get("repository", [])
+    legacy_history = db.get("search_history", [])
+    if (legacy_repo or legacy_history) and not raw_workspaces:
+        demo_ws = workspaces.setdefault("demo@nebula.ai", blank_workspace())
+        if legacy_repo and not demo_ws["repository"]:
+            demo_ws["repository"] = legacy_repo
+        if legacy_history and not demo_ws["search_history"]:
+            demo_ws["search_history"] = legacy_history
 
+    user_interest = db.get("user_interest", {}) if isinstance(db.get("user_interest", {}), dict) else {}
 
-def load_db() -> dict:
-    if not os.path.exists(DB_FILE):
-        return {}
-    try:
-        with open(DB_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
-
-
-def persist_current_workspace() -> None:
-    owner = st.session_state.get("active_workspace_owner")
-    if not owner or owner != st.session_state.get("current_user"):
-        return
-    payload = {
-        "repository": st.session_state.get("repository", []),
-        "search_history": st.session_state.get("search_history", []),
-        "user_interest": st.session_state.get("user_interest", {}),
-    }
-    st.session_state.workspaces[owner] = encrypt_payload(payload, email=owner)
-
-
-def save_db() -> None:
-    persist_current_workspace()
-    blob = {
-        "users": st.session_state.users,
-        "workspaces": st.session_state.workspaces,
-        "community_messages_enc": encrypt_payload(st.session_state.community_messages),
-        "meta": {
-            "schema_version": APP_SCHEMA_VERSION,
-            "master_secret": st.session_state.master_secret,
-            **(st.session_state.get("db_meta", {}) or {}),
-        },
-    }
-    with open(DB_FILE, "w", encoding="utf-8") as f:
-        json.dump(blob, f, ensure_ascii=False, indent=2)
-
-
-def clear_active_workspace() -> None:
-    st.session_state.repository = []
-    st.session_state.search_history = []
-    st.session_state.user_interest = {}
-    st.session_state.active_workspace_owner = None
-
-
-def initialize_user_workspace(email: str) -> None:
-    if email not in st.session_state.workspaces:
-        st.session_state.workspaces[email] = encrypt_payload(empty_workspace(), email=email)
-
-
-def load_workspace_for_user(email: str) -> None:
-    clear_active_workspace()
-    initialize_user_workspace(email)
-    payload = decrypt_payload(st.session_state.workspaces.get(email), email=email, default=empty_workspace())
-    if not isinstance(payload, dict):
-        payload = empty_workspace()
-    st.session_state.repository = payload.get("repository", []) or []
-    st.session_state.search_history = payload.get("search_history", []) or []
-    st.session_state.user_interest = payload.get("user_interest", {}) or {}
-    st.session_state.active_workspace_owner = email
-
-
-def login_user(email: str) -> None:
-    st.session_state.logged_in = True
-    st.session_state.current_user = email
-    st.session_state.page = "Dashboard"
-    st.session_state.quick_query = ""
-    load_workspace_for_user(email)
-
-
-def logout_user() -> None:
-    persist_current_workspace()
-    st.session_state.logged_in = False
-    st.session_state.current_user = None
-    st.session_state.page = "Dashboard"
-    st.session_state.quick_query = ""
-    clear_active_workspace()
-
-
-def migrate_legacy_data(db: dict, users: dict, workspaces: dict) -> tuple[dict, dict]:
-    if workspaces:
-        return workspaces, db.get("meta", {}) or {}
-    meta = db.get("meta", {}) or {}
-    legacy_repo = db.get("repository", []) or []
-    legacy_history = db.get("search_history", []) or []
-    legacy_interest = db.get("user_interest", {}) or {}
-    if not legacy_repo and not legacy_history and not legacy_interest:
-        return workspaces, meta
-    payload = {
-        "repository": legacy_repo,
-        "search_history": legacy_history,
-        "user_interest": legacy_interest if isinstance(legacy_interest, dict) else {},
-    }
-    real_users = [u for u in users if u != "demo@nebula.ai"]
-    if len(real_users) == 1:
-        workspaces[real_users[0]] = encrypt_payload(payload, email=real_users[0])
-    elif len(users) == 1:
-        owner = list(users.keys())[0]
-        workspaces[owner] = encrypt_payload(payload, email=owner)
-    else:
-        meta["legacy_workspace_orphan"] = encrypt_payload(payload)
-    return workspaces, meta
-
-
-def init_state() -> None:
-    db = load_db()
-    users = db.get("users") or default_users()
-    meta = db.get("meta") or {}
-    workspaces = db.get("workspaces") or {}
-
-    st.session_state.setdefault("master_secret", meta.get("master_secret") or generate_master_secret())
     st.session_state.setdefault("users", users)
-    st.session_state.setdefault("db_meta", meta)
     st.session_state.setdefault("workspaces", workspaces)
-
-    if not st.session_state.workspaces:
-        migrated_workspaces, migrated_meta = migrate_legacy_data(db, st.session_state.users, {})
-        st.session_state.workspaces = migrated_workspaces
-        st.session_state.db_meta = migrated_meta
-
-    community = decrypt_payload(db.get("community_messages_enc", ""), default=[])
-    if not isinstance(community, list):
-        community = db.get("community_messages", []) or []
-
-    st.session_state.setdefault("community_messages", community)
+    st.session_state.setdefault("user_interest", user_interest)
+    st.session_state.setdefault("community_messages", db.get("community_messages", []))
     st.session_state.setdefault("logged_in", False)
     st.session_state.setdefault("current_user", None)
-    st.session_state.setdefault("active_workspace_owner", None)
     st.session_state.setdefault("page", "Dashboard")
     st.session_state.setdefault("repository", [])
     st.session_state.setdefault("search_history", [])
-    st.session_state.setdefault("user_interest", {})
+    st.session_state.setdefault("auth_mode", "login")
     st.session_state.setdefault("quick_query", "")
 
-    if st.session_state.logged_in and st.session_state.current_user:
-        load_workspace_for_user(st.session_state.current_user)
+    if st.session_state.current_user:
+        sync_workspace_state(st.session_state.current_user)
+
+init_state()
+inject_css()
 
 
 # ============================================================
-# TEXT UTILITIES
+# UTILITIES — TEXT
 # ============================================================
-def normalize_text(text: str) -> str:
-    if not text:
-        return ""
-    repl = {
-        "á": "a", "à": "a", "â": "a", "ã": "a", "ä": "a", "é": "e", "ê": "e", "è": "e", "ë": "e",
-        "í": "i", "ì": "i", "î": "i", "ï": "i", "ó": "o", "ò": "o", "ô": "o", "õ": "o", "ö": "o",
-        "ú": "u", "ù": "u", "û": "u", "ü": "u", "ç": "c"
-    }
+def normalize_text(text):
+    if not text: return ""
+    repl = {'á':'a','à':'a','â':'a','ã':'a','ä':'a','é':'e','ê':'e','è':'e','ë':'e',
+            'í':'i','ì':'i','î':'i','ï':'i','ó':'o','ò':'o','ô':'o','õ':'o','ö':'o',
+            'ú':'u','ù':'u','û':'u','ü':'u','ç':'c'}
     out = []
-    for ch in str(text).lower():
+    for ch in text.lower():
         out.append(repl.get(ch, ch))
-    return re.sub(r"\s+", " ", "".join(out)).strip()
+    return re.sub(r'\s+', ' ', ''.join(out)).strip()
 
-
-def tokenize(text: str) -> list[str]:
+def tokenize(text):
     words = re.findall(r"[a-zA-ZÀ-ÿ0-9\-]{3,}", str(text).lower())
     return [w for w in words if w not in STOPWORDS and len(w) > 2]
 
-
-def extract_keywords_tfidf(text: str, top_n: int = 20) -> list[str]:
-    if not text:
-        return []
+def extract_keywords_tfidf(text, top_n=20):
+    """TF-IDF like keyword extraction from a single document"""
+    if not text: return []
+    sentences = re.split(r'[.!?]\s+', text)
     words = tokenize(text)
-    if not words:
-        return []
+    if not words: return []
+    
+    # Term frequency
     tf = Counter(words)
     total = sum(tf.values()) or 1
-    sentences = re.split(r"(?<=[.!?])\s+", str(text))
+    
+    # Inverse document frequency proxy: penalize very short common words
+    # boost words that appear in multiple sentences
     sentence_presence = defaultdict(int)
     for sent in sentences:
-        for word in set(tokenize(sent)):
-            sentence_presence[word] += 1
+        sent_words = set(tokenize(sent))
+        for w in sent_words:
+            sentence_presence[w] += 1
+    
+    n_sents = max(len(sentences), 1)
     scores = {}
     for word, count in tf.items():
+        if len(word) < 3: continue
         tf_score = count / total
-        spread = math.log(1 + sentence_presence[word])
-        length_bonus = min(len(word) / 10.0, 1.2)
-        scores[word] = tf_score * spread * length_bonus
+        # IDF-like: words in more sentences get higher score (they're more topical)
+        idf_score = math.log(1 + sentence_presence[word])
+        # Length bonus: longer words tend to be more specific
+        len_bonus = min(len(word) / 10.0, 1.2)
+        scores[word] = tf_score * idf_score * len_bonus
+    
     return [w for w, _ in sorted(scores.items(), key=lambda x: -x[1])[:top_n]]
 
-
-def summarize_extractive(text: str, max_sentences: int = 4) -> str:
-    if not text:
-        return "Sem conteúdo disponível."
-    text = re.sub(r"\n+", " ", str(text)).strip()
-    if len(text) < 180:
-        return text[:700]
-    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if len(s.split()) > 5]
-    if not sentences:
-        return text[:700]
-    freq = Counter(tokenize(text))
-    total = sum(freq.values()) or 1
-    for key in list(freq.keys()):
-        freq[key] = freq[key] / total
+def summarize_extractive(text, max_sentences=4):
+    """Extractive summarization using sentence scoring"""
+    if not text or len(text) < 100:
+        return text[:500] if text else "Sem conteúdo disponível."
+    
+    text_clean = re.sub(r'\n+', ' ', text).strip()
+    sentences = re.split(r'(?<=[.!?])\s+', text_clean)
+    sentences = [s.strip() for s in sentences if len(s.split()) > 5]
+    if not sentences: return text[:500]
+    
+    word_freq = Counter(tokenize(text))
+    total_words = sum(word_freq.values()) or 1
+    # Normalize
+    for w in word_freq:
+        word_freq[w] = word_freq[w] / total_words
+    
     scored = []
     for i, sent in enumerate(sentences):
         words = tokenize(sent)
-        if not words:
-            continue
-        score = sum(freq.get(w, 0) for w in words) / len(words)
-        if i < 3:
-            score *= 1.35
-        if len(words) < 8:
-            score *= 0.6
+        if not words: continue
+        score = sum(word_freq.get(w, 0) for w in words) / len(words)
+        # Boost first sentences (abstracts often start with key info)
+        if i < 3: score *= 1.4
+        # Penalize very short sentences
+        if len(words) < 8: score *= 0.6
         scored.append((score, sent))
-    top = {s for _, s in sorted(scored, reverse=True)[:max_sentences]}
+    
+    if not scored: return text[:600]
+    top = [s for _, s in sorted(scored, reverse=True)[:max_sentences]]
+    # Re-order by original position
     ordered = [s for s in sentences if s in top][:max_sentences]
-    return " ".join(ordered)[:1200]
+    return ' '.join(ordered)[:1000]
 
-
-def detect_topic(text: str, fallback: str = "Pesquisa Geral") -> str:
+def detect_topic(text, fallback="Pesquisa Geral"):
     t = normalize_text(text)
     scores = {}
     for topic, terms in TOPIC_RULES.items():
-        scores[topic] = sum(2 for term in terms if normalize_text(term) in t)
+        score = sum(2 if term in t else 0 for term in terms)
+        scores[topic] = score
     best = max(scores, key=scores.get)
     return best if scores[best] > 0 else fallback
 
-
-def detect_years(text: str) -> list[int]:
+def detect_years(text):
     years = [int(y) for y in re.findall(r"\b(19\d{2}|20\d{2})\b", str(text))]
     return sorted(set(y for y in years if 1900 <= y <= datetime.now().year + 2))
 
-
-def infer_nationality(text: str) -> str:
+def infer_nationality(text):
     t = normalize_text(text)
     for country in NATIONALITY_COORDS:
-        if normalize_text(country) in t:
-            return country
+        if country.lower() in t: return country
     return "Brasil"
 
-
-def extract_author_from_text(text: str) -> str:
-    patterns = [
-        r"(?:author|autor|autores|authors)[:\s]+([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s,\.]{5,80})",
-        r"(?:by|por)\s+([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{5,60})",
-        r"\b([A-Z][a-zà-ÿ]+(?:\s+[A-Z][a-zà-ÿ]+){1,3})\s*\n",
-    ]
-    for pattern in patterns:
-        match = re.search(pattern, str(text), re.I)
-        if match:
-            candidate = match.group(1).strip()
-            if 5 < len(candidate) < 80:
-                return candidate
-    return "Desconhecido"
-
-
-def detect_document_language(text: str) -> str:
-    t = f" {str(text).lower()} "
-    pt_markers = [" que ", " não ", " para ", " com ", " uma ", " dos ", " das ", " pelo "]
-    en_markers = [" the ", " and ", " this ", " that ", " with ", " from ", " abstract "]
-    pt_score = sum(1 for m in pt_markers if m in t)
-    en_score = sum(1 for m in en_markers if m in t)
-    return "Português" if pt_score >= en_score else "Inglês"
-
-
-def analyze_document_structure(text: str) -> dict:
-    section_patterns = {
-        "Resumo/Abstract": r"(?:resumo|abstract)\s*[\:\n](.{80,2200}?)(?=\n[A-ZÁÀÂÃÉÍÓÚ]|\nintrodução|\nintroduction|keywords|palavras)",
-        "Introdução": r"(?:introdução|introduction)\s*[\:\n](.{80,2200}?)(?=\n[A-ZÁÀÂÃÉÍÓÚ]|\nmétodo|\nmethod)",
-        "Metodologia": r"(?:método|metodologia|methodology|methods)\s*[\:\n](.{80,2200}?)(?=\n[A-ZÁÀÂÃÉÍÓÚ]|\nresultados|\nresults)",
-        "Resultados": r"(?:resultados|results)\s*[\:\n](.{80,2200}?)(?=\n[A-ZÁÀÂÃÉÍÓÚ]|\ndiscussão|\nconclusão)",
-        "Conclusão": r"(?:conclusão|conclusion)\s*[\:\n](.{80,2600}?)(?=\n[A-ZÁÀÂÃÉÍÓÚ]|\nreferência|$)",
-    }
-    sections = {}
-    for name, pattern in section_patterns.items():
-        match = re.search(pattern, str(text), re.I | re.S)
-        if match:
-            sections[name] = match.group(1).strip()[:650]
-    return sections
-
-
-def compute_readability(text: str) -> dict:
-    words = re.findall(r"\w+", str(text))
-    sentences = [s for s in re.split(r"[.!?]+", str(text)) if len(s.split()) > 3]
-    if not words or not sentences:
-        return {"clarity": 50, "words": 0, "sentences": 0, "estimated_pages": 0, "reading_time_min": 0}
-    avg_words_per_sent = len(words) / max(len(sentences), 1)
-    avg_syllables = sum(max(1, len(re.findall(r"[aeiouáéíóúàèìòùãõâêîôû]", w.lower()))) for w in words) / max(len(words), 1)
-    score = 100 - (1.015 * avg_words_per_sent) - (84.6 * avg_syllables)
-    score = max(0, min(100, score))
-    return {
-        "clarity": round(score, 1),
-        "words": len(words),
-        "sentences": len(sentences),
-        "avg_words_per_sentence": round(avg_words_per_sent, 1),
-        "estimated_pages": max(1, round(len(words) / 300)) if len(words) else 0,
-        "reading_time_min": max(1, round(len(words) / 200)) if len(words) else 0,
-    }
-
-
-def cosine_similarity(text_a: str, text_b: str) -> float:
+def cosine_similarity(text_a, text_b):
+    if not text_a or not text_b: return 0.0
     ta = Counter(tokenize(text_a))
     tb = Counter(tokenize(text_b))
-    if not ta or not tb:
-        return 0.0
+    if not ta or not tb: return 0.0
     keys = set(ta) | set(tb)
     dot = sum(ta[k] * tb[k] for k in keys)
-    na = math.sqrt(sum(v * v for v in ta.values()))
-    nb = math.sqrt(sum(v * v for v in tb.values()))
-    if not na or not nb:
-        return 0.0
+    na = math.sqrt(sum(v*v for v in ta.values()))
+    nb = math.sqrt(sum(v*v for v in tb.values()))
+    if not na or not nb: return 0.0
     return round(dot / (na * nb), 4)
 
-
-def score_relevance(query: str, text: str, keywords: list[str]) -> float:
+def score_relevance(query, text, keywords):
     q_terms = set(tokenize(query))
-    if not q_terms:
-        return 0.0
+    if not q_terms: return 0.0
     doc_terms = set(tokenize(text)) | set(keywords)
     inter = len(q_terms & doc_terms)
     union = len(q_terms | doc_terms) or 1
     return round((inter / union) * 100, 2)
 
-
-def safe_top_value(series, default: str = "N/A") -> str:
-    try:
-        s = pd.Series(series).dropna()
-        if s.empty:
-            return default
-        s = s.astype(str).str.strip()
-        s = s[s != ""]
-        if s.empty:
-            return default
-        counts = s.value_counts()
-        return counts.index[0] if not counts.empty else default
-    except Exception:
-        return default
-
-
 # ============================================================
-# FILE ANALYSIS
+# PDF / FILE PARSING — REAL ANALYSIS
 # ============================================================
-def extract_text_from_pdf_bytes(file_bytes: bytes) -> str:
+def extract_text_from_pdf_bytes(file_bytes):
+    """Real PDF text extraction using pdfplumber first, fallback to PyPDF2"""
     text_parts = []
+    
+    # Try pdfplumber first (better extraction)
     if pdfplumber is not None:
         try:
             with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
                 for page in pdf.pages[:40]:
-                    page_text = page.extract_text() or ""
+                    page_text = page.extract_text()
                     if page_text:
                         text_parts.append(page_text)
             if text_parts:
                 return "\n".join(text_parts)[:MAX_TEXT_CHARS]
         except Exception:
             pass
+    
+    # Fallback to PyPDF2
     if PyPDF2 is not None:
         try:
             reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
             for page in reader.pages[:40]:
                 try:
-                    page_text = page.extract_text() or ""
-                    if page_text:
-                        text_parts.append(page_text)
-                except Exception:
-                    pass
+                    t = page.extract_text()
+                    if t: text_parts.append(t)
+                except: pass
             if text_parts:
                 return "\n".join(text_parts)[:MAX_TEXT_CHARS]
         except Exception:
             pass
+    
+    # Last resort: try to extract raw text from PDF bytes
+    try:
+        raw = file_bytes.decode('latin-1', errors='ignore')
+        # Extract text between BT/ET markers (PDF text objects)
+        texts = re.findall(r'\(([^)]{3,})\)', raw)
+        clean = ' '.join(t for t in texts if t.isprintable() and len(t) > 3)
+        if len(clean) > 200:
+            return clean[:MAX_TEXT_CHARS]
+    except: pass
+    
     return ""
 
-
-def extract_text_from_docx(file_bytes: bytes) -> str:
+def extract_text_from_docx(file_bytes):
     try:
-        with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
-            xml = zf.read("word/document.xml").decode("utf-8", errors="ignore")
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+            xml = z.read("word/document.xml").decode("utf-8", errors="ignore")
+        # Extract text from XML tags
         text = re.sub(r"<w:t[^>]*>", "\n", xml)
         text = re.sub(r"<[^>]+>", "", text)
         text = re.sub(r"\s+", " ", text)
-        return text[:MAX_TEXT_CHARS]
-    except Exception:
-        return ""
+        return text.strip()[:MAX_TEXT_CHARS]
+    except: return ""
 
-
-def analyze_tabular_file(file_bytes: bytes, suffix: str) -> dict:
-    frames = []
-    sheet_names = []
+def extract_text_from_tabular(file_bytes, suffix):
     try:
         if suffix == "csv":
             df = pd.read_csv(io.BytesIO(file_bytes))
-            frames = [("CSV", df)]
         else:
-            sheets = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
-            for name, df in list(sheets.items())[:4]:
-                frames.append((str(name), df))
-            sheet_names = [name for name, _ in frames]
-    except Exception:
-        return {"summary": "", "profile": {}}
+            df = pd.read_excel(io.BytesIO(file_bytes))
+        # Rich description of the spreadsheet
+        desc = []
+        desc.append(f"Planilha com {len(df)} linhas e {len(df.columns)} colunas.")
+        desc.append(f"Colunas: {', '.join(str(c) for c in df.columns[:20])}")
+        for col in df.select_dtypes(include=[np.number]).columns[:10]:
+            stats = df[col].describe()
+            desc.append(f"Coluna '{col}': média={stats['mean']:.2f}, min={stats['min']:.2f}, max={stats['max']:.2f}")
+        desc.append("\nAmostra dos dados:")
+        desc.append(df.head(20).to_string())
+        return "\n".join(desc)[:MAX_TEXT_CHARS]
+    except: return ""
 
-    desc = []
-    profile = {"sheets": [], "numeric_columns": 0, "text_columns": 0, "rows": 0, "cols": 0}
-    for name, df in frames:
-        local = df.copy()
-        num_cols = list(local.select_dtypes(include=[np.number]).columns)
-        txt_cols = [c for c in local.columns if c not in num_cols]
-        profile["rows"] += int(len(local))
-        profile["cols"] = max(profile["cols"], int(len(local.columns)))
-        profile["numeric_columns"] += len(num_cols)
-        profile["text_columns"] += len(txt_cols)
-        profile["sheets"].append({
-            "name": name,
-            "rows": int(len(local)),
-            "cols": int(len(local.columns)),
-            "numeric_columns": len(num_cols),
-            "text_columns": len(txt_cols),
-        })
-        desc.append(f"Planilha/aba '{name}' com {len(local)} linhas e {len(local.columns)} colunas.")
-        desc.append(f"Colunas principais: {', '.join(str(c) for c in local.columns[:20])}")
-        for col in num_cols[:6]:
-            sample = local[col].dropna()
-            if not sample.empty:
-                desc.append(f"Coluna '{col}': média={sample.mean():.2f}, mínimo={sample.min():.2f}, máximo={sample.max():.2f}")
-        desc.append("Amostra dos dados:\n" + local.head(12).astype(str).to_string(index=False))
-    if sheet_names:
-        profile["sheet_names"] = sheet_names
-    return {"summary": "\n".join(desc)[:MAX_TEXT_CHARS], "profile": profile}
-
-
-def analyze_image_bytes(file_bytes: bytes) -> dict:
-    try:
-        img = Image.open(io.BytesIO(file_bytes)).convert("RGB")
-        arr = np.array(img)
-        mean_rgb = arr.reshape(-1, 3).mean(axis=0)
-        brightness = float(np.mean(np.dot(arr[..., :3], [0.299, 0.587, 0.114])))
-        gray = np.array(img.convert("L")) / 255.0
-        gx = np.abs(np.diff(gray, axis=1)).mean() if gray.shape[1] > 1 else 0
-        gy = np.abs(np.diff(gray, axis=0)).mean() if gray.shape[0] > 1 else 0
-        edge_density = float((gx + gy) / 2)
-        aspect_ratio = round(img.width / max(img.height, 1), 2)
-        orientation = "Horizontal" if aspect_ratio > 1.15 else "Vertical" if aspect_ratio < 0.85 else "Quadrada"
-        detail_level = "Alta" if edge_density > 0.11 else "Média" if edge_density > 0.05 else "Baixa"
-        palette = arr.reshape(-1, 3)
-        palette_sample = palette[np.linspace(0, len(palette) - 1, min(len(palette), 2000), dtype=int)] if len(palette) else palette
-        unique_colors = np.unique((palette_sample // 32) * 32, axis=0)[:6] if len(palette_sample) else []
-        palette_tags = [f"rgb({int(c[0])},{int(c[1])},{int(c[2])})" for c in unique_colors]
-        return {
-            "width": int(img.width),
-            "height": int(img.height),
-            "brightness": round(brightness, 2),
-            "r": round(float(mean_rgb[0]), 1),
-            "g": round(float(mean_rgb[1]), 1),
-            "b": round(float(mean_rgb[2]), 1),
-            "aspect_ratio": aspect_ratio,
-            "orientation": orientation,
-            "edge_density": round(edge_density, 4),
-            "detail_level": detail_level,
-            "palette_tags": palette_tags,
-        }
-    except Exception:
-        return {}
-
-
-def read_text_by_suffix(file_name: str, file_bytes: bytes) -> str:
+def read_text_by_suffix(file_name, file_bytes):
     suffix = file_name.lower().split(".")[-1] if "." in file_name else ""
     if suffix == "pdf":
         return extract_text_from_pdf_bytes(file_bytes)
     if suffix == "docx":
         return extract_text_from_docx(file_bytes)
     if suffix in {"txt", "md", "py", "json"}:
-        try:
-            return file_bytes.decode("utf-8", errors="ignore")[:MAX_TEXT_CHARS]
-        except Exception:
-            return ""
+        try: return file_bytes.decode("utf-8", errors="ignore")[:MAX_TEXT_CHARS]
+        except: return ""
     if suffix in {"csv", "xlsx", "xls"}:
-        return analyze_tabular_file(file_bytes, suffix).get("summary", "")
+        return extract_text_from_tabular(file_bytes, suffix)
     return ""
 
-
-def file_kind(file_name: str) -> str:
+def file_kind(file_name):
     suffix = file_name.lower().split(".")[-1] if "." in file_name else ""
-    mapping = {
-        "pdf": "PDF", "docx": "Word", "txt": "Texto", "md": "Markdown", "csv": "Planilha", "xlsx": "Planilha", "xls": "Planilha",
-        "png": "Imagem", "jpg": "Imagem", "jpeg": "Imagem", "webp": "Imagem", "py": "Código", "json": "JSON",
-    }
+    mapping = {"pdf":"PDF","docx":"Word","txt":"Texto","md":"Markdown",
+               "csv":"CSV","xlsx":"Planilha","xls":"Planilha",
+               "png":"Imagem","jpg":"Imagem","jpeg":"Imagem","webp":"Imagem",
+               "py":"Código","json":"JSON"}
     return mapping.get(suffix, "Arquivo")
 
+def extract_author_from_text(text):
+    patterns = [
+        r'(?:author|autor|autores|authors)[:\s]+([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s,\.]{5,80})',
+        r'(?:by|por)\s+([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{5,60})',
+        r'\b([A-Z][a-zà-ÿ]+(?:\s+[A-Z][a-zà-ÿ]+){1,3})\s*\n',
+    ]
+    for pat in patterns:
+        m = re.search(pat, text, re.I)
+        if m:
+            candidate = m.group(1).strip()
+            if 5 < len(candidate) < 80:
+                return candidate
+    return "Desconhecido"
 
-def make_document_record(file_name: str, file_bytes: bytes) -> dict:
-    suffix = file_name.lower().split(".")[-1] if "." in file_name else ""
+def detect_document_language(text):
+    pt_markers = ["que","não","para","com","uma","são","está","sendo","como","pelo","pela","dos","das"]
+    en_markers = ["the","and","that","this","with","from","have","been","which","their","abstract"]
+    t = text.lower()
+    pt_score = sum(1 for m in pt_markers if f' {m} ' in t)
+    en_score = sum(1 for m in en_markers if f' {m} ' in t)
+    return "Português" if pt_score >= en_score else "Inglês"
+
+def analyze_document_structure(text):
+    """Detect sections in academic papers"""
+    sections = {}
+    section_patterns = {
+        "Resumo/Abstract": r'(?:resumo|abstract)\s*[\:\n](.{100,2000}?)(?=\n[A-Z]|\nintrodução|\nintroduction|keywords|palavras)',
+        "Introdução": r'(?:introdução|introduction)\s*[\:\n](.{100,2000}?)(?=\n[A-Z]|\nmétodo|\nmaterial)',
+        "Metodologia": r'(?:método|metodologia|methodology|methods)\s*[\:\n](.{100,2000}?)(?=\n[A-Z]|\nresultado)',
+        "Resultados": r'(?:resultados|results)\s*[\:\n](.{100,2000}?)(?=\n[A-Z]|\ndiscussão|\nconclusão)',
+        "Conclusão": r'(?:conclusão|conclusion)\s*[\:\n](.{100,3000}?)(?=\n[A-Z]|\nreferência|$)',
+    }
+    for name, pattern in section_patterns.items():
+        m = re.search(pattern, text, re.I | re.DOTALL)
+        if m:
+            sections[name] = m.group(1).strip()[:500]
+    return sections
+
+def compute_readability(text):
+    words = re.findall(r'\w+', text)
+    sentences = re.split(r'[.!?]+', text)
+    sentences = [s for s in sentences if len(s.split()) > 3]
+    if not words or not sentences: return {"clarity": 50, "words": 0, "sentences": 0}
+    
+    avg_words_per_sent = len(words) / max(len(sentences), 1)
+    avg_syllables = sum(max(1, len(re.findall(r'[aeiouáéíóúàèìòùãõâêîôû]', w.lower()))) for w in words) / max(len(words), 1)
+    
+    # Flesch-like score (simplified)
+    score = 100 - (1.015 * avg_words_per_sent) - (84.6 * avg_syllables)
+    score = max(0, min(100, score))
+    
+    return {
+        "clarity": round(score, 1),
+        "words": len(words),
+        "sentences": len(sentences),
+        "avg_words_per_sentence": round(avg_words_per_sent, 1),
+        "estimated_pages": max(1, round(len(words) / 300)),
+        "reading_time_min": max(1, round(len(words) / 200)),
+    }
+
+def make_document_record(file_name, file_bytes):
     kind = file_kind(file_name)
     text = read_text_by_suffix(file_name, file_bytes)
-    tabular_profile = {}
+    
+    is_image = kind == "Imagem"
     image_meta = {}
-    modality_notes = []
-
-    if suffix in {"csv", "xlsx", "xls"}:
-        table_info = analyze_tabular_file(file_bytes, suffix)
-        text = table_info.get("summary", text)
-        tabular_profile = table_info.get("profile", {})
-        if tabular_profile:
-            modality_notes.append(
-                f"Estrutura tabular com {tabular_profile.get('rows', 0)} linhas, até {tabular_profile.get('cols', 0)} colunas e {tabular_profile.get('numeric_columns', 0)} colunas numéricas."
-            )
-
-    if kind == "Imagem":
-        image_meta = analyze_image_bytes(file_bytes)
-        if image_meta:
-            modality_notes.append(
-                f"Imagem {image_meta.get('orientation', 'desconhecida').lower()} com detalhe {image_meta.get('detail_level', 'desconhecido').lower()} e brilho médio {image_meta.get('brightness', 0):.1f}."
-            )
-            if image_meta.get("palette_tags"):
-                modality_notes.append("Paleta dominante aproximada: " + ", ".join(image_meta.get("palette_tags", [])[:4]))
-
+    if is_image:
+        try:
+            img = Image.open(io.BytesIO(file_bytes))
+            arr = np.array(img.convert("RGB"))
+            mean_rgb = arr.reshape(-1,3).mean(axis=0)
+            brightness = float(np.mean(np.dot(arr[...,:3], [0.299,0.587,0.114])))
+            gray = img.convert("L").resize((8,8))
+            arr_g = np.array(gray)
+            bits = arr_g > arr_g.mean()
+            image_meta = {
+                "width": img.width, "height": img.height,
+                "brightness": round(brightness, 2),
+                "r": round(float(mean_rgb[0]),1), "g": round(float(mean_rgb[1]),1), "b": round(float(mean_rgb[2]),1),
+                "hash": "".join("1" if x else "0" for x in bits.flatten())
+            }
+        except: image_meta = {}
+    
+    # Deep text analysis
     keywords = extract_keywords_tfidf(text if text else file_name, top_n=25)
     summary = summarize_extractive(text, max_sentences=4) if text else f"Arquivo do tipo {kind}."
     topic = detect_topic(text if text else file_name)
@@ -842,11 +1053,13 @@ def make_document_record(file_name: str, file_bytes: bytes) -> dict:
     nationality = infer_nationality(text if text else file_name)
     author = extract_author_from_text(text) if text else "Desconhecido"
     language = detect_document_language(text) if text else "Desconhecido"
-    sections = analyze_document_structure(text) if text and kind in {"PDF", "Word", "Texto", "Markdown"} else {}
-    readability = compute_readability(text) if text else {"clarity": 50, "words": 0, "sentences": 0, "estimated_pages": 0, "reading_time_min": 0}
-    refs_match = re.findall(r"\[\d+\]|\d+\.\s+[A-ZÀ-ÿ][a-zà-ÿ]+", text[-3000:]) if text else []
+    sections = analyze_document_structure(text) if text and kind == "PDF" else {}
+    readability = compute_readability(text) if text else {}
+    
+    # Extract references count
+    refs_match = re.findall(r'\[\d+\]|\d+\.\s+[A-ZÀ-ÿ][a-zà-ÿ]+', text[-3000:]) if text else []
     ref_count = len(set(refs_match[:50]))
-
+    
     return {
         "id": hashlib.md5(f"{file_name}-{datetime.now().isoformat()}".encode()).hexdigest()[:12],
         "name": file_name,
@@ -862,251 +1075,391 @@ def make_document_record(file_name: str, file_bytes: bytes) -> dict:
         "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         "text": text[:12000],
         "full_text_len": len(text),
-        "size_kb": round(len(file_bytes) / 1024, 1),
+        "image_meta": image_meta,
+        "size_kb": round(len(file_bytes)/1024, 1),
         "sections": sections,
         "readability": readability,
         "ref_count": ref_count,
-        "tabular_profile": tabular_profile,
-        "image_meta": image_meta,
-        "modality_notes": modality_notes,
+    }
+
+# ============================================================
+# SEARCH & RECOMMENDATION
+# ============================================================
+def current_user():
+    if not st.session_state.current_user: return {}
+    ensure_workspace(st.session_state.current_user)
+    return st.session_state.users.get(st.session_state.current_user, {})
+
+
+def get_repository_for_user(email=None):
+    email = email or st.session_state.current_user
+    return ensure_workspace(email)["repository"] if email else []
+
+
+def get_search_history_for_user(email=None):
+    email = email or st.session_state.current_user
+    return ensure_workspace(email)["search_history"] if email else []
+
+
+def update_user_interest(email, terms):
+    if not email: return
+    bag = st.session_state.user_interest.get(email, {})
+    for t in terms:
+        if len(t) >= 3: bag[t] = bag.get(t, 0) + 1
+    st.session_state.user_interest[email] = dict(sorted(bag.items(), key=lambda x: -x[1])[:60])
+    save_db()
+
+
+def recommend_terms(email, limit=10):
+    profile = st.session_state.user_interest.get(email, {})
+    return [t for t, _ in sorted(profile.items(), key=lambda x: -x[1])[:limit]]
+
+
+def safe_top_value(series, default="N/A"):
+    try:
+        s = pd.Series(series).dropna()
+        if s.empty:
+            return default
+        s = s.astype(str).str.strip()
+        s = s[s != ""]
+        if s.empty:
+            return default
+        counts = s.value_counts()
+        return counts.index[0] if not counts.empty else default
+    except Exception:
+        return default
+
+
+def doc_similarity_text(doc):
+    return " ".join([
+        str(doc.get("name", "")),
+        str(doc.get("topic", "")),
+        str(doc.get("summary", "")),
+        " ".join(doc.get("keywords", [])[:12]),
+        str(doc.get("text", ""))[:2500],
+    ])
+
+
+def repository_signature(email):
+    user = st.session_state.users.get(email, {})
+    docs = get_repository_for_user(email)
+    topic_counter = Counter()
+    keyword_counter = Counter()
+    author_counter = Counter()
+
+    for doc in docs:
+        topic = doc.get("topic")
+        if topic:
+            topic_counter[topic] += 2
+        for kw in doc.get("keywords", [])[:14]:
+            keyword_counter[normalize_text(kw)] += 1
+        author = doc.get("author")
+        if author and author != "Desconhecido":
+            author_counter[normalize_text(author)] += 1
+
+    for kw in extract_keywords_tfidf(user.get("research", ""), 12):
+        keyword_counter[normalize_text(kw)] += 2
+
+    research_topic = detect_topic(user.get("research", ""), fallback="Pesquisa Geral")
+    if research_topic != "Pesquisa Geral":
+        topic_counter[research_topic] += 2
+
+    return {
+        "topics": [t for t, _ in topic_counter.most_common(8)],
+        "keywords": [t for t, _ in keyword_counter.most_common(24)],
+        "authors": [t for t, _ in author_counter.most_common(8)],
+        "research_topic": research_topic,
+        "doc_count": len(docs),
     }
 
 
-# ============================================================
-# SEARCH AND CONNECTION HELPERS
-# ============================================================
-def current_user() -> dict:
-    return st.session_state.users.get(st.session_state.get("current_user"), {})
+def compare_repositories(base_email, other_email):
+    base_docs = get_repository_for_user(base_email)
+    other_docs = get_repository_for_user(other_email)
+    if not base_docs or not other_docs:
+        return None
+
+    sig_a = repository_signature(base_email)
+    sig_b = repository_signature(other_email)
+
+    shared_topics = [t for t in sig_a["topics"] if t in sig_b["topics"]][:6]
+    shared_terms = [t for t in sig_a["keywords"] if t and t in sig_b["keywords"]][:10]
+    shared_authors = [t for t in sig_a["authors"] if t and t in sig_b["authors"]][:4]
+
+    doc_pairs = []
+    for doc_a in base_docs[:18]:
+        text_a = doc_similarity_text(doc_a)
+        for doc_b in other_docs[:18]:
+            text_b = doc_similarity_text(doc_b)
+            sim = cosine_similarity(text_a, text_b)
+            if doc_a.get("topic") == doc_b.get("topic") and doc_a.get("topic"):
+                sim += 0.09
+            if sim >= 0.12 or (doc_a.get("topic") == doc_b.get("topic") and sim >= 0.08):
+                doc_pairs.append({
+                    "a": doc_a.get("name", "Documento A"),
+                    "b": doc_b.get("name", "Documento B"),
+                    "topic": doc_a.get("topic") or doc_b.get("topic") or "Pesquisa Geral",
+                    "similarity": round(min(sim, 0.99), 3),
+                })
+
+    doc_pairs = sorted(doc_pairs, key=lambda x: -x["similarity"])[:6]
+    if not shared_topics and len(shared_terms) < 2 and not shared_authors and not doc_pairs:
+        return None
+
+    topic_union = len(set(sig_a["topics"]) | set(sig_b["topics"])) or 1
+    kw_union = len(set(sig_a["keywords"]) | set(sig_b["keywords"])) or 1
+    avg_doc_sim = sum(p["similarity"] for p in doc_pairs) / max(len(doc_pairs), 1)
+    score = (
+        0.38 * (len(shared_topics) / topic_union) +
+        0.28 * (len(shared_terms) / kw_union) +
+        0.18 * (len(shared_authors) / max(len(set(sig_a["authors"]) | set(sig_b["authors"])), 1)) +
+        0.16 * avg_doc_sim
+    )
+    similarity = round(min(score * 180, 99.0), 1)
+
+    return {
+        "shared_topics": shared_topics,
+        "shared_terms": shared_terms[:8],
+        "shared_authors": shared_authors,
+        "shared_docs": doc_pairs,
+        "similarity": similarity,
+    }
 
 
-def update_user_interest(email: str, terms: list[str]) -> None:
-    if not email:
-        return
-    bag = st.session_state.get("user_interest", {}) or {}
-    for term in terms:
-        if len(term) >= 3:
-            bag[term] = bag.get(term, 0) + 1
-    st.session_state.user_interest = dict(sorted(bag.items(), key=lambda x: -x[1])[:60])
-
-
-def recommend_terms(email: str, limit: int = 12) -> list[str]:
-    if email != st.session_state.get("current_user"):
-        payload = decrypt_payload(st.session_state.workspaces.get(email), email=email, default=empty_workspace())
-        bag = payload.get("user_interest", {}) if isinstance(payload, dict) else {}
-    else:
-        bag = st.session_state.get("user_interest", {})
-    return [term for term, _ in sorted(bag.items(), key=lambda x: -x[1])[:limit]]
-
-
-def get_connected_users(email: str, limit: int = 8) -> list[dict]:
+def get_connected_users(email, limit=8):
     if not email or email not in st.session_state.users:
         return []
-    base_user = st.session_state.users.get(email, {})
-    base_topic = detect_topic(base_user.get("research", ""), fallback="Pesquisa Geral")
-    base_terms = recommend_terms(email, 18)
-    base_text = " ".join([base_user.get("research", ""), " ".join(base_terms)])
+
     out = []
     for other_email, other_user in st.session_state.users.items():
         if other_email == email:
             continue
-        other_topic = detect_topic(other_user.get("research", ""), fallback="Pesquisa Geral")
-        other_terms = recommend_terms(other_email, 18)
-        other_text = " ".join([other_user.get("research", ""), " ".join(other_terms)])
-        sim = cosine_similarity(base_text, other_text)
-        if base_topic == other_topic and base_topic != "Pesquisa Geral":
-            sim += 0.16
-        shared_terms = []
-        for term in base_terms + extract_keywords_tfidf(base_user.get("research", ""), 8):
-            if term in other_terms or term in tokenize(other_user.get("research", "")):
-                if term not in shared_terms:
-                    shared_terms.append(term)
-        if sim > 0.05 or shared_terms or (base_topic == other_topic and base_topic != "Pesquisa Geral"):
-            out.append({
-                "email": other_email,
-                "name": other_user.get("name", other_email),
-                "research": other_user.get("research", ""),
-                "topic": other_topic,
-                "shared_terms": shared_terms[:8],
-                "similarity": round(min(sim * 100, 99.0), 1),
-                "visibility": other_user.get("profile_visibility", "Conexões"),
-            })
+        comparison = compare_repositories(email, other_email)
+        if not comparison:
+            continue
+        out.append({
+            "email": other_email,
+            "name": other_user.get("name", other_email),
+            "research": other_user.get("research", ""),
+            "topic": detect_topic(other_user.get("research", ""), fallback="Pesquisa Geral"),
+            "shared_terms": comparison.get("shared_terms", []),
+            "shared_topics": comparison.get("shared_topics", []),
+            "shared_authors": comparison.get("shared_authors", []),
+            "shared_docs": comparison.get("shared_docs", []),
+            "similarity": comparison.get("similarity", 0.0),
+        })
+
     return sorted(out, key=lambda x: (-x["similarity"], x["name"]))[:limit]
 
 
-def get_available_rooms(email: str) -> list[str]:
-    rooms = []
-    own_topic = detect_topic(st.session_state.users.get(email, {}).get("research", ""), fallback="Pesquisa Geral")
-    if own_topic != "Pesquisa Geral":
-        rooms.append(f"Tema · {own_topic}")
-    for conn in get_connected_users(email, 12):
-        if conn.get("topic") and conn["topic"] != "Pesquisa Geral":
-            rooms.append(f"Tema · {conn['topic']}")
-    rooms.append("Sala · Interdisciplinar")
-    unique = []
-    for room in rooms:
-        if room not in unique:
-            unique.append(room)
-    return unique
+def build_direct_room_id(email_a, email_b):
+    token = hashlib.md5("||".join(sorted([email_a, email_b])).encode()).hexdigest()[:16]
+    return f"direct::{token}"
 
 
-def dm_thread_id(a: str, b: str) -> str:
-    return "dm::" + "::".join(sorted([a, b]))
+def get_available_rooms(email):
+    rooms = [{"id": f"private::{email}", "label": "Chat privado", "peer": None, "kind": "private"}]
+    for conn in get_connected_users(email, limit=12):
+        rooms.append({
+            "id": build_direct_room_id(email, conn["email"]),
+            "label": f"Chat · {conn['name']}",
+            "peer": conn["email"],
+            "kind": "direct",
+            "shared_topics": conn.get("shared_topics", []),
+        })
+    return rooms
 
 
-def post_chat_message(scope: str, target: str, text: str) -> bool:
+def post_chat_message(room_meta, text):
     clean_text = (text or "").strip()
     if not clean_text:
         return False
     sender_email = st.session_state.current_user
-    sender = current_user()
-    message = {
-        "id": hashlib.md5(f"{sender_email}-{scope}-{target}-{datetime.now().isoformat()}".encode()).hexdigest()[:12],
-        "scope": scope,
+    sender = st.session_state.users.get(sender_email, {})
+    st.session_state.community_messages.append({
+        "id": hashlib.md5(f"{sender_email}-{room_meta.get('id')}-{datetime.now().isoformat()}".encode()).hexdigest()[:12],
+        "room_id": room_meta.get("id"),
+        "room_label": room_meta.get("label", "Chat"),
         "sender_email": sender_email,
         "sender_name": sender.get("name", sender_email),
         "sender_topic": detect_topic(sender.get("research", ""), fallback="Pesquisa Geral"),
-        "text": clean_text[:2400],
+        "text": clean_text[:2000],
         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-    }
-    if scope == "dm":
-        message["thread_id"] = dm_thread_id(sender_email, target)
-        message["participants"] = sorted([sender_email, target])
-    else:
-        message["room"] = target
-    st.session_state.community_messages.append(message)
+    })
     save_db()
     return True
 
 
-def get_dm_messages(peer_email: str) -> list[dict]:
-    thread_id = dm_thread_id(st.session_state.current_user, peer_email)
-    return [m for m in st.session_state.community_messages if m.get("scope") == "dm" and m.get("thread_id") == thread_id][-120:]
-
-
-def get_room_messages(room: str, only_connections: bool = False) -> list[dict]:
-    messages = [m for m in st.session_state.community_messages if m.get("scope") == "room" and m.get("room") == room]
+def get_room_messages(room_meta, only_connections=False):
+    room_id = room_meta.get("id") if isinstance(room_meta, dict) else str(room_meta)
+    msgs = [m for m in st.session_state.community_messages if m.get("room_id") == room_id]
+    current_email = st.session_state.current_user
+    if room_id.startswith("private::"):
+        msgs = [m for m in msgs if m.get("sender_email") == current_email]
     if only_connections:
-        allowed = {st.session_state.current_user}
-        allowed.update({u["email"] for u in get_connected_users(st.session_state.current_user, 50)})
-        messages = [m for m in messages if m.get("sender_email") in allowed]
-    return messages[-120:]
+        allowed = {current_email}
+        allowed.update({u["email"] for u in get_connected_users(current_email, limit=50)})
+        msgs = [m for m in msgs if m.get("sender_email") in allowed]
+    return msgs[-80:]
 
 
-def build_recommendation_query(research: str, docs: list[dict], limit_terms: int = 8) -> str:
-    research_terms = extract_keywords_tfidf(research, 8) if research else []
+def build_connection_chain_network(email, limit_users=8):
+    user = st.session_state.users.get(email, {})
+    connections = get_connected_users(email, limit=limit_users)
+    if not connections:
+        return [], []
+
+    nodes = [{
+        "id": f"user::{email}",
+        "label": user.get("name", email)[:28],
+        "type": "user",
+        "topic": detect_topic(user.get("research", ""), fallback="Pesquisa Geral"),
+        "text": user.get("research", ""),
+        "year": datetime.now().year,
+        "author": user.get("name", email),
+    }]
+    topic_index = {}
+    doc_index = {}
+    edges = []
+
+    for conn in connections:
+        conn_idx = len(nodes)
+        nodes.append({
+            "id": f"researcher::{conn['email']}",
+            "label": conn.get("name", conn["email"])[:28],
+            "type": "researcher",
+            "topic": conn.get("topic", "Pesquisa Geral"),
+            "text": conn.get("research", ""),
+            "year": datetime.now().year,
+            "author": conn.get("name", conn["email"]),
+        })
+        edges.append({
+            "source": 0,
+            "target": conn_idx,
+            "weight": max(conn.get("similarity", 0) / 100.0, 0.10),
+            "same_topic": bool(conn.get("shared_topics")),
+        })
+
+        for topic in conn.get("shared_topics", [])[:3]:
+            if topic not in topic_index:
+                topic_index[topic] = len(nodes)
+                nodes.append({
+                    "id": f"topic::{normalize_text(topic)}",
+                    "label": topic[:30],
+                    "type": "topic",
+                    "topic": topic,
+                    "text": topic,
+                    "year": datetime.now().year,
+                    "author": "Tema compartilhado",
+                })
+            t_idx = topic_index[topic]
+            edges.append({"source": 0, "target": t_idx, "weight": 0.18, "same_topic": True})
+            edges.append({"source": conn_idx, "target": t_idx, "weight": 0.16, "same_topic": True})
+
+        for pair in conn.get("shared_docs", [])[:2]:
+            doc_key = f"{pair['a']}::{pair['b']}"
+            if doc_key not in doc_index:
+                doc_index[doc_key] = len(nodes)
+                nodes.append({
+                    "id": f"docpair::{hashlib.md5(doc_key.encode()).hexdigest()[:10]}",
+                    "label": f"{pair['a'][:15]} ↔ {pair['b'][:15]}",
+                    "type": "shared_doc",
+                    "topic": pair.get("topic", "Pesquisa Geral"),
+                    "text": f"{pair['a']} {pair['b']} {pair.get('topic', '')}",
+                    "year": datetime.now().year,
+                    "author": "Documentos em comum",
+                })
+            d_idx = doc_index[doc_key]
+            edges.append({"source": conn_idx, "target": d_idx, "weight": max(pair.get("similarity", 0.1), 0.10), "same_topic": True})
+            edges.append({"source": 0, "target": d_idx, "weight": max(pair.get("similarity", 0.1) * 0.9, 0.08), "same_topic": True})
+
+    return nodes, edges
+
+
+def build_recommendation_query(user_research, docs, limit_terms=8):
+    base_terms = extract_keywords_tfidf(user_research, 8) if user_research else []
     repo_terms = []
     for doc in docs[:12]:
         repo_terms.extend(doc.get("keywords", [])[:4])
     merged = []
-    for term in research_terms + repo_terms:
+    for term in base_terms + repo_terms:
         if term and term not in merged:
             merged.append(term)
-    return " ".join(merged[:limit_terms]) if merged else (research or "pesquisa acadêmica")
+    return " ".join(merged[:limit_terms]) if merged else (user_research or "pesquisa acadêmica")
 
-
-def local_search(query: str, docs: list[dict]) -> list[dict]:
+def local_search(query, docs):
     results = []
     for doc in docs:
-        text = " ".join([doc.get("name", ""), doc.get("summary", ""), doc.get("topic", ""), " ".join(doc.get("keywords", [])), doc.get("text", "")[:4000]])
-        score = score_relevance(query, text, doc.get("keywords", []))
+        text = " ".join([doc.get("name",""), doc.get("summary",""),
+                         doc.get("topic",""), " ".join(doc.get("keywords",[])),
+                         doc.get("text","")[:3000]])
+        score = score_relevance(query, text, doc.get("keywords",[]))
         if score > 0:
-            item = dict(doc)
-            item["score"] = score
-            results.append(item)
+            item = dict(doc); item["score"] = score; results.append(item)
     return sorted(results, key=lambda x: (-x["score"], x["name"]))
 
-
-def related_documents(target: dict, docs: list[dict], limit: int = 6) -> list[dict]:
+def related_documents(target, docs, limit=8):
     out = []
-    target_text = " ".join([target.get("summary", ""), " ".join(target.get("keywords", [])), target.get("text", "")[:2000]])
+    target_text = " ".join([target.get("summary",""), " ".join(target.get("keywords",[])), target.get("text","")[:2000]])
     for doc in docs:
-        if doc.get("id") == target.get("id"):
-            continue
-        doc_text = " ".join([doc.get("summary", ""), " ".join(doc.get("keywords", [])), doc.get("text", "")[:2000]])
+        if doc["id"] == target["id"]: continue
+        doc_text = " ".join([doc.get("summary",""), " ".join(doc.get("keywords",[])), doc.get("text","")[:2000]])
         sim = cosine_similarity(target_text, doc_text)
-        if doc.get("topic") == target.get("topic") and doc.get("topic"):
-            sim += 0.1
+        if doc.get("topic") == target.get("topic"): sim += 0.10
         if sim > 0.05:
-            item = dict(doc)
-            item["similarity"] = round(sim * 100, 1)
-            out.append(item)
+            d = dict(doc); d["similarity"] = round(sim * 100, 1); out.append(d)
     return sorted(out, key=lambda x: -x["similarity"])[:limit]
 
-
-def recognize_research_intent(query: str) -> dict:
-    q = normalize_text(query)
-    topic = detect_topic(q)
-    intent = "pesquisa bibliográfica"
-    if any(term in q for term in ["imagem", "foto", "figura", "visual"]):
-        intent = "busca visual"
-    elif any(term in q for term in ["comparar", "conectar", "semelhante", "relacionar"]):
-        intent = "conexão temática"
-    elif any(term in q for term in ["analisar", "analise", "métricas", "tendência"]):
-        intent = "análise"
-    keywords = extract_keywords_tfidf(query, 12)
-    suggestions = []
-    for term in keywords + TOPIC_RULES.get(topic, [])[:5]:
-        if term not in suggestions:
-            suggestions.append(term)
-    return {
-        "intent": intent,
-        "topic": topic,
-        "keywords": keywords,
-        "search_terms": suggestions[:12],
-        "years": detect_years(q),
-    }
-
-
-def search_semantic_scholar(query: str, limit: int = 8) -> list[dict]:
+def search_semantic_scholar(query, limit=8):
     try:
         resp = requests.get(
             "https://api.semanticscholar.org/graph/v1/paper/search",
-            params={"query": query, "limit": limit, "fields": "title,authors,year,abstract,venue,openAccessPdf,externalIds,citationCount"},
-            timeout=12,
-        )
-        if resp.status_code != 200:
-            return []
+            params={"query": query, "limit": limit,
+                    "fields": "title,authors,year,abstract,venue,openAccessPdf,externalIds,citationCount"},
+            timeout=12)
+        if resp.status_code != 200: return []
+        data = resp.json().get("data", [])
         out = []
-        for item in resp.json().get("data", []):
-            authors = ", ".join(a.get("name", "") for a in item.get("authors", [])[:4])
-            doi = (item.get("externalIds") or {}).get("DOI", "")
+        for item in data:
+            authors = ", ".join(a.get("name","") for a in item.get("authors",[])[:4])
             open_pdf = item.get("openAccessPdf") or {}
+            doi = (item.get("externalIds") or {}).get("DOI","")
             url = open_pdf.get("url") or (f"https://doi.org/{doi}" if doi else "")
-            kw_text = f"{item.get('title','')} {item.get('abstract','')}"
+            kw_text = " ".join([item.get("title",""), item.get("abstract","")[:500]])
             out.append({
-                "title": item.get("title", "Sem título"),
+                "title": item.get("title","Sem título"),
                 "authors": authors or "Não informado",
-                "year": item.get("year", "?"),
-                "abstract": (item.get("abstract") or "")[:420],
-                "source": item.get("venue", "Semantic Scholar"),
-                "citations": item.get("citationCount", 0),
+                "year": item.get("year","?"),
+                "abstract": (item.get("abstract") or "")[:400],
+                "source": item.get("venue","Semantic Scholar"),
+                "citations": item.get("citationCount",0),
                 "url": url,
                 "keywords": extract_keywords_tfidf(kw_text, 8),
                 "topic": detect_topic(kw_text),
             })
         return out
-    except Exception:
-        return []
+    except: return []
 
-
-def search_crossref(query: str, limit: int = 5) -> list[dict]:
+def search_crossref(query, limit=5):
     try:
         resp = requests.get(
             "https://api.crossref.org/works",
-            params={"query": query, "rows": limit, "select": "title,author,issued,DOI,abstract,container-title,is-referenced-by-count", "mailto": "nebula@research.ai"},
-            timeout=12,
-        )
-        if resp.status_code != 200:
-            return []
+            params={"query": query, "rows": limit,
+                    "select": "title,author,issued,DOI,abstract,container-title,is-referenced-by-count",
+                    "mailto": "nebula@research.ai"},
+            timeout=12)
+        if resp.status_code != 200: return []
+        items = resp.json().get("message",{}).get("items",[])
         out = []
-        for item in resp.json().get("message", {}).get("items", []):
+        for item in items:
             title = (item.get("title") or ["Sem título"])[0]
-            authors = ", ".join(f"{a.get('given','')} {a.get('family','')}".strip() for a in item.get("author", [])[:4])
+            authors_list = item.get("author",[])
+            authors = ", ".join(f"{a.get('given','')} {a.get('family','')}".strip() for a in authors_list[:4])
             year = None
-            if item.get("issued", {}).get("date-parts"):
+            if item.get("issued",{}).get("date-parts"):
                 year = item["issued"]["date-parts"][0][0]
-            abstract = re.sub(r"<[^>]+>", " ", item.get("abstract", "") or "")[:420]
-            doi = item.get("DOI", "")
+            doi = item.get("DOI","")
+            abstract = re.sub(r"<[^>]+>"," ", item.get("abstract","") or "")[:400]
             kw_text = f"{title} {abstract}"
             out.append({
                 "title": title,
@@ -1114,436 +1467,523 @@ def search_crossref(query: str, limit: int = 5) -> list[dict]:
                 "year": year or "?",
                 "abstract": abstract,
                 "source": (item.get("container-title") or ["Crossref"])[0],
-                "citations": item.get("is-referenced-by-count", 0),
+                "citations": item.get("is-referenced-by-count",0),
                 "url": f"https://doi.org/{doi}" if doi else "",
                 "keywords": extract_keywords_tfidf(kw_text, 8),
                 "topic": detect_topic(kw_text),
             })
         return out
-    except Exception:
-        return []
+    except: return []
 
+def recognize_research_intent(query):
+    q = normalize_text(query)
+    detected_topic = detect_topic(q)
+    years = detect_years(q)
+    intent = "pesquisa bibliográfica"
+    if any(w in q for w in ["imagem","figura","foto","visual"]): intent = "busca visual"
+    elif any(w in q for w in ["comparar","conectar","relacionar","semelhante"]): intent = "conexão temática"
+    elif any(w in q for w in ["analisar","análise","métricas","tendência"]): intent = "análise"
+    keywords = extract_keywords_tfidf(query, 12)
+    topic_terms = TOPIC_RULES.get(detected_topic, [])[:5]
+    suggestions = []
+    for t in keywords + topic_terms:
+        if t not in suggestions: suggestions.append(t)
+    return {"intent": intent, "topic": detected_topic, "keywords": keywords,
+            "search_terms": suggestions[:12], "years": years}
 
 # ============================================================
-# 3D NETWORK BUILDERS
+# RESEARCH CONNECTIONS — REAL SIMILARITY NETWORK
 # ============================================================
-def build_chain_network(docs: list[dict], external_articles: list[dict] | None = None, user_research: str = "", connected_users: list[dict] | None = None):
-    nodes: list[dict] = []
-    edges: list[dict] = []
-    topic_nodes: dict[str, int] = {}
-
-    def add_node(node: dict) -> int:
-        nodes.append(node)
-        return len(nodes) - 1
-
-    def ensure_topic_node(topic_name: str | None):
-        if not topic_name or topic_name == "Pesquisa Geral":
-            return None
-        if topic_name in topic_nodes:
-            return topic_nodes[topic_name]
-        idx = add_node({
-            "id": f"topic::{topic_name}",
-            "label": topic_name[:38],
-            "type": "topic",
-            "topic": topic_name,
-            "text": topic_name,
-            "strength": 0.8,
+def build_research_network(docs, external_articles=None, user_research=""):
+    """Build a real similarity-based research network"""
+    nodes = []
+    edges = []
+    
+    # Add user docs
+    for doc in docs:
+        doc_text = " ".join([doc.get("summary",""), " ".join(doc.get("keywords",[])),
+                              doc.get("text","")[:2000]])
+        nodes.append({
+            "id": doc["id"],
+            "label": doc["name"][:40],
+            "type": "local",
+            "topic": doc.get("topic",""),
+            "text": doc_text,
+            "year": doc.get("year",""),
+            "author": doc.get("author",""),
         })
-        topic_nodes[topic_name] = idx
-        return idx
-
-    user_idx = None
+    
+    # Add external articles
+    for i, art in enumerate(external_articles or []):
+        art_text = f"{art.get('title','')} {art.get('abstract','')}"
+        nodes.append({
+            "id": f"ext_{i}",
+            "label": art.get("title","")[:40],
+            "type": "external",
+            "topic": art.get("topic",""),
+            "text": art_text,
+            "year": art.get("year",""),
+            "author": art.get("authors",""),
+            "url": art.get("url",""),
+        })
+    
+    # Add user research as central node if present
     if user_research:
-        user_idx = add_node({
-            "id": "researcher_self",
-            "label": current_user().get("name", "Meu Perfil")[:42],
-            "type": "researcher",
+        nodes.insert(0, {
+            "id": "user_node",
+            "label": "Minha Pesquisa",
+            "type": "user",
             "topic": detect_topic(user_research),
             "text": user_research,
-            "strength": 1.0,
+            "year": datetime.now().year,
+            "author": current_user().get("name",""),
         })
-        t_idx = ensure_topic_node(detect_topic(user_research, fallback="Pesquisa Geral"))
-        if t_idx is not None:
-            edges.append({"source": user_idx, "target": t_idx, "weight": 0.94, "same_topic": True, "relation": "tema-base"})
-
-    for doc in docs[:18]:
-        doc_text = " ".join([doc.get("summary", ""), " ".join(doc.get("keywords", [])), doc.get("text", "")[:2200]])
-        doc_idx = add_node({
-            "id": doc.get("id"),
-            "label": doc.get("name", "Documento")[:40],
-            "type": "local",
-            "topic": doc.get("topic", ""),
-            "text": doc_text,
-            "strength": 0.82,
-        })
-        t_idx = ensure_topic_node(doc.get("topic"))
-        if t_idx is not None:
-            edges.append({"source": doc_idx, "target": t_idx, "weight": 0.78, "same_topic": True, "relation": "documento-tema"})
-        if user_idx is not None:
-            sim = cosine_similarity(user_research, doc_text) + (0.08 if doc.get("topic") == detect_topic(user_research) else 0)
-            edges.append({"source": user_idx, "target": doc_idx, "weight": round(max(sim, 0.14), 3), "same_topic": doc.get("topic") == detect_topic(user_research), "relation": "perfil-documento"})
-
-    for idx_art, art in enumerate(external_articles or []):
-        art_text = f"{art.get('title','')} {art.get('abstract','')}"
-        art_idx = add_node({
-            "id": f"ext_{idx_art}",
-            "label": art.get("title", "Artigo")[:40],
-            "type": "external",
-            "topic": art.get("topic", ""),
-            "text": art_text,
-            "strength": 0.74,
-        })
-        t_idx = ensure_topic_node(art.get("topic"))
-        if t_idx is not None:
-            edges.append({"source": art_idx, "target": t_idx, "weight": 0.74, "same_topic": True, "relation": "artigo-tema"})
-        if user_idx is not None:
-            sim = cosine_similarity(user_research, art_text) + (0.1 if art.get("topic") == detect_topic(user_research) else 0)
-            if sim > 0.06:
-                edges.append({"source": user_idx, "target": art_idx, "weight": round(sim, 3), "same_topic": art.get("topic") == detect_topic(user_research), "relation": "perfil-artigo"})
-
-    for conn in connected_users or []:
-        conn_text = " ".join([conn.get("research", ""), " ".join(conn.get("shared_terms", []))])
-        conn_idx = add_node({
-            "id": f"researcher::{conn['email']}",
-            "label": conn.get("name", conn["email"])[:40],
-            "type": "researcher_peer",
-            "topic": conn.get("topic", ""),
-            "text": conn_text,
-            "strength": max(conn.get("similarity", 0) / 100.0, 0.35),
-        })
-        t_idx = ensure_topic_node(conn.get("topic"))
-        if t_idx is not None:
-            edges.append({"source": conn_idx, "target": t_idx, "weight": 0.84, "same_topic": True, "relation": "pesquisador-tema"})
-        if user_idx is not None:
-            edges.append({"source": user_idx, "target": conn_idx, "weight": round(max(conn.get("similarity", 0) / 100.0, 0.1), 3), "same_topic": conn.get("topic") == detect_topic(user_research), "relation": "pesquisador-pesquisador"})
-
+    
+    # Build edges based on REAL similarity
+    threshold = 0.08
     for i in range(len(nodes)):
-        for j in range(i + 1, len(nodes)):
-            if nodes[i]["type"] == "topic" or nodes[j]["type"] == "topic":
-                continue
-            sim = cosine_similarity(nodes[i].get("text", ""), nodes[j].get("text", ""))
-            if nodes[i].get("topic") and nodes[i].get("topic") == nodes[j].get("topic"):
+        for j in range(i+1, len(nodes)):
+            sim = cosine_similarity(nodes[i]["text"], nodes[j]["text"])
+            # Topic match bonus
+            if nodes[i]["topic"] == nodes[j]["topic"] and nodes[i]["topic"]:
                 sim += 0.08
-            if sim >= 0.10:
-                edges.append({"source": i, "target": j, "weight": round(min(sim, 0.98), 3), "same_topic": nodes[i].get("topic") == nodes[j].get("topic"), "relation": "correlação"})
-
+            if sim > threshold:
+                edges.append({
+                    "source": i, "target": j,
+                    "weight": round(sim, 3),
+                    "same_topic": nodes[i]["topic"] == nodes[j]["topic"]
+                })
+    
     return nodes, edges
 
-
-def render_3d_network(nodes: list[dict], edges: list[dict]):
-    if len(nodes) < 2:
-        return None
+def render_3d_network(nodes, edges):
+    """Render a 3D network visualization with Plotly"""
+    if len(nodes) < 2: return None
+    
+    # Position nodes using a simple force-directed layout approximation
     np.random.seed(42)
-    anchors = {
-        "researcher": np.array([0.0, 0.0, 0.0]),
-        "researcher_peer": np.array([2.4, 2.0, 1.0]),
-        "topic": np.array([0.0, 2.6, -1.2]),
-        "local": np.array([-2.5, -1.2, 1.8]),
-        "external": np.array([2.7, -1.8, -1.0]),
-    }
-    pos = np.zeros((len(nodes), 3), dtype=float)
-    for idx, node in enumerate(nodes):
-        pos[idx] = anchors.get(node.get("type"), np.zeros(3)) + np.random.normal(scale=0.9, size=3)
-    for _ in range(70):
-        forces = np.zeros_like(pos)
+    n = len(nodes)
+    
+    # Initialize positions
+    pos = np.random.randn(n, 3) * 2
+    
+    # Simple iterative positioning (spring-like)
+    for _ in range(50):
+        forces = np.zeros((n, 3))
         for edge in edges:
             i, j = edge["source"], edge["target"]
+            if i >= n or j >= n: continue
             diff = pos[j] - pos[i]
-            dist = max(np.linalg.norm(diff), 0.08)
-            attract = max(edge["weight"], 0.04) * 0.26
-            forces[i] += attract * diff / dist
-            forces[j] -= attract * diff / dist
-        for i in range(len(nodes)):
-            for j in range(i + 1, len(nodes)):
+            dist = max(np.linalg.norm(diff), 0.01)
+            # Attraction
+            k = edge["weight"] * 2
+            forces[i] += k * diff / dist
+            forces[j] -= k * diff / dist
+        # Repulsion between all nodes
+        for i in range(n):
+            for j in range(i+1, n):
                 diff = pos[j] - pos[i]
-                dist = max(np.linalg.norm(diff), 0.15)
-                repulse = 0.06 / (dist ** 1.6)
+                dist = max(np.linalg.norm(diff), 0.1)
+                repulse = 0.5 / (dist**2)
                 forces[i] -= repulse * diff / dist
                 forces[j] += repulse * diff / dist
-        pos += forces
-        pos = np.clip(pos, -7, 7)
-
-    styles = {
-        "researcher": {"color": "#f8fafc", "size": 15, "name": "Meu perfil"},
-        "researcher_peer": {"color": "#38bdf8", "size": 11, "name": "Pesquisadores conectados"},
-        "topic": {"color": "#a78bfa", "size": 10, "name": "Temas"},
-        "local": {"color": "#60a5fa", "size": 10, "name": "Documentos locais"},
-        "external": {"color": "#34d399", "size": 9, "name": "Artigos externos"},
+        pos += forces * 0.05
+        pos = np.clip(pos, -6, 6)
+    
+    # Color mapping
+    type_colors = {
+        "user": "#facc15",
+        "local": "#60a5fa",
+        "external": "#4ade80",
+        "researcher": "#22d3ee",
+        "topic": "#a78bfa",
+        "shared_doc": "#f472b6",
     }
-    traces = []
+    topic_color_map = {}
+    palette = ["#60a5fa","#4ade80","#c084fc","#f97316","#67e8f9","#f87171","#a78bfa","#34d399"]
+    unique_topics = list(set(n["topic"] for n in nodes if n.get("topic")))
+    for idx, t in enumerate(unique_topics):
+        topic_color_map[t] = palette[idx % len(palette)]
+    
+    # Edge traces
+    edge_traces = []
     for edge in edges:
         i, j = edge["source"], edge["target"]
-        traces.append(go.Scatter3d(
-            x=[pos[i, 0], pos[j, 0], None],
-            y=[pos[i, 1], pos[j, 1], None],
-            z=[pos[i, 2], pos[j, 2], None],
+        if i >= n or j >= n: continue
+        opacity = min(0.8, edge["weight"] * 2)
+        color = "#60a5fa" if edge["same_topic"] else "rgba(148,163,192,0.4)"
+        edge_traces.append(go.Scatter3d(
+            x=[pos[i,0], pos[j,0], None],
+            y=[pos[i,1], pos[j,1], None],
+            z=[pos[i,2], pos[j,2], None],
             mode="lines",
-            line=dict(color="rgba(96,165,250,0.40)" if edge.get("same_topic") else "rgba(148,163,184,0.25)", width=max(edge.get("weight", 0.05) * 7, 1.2)),
-            hoverinfo="text",
-            text=f"{nodes[i]['label']} ↔ {nodes[j]['label']}<br>Força: {edge.get('weight',0)*100:.1f}%<br>Relação: {edge.get('relation','correlação')}",
+            line=dict(color=color, width=max(1, edge["weight"]*5)),
+            opacity=opacity,
+            hoverinfo="none",
             showlegend=False,
         ))
-    for node_type, style in styles.items():
-        idxs = [i for i, node in enumerate(nodes) if node.get("type") == node_type]
-        if not idxs:
-            continue
-        traces.append(go.Scatter3d(
+    
+    # Node traces by type
+    for node_type, color in type_colors.items():
+        type_nodes = [(idx, nd) for idx, nd in enumerate(nodes) if nd["type"] == node_type]
+        if not type_nodes: continue
+        idxs = [idx for idx, _ in type_nodes]
+        nds = [nd for _, nd in type_nodes]
+        
+        size = {"user": 15, "local": 10, "external": 8, "researcher": 11, "topic": 9, "shared_doc": 8}[node_type]
+        labels = {
+            "user": "Sua Pesquisa",
+            "local": "Seus Documentos",
+            "external": "Artigos Externos",
+            "researcher": "Pesquisadores conectados",
+            "topic": "Temas compartilhados",
+            "shared_doc": "Documentos em comum",
+        }
+        
+        edge_traces.append(go.Scatter3d(
             x=pos[idxs, 0], y=pos[idxs, 1], z=pos[idxs, 2],
             mode="markers+text",
-            marker=dict(size=style["size"], color=style["color"], opacity=0.92, line=dict(color="rgba(255,255,255,0.25)", width=1)),
-            text=[nodes[i]["label"] for i in idxs],
+            marker=dict(size=size, color=color, opacity=0.9,
+                       line=dict(color="rgba(255,255,255,0.3)", width=1)),
+            text=[nd["label"] for nd in nds],
             textposition="top center",
             textfont=dict(size=8, color="#e2e8f0"),
-            hovertext=[f"{nodes[i]['label']}<br>Tipo: {nodes[i].get('type','')}<br>Tema: {nodes[i].get('topic','')}" for i in idxs],
+            hovertext=[f"{nd['label']}<br>Tipo: {nd['type']}<br>Tema: {nd['topic']}<br>Ano: {nd['year']}" for nd in nds],
             hoverinfo="text",
-            name=style["name"],
+            name=labels[node_type],
         ))
-    fig = go.Figure(data=traces)
-    fig.update_layout(
+    
+    layout = go.Layout(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        height=690,
-        margin=dict(l=0, r=0, t=35, b=0),
-        legend=dict(font=dict(color="#dbeafe"), bgcolor="rgba(2,6,23,0.26)"),
-        title=dict(text="Cadeia 3D entre perfil, temas, documentos, artigos e pesquisadores", font=dict(color="#eef2ff", size=15)),
+        height=600,
+        margin=dict(l=0, r=0, t=30, b=0),
         scene=dict(
             bgcolor="rgba(0,0,0,0)",
             xaxis=dict(showgrid=False, showticklabels=False, zeroline=False, showline=False),
             yaxis=dict(showgrid=False, showticklabels=False, zeroline=False, showline=False),
             zaxis=dict(showgrid=False, showticklabels=False, zeroline=False, showline=False),
-            camera=dict(eye=dict(x=1.55, y=1.45, z=1.2)),
         ),
+        legend=dict(
+            font=dict(color="#94a3c0", size=11),
+            bgcolor="rgba(0,0,0,0)",
+            bordercolor="rgba(255,255,255,0.1)",
+            borderwidth=1,
+        ),
+        title=dict(text="Rede de Conexões entre Pesquisas", font=dict(color="#eef2ff", size=14)),
     )
-    return fig
-
+    
+    return go.Figure(data=edge_traces, layout=layout)
 
 # ============================================================
-# UI BUILDERS
+# NAV BAR
 # ============================================================
-def render_navbar() -> None:
-    st.markdown(
-        f"""
-        <div class='nebula-nav'>
-            <div class='nebula-logo'>Nebula Research</div>
-            <div class='nav-user'>{current_user().get('name','')}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+def render_navbar():
+    user = current_user()
     pages = ["Dashboard", "Pesquisa Inteligente", "Repositório", "Análise Avançada", "Conexões", "Chat", "Perfil"]
-    cols = st.columns([1, 1, 1, 1, 1, 1, 1, 0.9])
-    for idx, page in enumerate(pages):
-        with cols[idx]:
-            if st.button(page, use_container_width=True, key=f"nav_{page}"):
-                st.session_state.page = page
+    
+    nav_html = f"""
+    <div class="nebula-nav">
+        <div class="nebula-logo">Nebula Research</div>
+        <div class="nebula-navlinks">
+    """
+    for p in pages:
+        active = "active" if st.session_state.page == p else ""
+        nav_html += f'<span class="nav-btn {active}" onclick="">{p}</span>'
+    
+    nav_html += f"""
+        </div>
+        <div class="nav-right">
+            <span class="nav-user">{user.get('name','')}</span>
+        </div>
+    </div>
+    """
+    st.markdown(nav_html, unsafe_allow_html=True)
+    
+    # Real navigation buttons (hidden via CSS magic using columns)
+    cols = st.columns([2] + [1]*len(pages) + [1])
+    with cols[0]:
+        pass
+    page_buttons = []
+    for i, p in enumerate(pages):
+        with cols[i+1]:
+            if st.button(p, key=f"nav_{p}", use_container_width=True):
+                st.session_state.page = p
                 st.rerun()
     with cols[-1]:
-        if st.button("Sair", use_container_width=True):
-            logout_user()
+        if st.button("Sair", key="nav_logout"):
+            st.session_state.logged_in = False
+            st.session_state.current_user = None
+            sync_workspace_state(None)
             st.rerun()
 
+# ============================================================
+# AUTH PAGE
+# ============================================================
+def page_auth():
+    st.markdown("""
+    <div style="max-width:520px;margin:4vh auto 0;text-align:center;">
+        <div class="auth-logo-big">Nebula Research</div>
+        <div class="auth-sub">Pesquisa acadêmica multimodal com interface líquida, isolamento por conta e conexões por afinidade real de repositório</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-def page_auth() -> None:
-    st.markdown(
-        """
-        <div style='max-width:480px;margin:4vh auto 0;'>
-            <div class='auth-logo-big'>Nebula Research</div>
-            <div class='auth-sub'>Pesquisa acadêmica com privacidade por perfil, criptografia local e análise multimodal</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    left, center, right = st.columns([1, 2, 1])
-    with center:
-        tab_login, tab_register = st.tabs(["Entrar", "Criar conta"])
+    col_l, col_c, col_r = st.columns([1, 2.25, 1])
+    with col_c:
+        tab_login, tab_reg = st.tabs(["Entrar", "Criar conta"])
+
         with tab_login:
-            st.markdown("<div class='glass'>", unsafe_allow_html=True)
-            st.markdown("<span class='privacy-pill'>Perfil isolado</span><span class='privacy-pill'>Workspace criptografado</span>", unsafe_allow_html=True)
-            email = st.text_input("E-mail", key="login_email")
-            password = st.text_input("Senha", type="password", key="login_password")
-            if st.button("Acessar", type="primary", use_container_width=True, key="login_btn"):
+            st.markdown("<div class='glass' style='margin-top:0.7rem;padding:1.2rem 1.2rem 1rem 1.2rem'>", unsafe_allow_html=True)
+            st.markdown("<div class='section-title' style='margin-bottom:0.35rem'>Acesse sua pesquisa</div>", unsafe_allow_html=True)
+            st.markdown("<div class='small-muted' style='margin-bottom:0.8rem'>Entre para abrir seu repositório privado, conexões acadêmicas e análises.</div>", unsafe_allow_html=True)
+            email = st.text_input("E-mail", key="li_email", placeholder="seu@email.com")
+            password = st.text_input("Senha", type="password", key="li_pass", placeholder="Senha")
+            if st.button("Acessar", use_container_width=True, key="li_btn", type="primary"):
                 user = st.session_state.users.get(email)
-                if user and user.get("password") == hash_password(password):
-                    login_user(email)
+                if user and user["password"] == hash_password(password):
+                    st.session_state.logged_in = True
+                    st.session_state.current_user = email
+                    sync_workspace_state(email)
+                    st.session_state.page = "Dashboard"
                     st.rerun()
                 else:
                     st.error("E-mail ou senha inválidos.")
-            st.caption("Demo: demo@nebula.ai / demo123")
+            st.markdown("<div class='small-muted' style='margin-top:0.65rem'>Demo: demo@nebula.ai / demo123</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
-        with tab_register:
-            st.markdown("<div class='glass'>", unsafe_allow_html=True)
-            name = st.text_input("Nome completo", key="register_name")
-            email = st.text_input("E-mail", key="register_email")
-            password = st.text_input("Senha", type="password", key="register_password")
-            research = st.text_area("Área de pesquisa", key="register_research", height=90)
-            visibility = st.selectbox("Privacidade do perfil", ["Conexões", "Privado", "Público resumido"], index=0, key="register_visibility")
-            if st.button("Criar conta", type="primary", use_container_width=True, key="register_btn"):
-                if not all([name, email, password, research]):
+
+        with tab_reg:
+            st.markdown("<div class='glass' style='margin-top:0.7rem;padding:1.2rem 1.2rem 1rem 1.2rem'>", unsafe_allow_html=True)
+            st.markdown("<div class='section-title' style='margin-bottom:0.35rem'>Criar nova conta</div>", unsafe_allow_html=True)
+            st.markdown("<div class='small-muted' style='margin-bottom:0.8rem'>Seu perfil nasce separado dos demais, com repositório próprio e histórico independente.</div>", unsafe_allow_html=True)
+            name = st.text_input("Nome completo", key="rg_name", placeholder="Seu nome")
+            reg_email = st.text_input("E-mail", key="rg_email", placeholder="seu@email.com")
+            reg_pass = st.text_input("Senha", type="password", key="rg_pass", placeholder="Crie uma senha")
+            research = st.text_input("Área de pesquisa", key="rg_research", placeholder="Ex: Machine learning aplicado à saúde")
+            if st.button("Criar conta", use_container_width=True, key="rg_btn", type="primary"):
+                if not all([name, reg_email, reg_pass, research]):
                     st.error("Preencha todos os campos.")
-                elif email in st.session_state.users:
+                elif reg_email in st.session_state.users:
                     st.error("Este e-mail já está cadastrado.")
                 else:
-                    st.session_state.users[email] = {
+                    st.session_state.users[reg_email] = {
                         "name": name,
-                        "password": hash_password(password),
+                        "password": hash_password(reg_pass),
                         "research": research,
-                        "profile_visibility": visibility,
-                        "privacy_mode": "Criptografado",
                     }
-                    initialize_user_workspace(email)
+                    ensure_workspace(reg_email)
                     save_db()
-                    st.success("Conta criada com workspace privado separado. Agora entre com sua conta.")
+                    st.success("Conta criada! Agora acesse na aba Entrar.")
             st.markdown("</div>", unsafe_allow_html=True)
 
-
-def page_dashboard() -> None:
+# ============================================================
+# DASHBOARD
+# ============================================================
+def page_dashboard():
     user = current_user()
-    docs = st.session_state.repository
+    docs = get_repository_for_user()
     research = user.get("research", "")
-    connections = get_connected_users(st.session_state.current_user, 6)
-    st.markdown(f"<div class='page-title'>Bem-vindo, {user.get('name','').split()[0] if user.get('name') else 'pesquisador'}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='page-sub'>{research or 'Defina sua área de pesquisa no perfil para gerar recomendações melhores.'}</div>", unsafe_allow_html=True)
+    connections = get_connected_users(st.session_state.current_user, limit=6)
 
-    df = pd.DataFrame([
-        {"topic": d.get("topic"), "author": d.get("author"), "year": d.get("year"), "kind": d.get("kind"), "language": d.get("language")}
-        for d in docs
-    ]) if docs else pd.DataFrame()
+    st.markdown(f"<div class='page-title'>Bem-vindo, {user.get('name','').split()[0]}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='page-sub'>{research or 'Configure sua área de pesquisa no Perfil para receber recomendações melhores.'}</div>", unsafe_allow_html=True)
+
+    df = pd.DataFrame([{
+        "topic": d.get("topic"), "author": d.get("author"),
+        "year": d.get("year"), "kind": d.get("kind"),
+        "language": d.get("language"), "size_kb": d.get("size_kb", 0)
+    } for d in docs]) if docs else pd.DataFrame()
 
     c1, c2, c3, c4, c5 = st.columns(5)
     cards = [
         (c1, "Documentos", len(docs), "No repositório", "blue"),
         (c2, "Temas", int(df["topic"].nunique()) if not df.empty else 0, "Mapeados", "cyan"),
-        (c3, "Conexões", len(connections), "Pesquisadores próximos", "green"),
-        (c4, "Buscas", len(st.session_state.search_history), "Neste perfil", "purple"),
-        (c5, "Idioma", safe_top_value(df["language"]) if not df.empty else "N/A", "Predominante", "yellow"),
+        (c3, "Conexões", len(connections), "Afinidades por repositório", "green"),
+        (c4, "Buscas", len(get_search_history_for_user()), "Registradas", "purple"),
+        (c5, "Idioma base", safe_top_value(df["language"]) if not df.empty else "N/A", "Predominante", "yellow"),
     ]
-    for col, label, value, desc, color in cards:
+    for col, label, val, desc, color in cards:
         with col:
-            st.markdown(f"<div class='metric-card {color}'><div class='metric-label'>{label}</div><div class='metric-value'>{value}</div><div class='metric-desc'>{desc}</div></div>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='metric-card {color}'>
+                <div class='metric-label'>{label}</div>
+                <div class='metric-value' style='font-size:1.55rem'>{val}</div>
+                <div class='metric-desc'>{desc}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
-    left, right = st.columns([1.15, 0.85])
+    left, right = st.columns([1.2, 0.8])
+
     with left:
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Sugestões de artigos para sua pesquisa</div>", unsafe_allow_html=True)
+
         recommendation_query = build_recommendation_query(research, docs)
+        if docs and not research:
+            st.markdown("<div class='notice-box'>Sem linha de pesquisa definida no perfil. As sugestões abaixo foram inferidas a partir dos arquivos do seu repositório.</div><br>", unsafe_allow_html=True)
+
         if not recommendation_query.strip():
-            st.info("Adicione uma linha de pesquisa no Perfil ou envie documentos ao Repositório para gerar recomendações.")
+            st.info("Adicione uma linha de pesquisa no Perfil ou envie documentos no Repositório para gerar recomendações.")
         else:
             cache_key = f"dashboard_articles_{hashlib.md5(recommendation_query.encode()).hexdigest()[:8]}"
             articles = st.session_state.get(cache_key)
             if articles is None:
-                with st.spinner("Buscando artigos..."):
+                with st.spinner("Buscando artigos correlatos..."):
                     articles = search_semantic_scholar(recommendation_query, limit=6)
                     if len(articles) < 4:
                         articles += search_crossref(recommendation_query, limit=4)
                 st.session_state[cache_key] = articles
-            for art in articles[:6]:
-                title = art.get("title", "Sem título")
-                link = art.get("url", "")
-                title_html = f'<a href="{link}" target="_blank" style="color:#bfdbfe;text-decoration:none">{title}</a>' if link else title
-                st.markdown(
-                    f"""
+
+            if not articles:
+                st.info("Não consegui recuperar artigos agora, mas a consulta já foi montada com base no seu perfil e nos seus arquivos.")
+            else:
+                base_text = research or " ".join(sum([d.get("keywords", [])[:6] for d in docs[:8]], []))
+                for art in articles[:6]:
+                    art_text = f"{art.get('title','')} {art.get('abstract','')}"
+                    sim = round(min(cosine_similarity(base_text, art_text) * 200, 99), 1)
+                    url = art.get("url", "")
+                    title_html = f'<a href="{url}" target="_blank" style="color:#93c5fd;text-decoration:none">{art.get("title","Sem título")}</a>' if url else art.get("title","Sem título")
+                    st.markdown(f"""
                     <div class='article-card'>
                         <div class='article-title'>{title_html}</div>
-                        <div class='article-meta'>{art.get('authors','')} · {art.get('year','?')} · {art.get('source','')} · {art.get('citations',0)} cit.</div>
-                        <div class='article-abstract'>{art.get('abstract','')[:240]}...</div>
+                        <div class='article-meta'>{art.get('authors','Não informado')} · {art.get('year','?')} · {art.get('source','Fonte externa')} · {art.get('citations',0)} citações</div>
+                        <div class='article-abstract'>{(art.get('abstract') or 'Resumo indisponível.')[:260]}...</div>
+                        <div style='margin-top:0.55rem'>
+                            <span class='tag'>{art.get('topic','Pesquisa Geral')}</span>
+                            <span class='tag-green' style='display:inline-block;padding:0.2rem 0.55rem;margin:0.1rem;border-radius:999px;background:rgba(74,222,128,0.10);border:1px solid rgba(74,222,128,0.20);color:#bbf7d0;font-size:0.72rem'>Aderência: {sim}%</span>
+                        </div>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                    """, unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
+
+        if docs:
+            st.markdown("<div class='glass'>", unsafe_allow_html=True)
+            st.markdown("<div class='section-title'>Pistas extraídas do seu repositório</div>", unsafe_allow_html=True)
+            dominant_topic = safe_top_value(df["topic"], default="Pesquisa Geral") if not df.empty else "Pesquisa Geral"
+            dominant_language = safe_top_value(df["language"], default="N/A") if not df.empty else "N/A"
+            avg_size = round(float(df["size_kb"].mean()), 1) if not df.empty else 0
+            st.markdown(f"""
+            <div class='notice-box'>
+                Tema mais frequente: <b>{dominant_topic}</b> · Idioma predominante: <b>{dominant_language}</b> ·
+                Tamanho médio dos arquivos: <b>{avg_size} KB</b>.
+                Esse resumo está sendo usado para montar recomendações de leitura mais próximas do seu acervo.
+            </div>
+            """, unsafe_allow_html=True)
+            keyword_pool = []
+            for doc in docs[:10]:
+                keyword_pool.extend(doc.get("keywords", [])[:5])
+            ranked = [k for k, _ in Counter(keyword_pool).most_common(16)]
+            if ranked:
+                st.markdown("".join([f"<span class='tag'>{term}</span>" for term in ranked]), unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Privacidade ativa</div>", unsafe_allow_html=True)
-        st.markdown(
-            f"""
-            <div class='insight-box'>
-                Conta atual: <b>{st.session_state.current_user}</b><br>
-                Repositório: <b>isolado por perfil</b><br>
-                Persistência: <b>criptografada localmente</b><br>
-                Visibilidade do perfil: <b>{user.get('profile_visibility', 'Conexões')}</b>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if st.button("Abrir chat", use_container_width=True):
-            st.session_state.page = "Chat"
-            st.rerun()
+        st.markdown("<div class='section-title'>Pesquisadores conectados</div>", unsafe_allow_html=True)
+        if not connections:
+            st.info("Ainda não há outros usuários suficientemente próximos ao seu tema. Quando houver, eles aparecerão aqui.")
+        else:
+            for conn in connections[:5]:
+                shared = " · ".join(conn.get("shared_terms", [])[:4]) or conn.get("topic", "Pesquisa Geral")
+                st.markdown(f"""
+                <div class='doc-card'>
+                    <b style='font-size:0.86rem'>{conn['name']}</b><br>
+                    <span class='small-muted'>{conn.get('topic','Pesquisa Geral')} · similaridade {conn['similarity']}%</span>
+                    <div style='margin-top:0.45rem;color:#cbd5e1;font-size:0.8rem'>{(conn.get('research') or 'Sem linha de pesquisa cadastrada.')[:140]}</div>
+                    <div style='margin-top:0.45rem'><span class='tag-purple' style='display:inline-block;padding:0.2rem 0.55rem;border-radius:999px;background:rgba(192,132,252,0.10);border:1px solid rgba(192,132,252,0.20);color:#e9d5ff;font-size:0.72rem'>{shared}</span></div>
+                </div>
+                """, unsafe_allow_html=True)
+            if st.button("Abrir chat", use_container_width=True, key="dash_open_community"):
+                st.session_state.page = "Chat"
+                st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Termos aprendidos do perfil</div>", unsafe_allow_html=True)
-        terms = recommend_terms(st.session_state.current_user, 20)
-        if terms:
-            st.markdown("".join([f"<span class='tag'>{t}</span>" for t in terms]), unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Termos aprendidos do seu perfil</div>", unsafe_allow_html=True)
+        profile_terms = recommend_terms(st.session_state.current_user, 20)
+        if profile_terms:
+            st.markdown("".join([f"<span class='tag'>{t}</span>" for t in profile_terms]), unsafe_allow_html=True)
         else:
             st.info("Faça buscas e envie documentos para o sistema aprender seu perfil temático.")
         st.markdown("</div>", unsafe_allow_html=True)
 
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Atalhos</div>", unsafe_allow_html=True)
+        suggestions = profile_terms[:4] if profile_terms else ["análise bibliográfica", "estado da arte", "corpus documental", "visualização de dados"]
+        for term in suggestions:
+            if st.button(term, key=f"dash_sugg_{term}", use_container_width=True):
+                st.session_state.quick_query = term
+                st.session_state.page = "Pesquisa Inteligente"
+                st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
-def page_smart_search() -> None:
+
+# ============================================================
+# SMART SEARCH
+# ============================================================
+def page_smart_search():
     st.markdown("<div class='page-title'>Pesquisa Inteligente</div>", unsafe_allow_html=True)
     st.markdown("<div class='page-sub'>Busca unificada com análise de intenção, resultados locais e artigos da internet correlacionados</div>", unsafe_allow_html=True)
+    
     default_query = st.session_state.get("quick_query", "")
-    query = st.text_area("Digite sua pergunta ou tema de pesquisa", value=default_query, height=100, placeholder="Ex: redes neurais para classificação de imagens médicas")
-    col_l, col_r = st.columns([3, 1])
-    with col_r:
-        uploaded_image = st.file_uploader("Imagem (opcional)", type=["png", "jpg", "jpeg", "webp"], key="smart_search_image")
-
-    if st.button("Executar pesquisa", type="primary", use_container_width=True):
-        if not query and uploaded_image is None:
+    query = st.text_area("Digite sua pergunta ou tema de pesquisa", value=default_query, height=100,
+                         placeholder="Ex: redes neurais para classificação de imagens médicas...")
+    
+    col_a, col_b = st.columns([3,1])
+    with col_b:
+        up_image = st.file_uploader("Imagem (opcional)", type=["png","jpg","jpeg","webp"])
+    
+    if st.button("Executar pesquisa", use_container_width=True, type="primary"):
+        if not query and up_image is None:
             st.warning("Digite uma consulta ou envie uma imagem.")
             return
+        
         intent_data = recognize_research_intent(query or "imagem científica")
         update_user_interest(st.session_state.current_user, intent_data["search_terms"])
         st.session_state.search_history.append({
-            "query": query,
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "intent": intent_data["intent"],
-            "topic": intent_data["topic"],
+            "query": query, "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "intent": intent_data["intent"], "topic": intent_data["topic"],
         })
         save_db()
-
+        
+        # Intent analysis
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Análise da sua busca</div>", unsafe_allow_html=True)
-        i1, i2, i3 = st.columns(3)
-        with i1:
-            st.info(f"**Intenção:** {intent_data['intent']}")
-        with i2:
-            st.info(f"**Tema:** {intent_data['topic']}")
-        with i3:
-            st.info(f"**Termos-chave:** {', '.join(intent_data['keywords'][:5])}")
-        st.markdown("".join([f"<span class='tag'>{term}</span>" for term in intent_data["search_terms"]]), unsafe_allow_html=True)
+        ic1, ic2, ic3 = st.columns(3)
+        with ic1: st.info(f"**Intenção:** {intent_data['intent']}")
+        with ic2: st.info(f"**Tema:** {intent_data['topic']}")
+        with ic3: st.info(f"**Termos-chave:** {', '.join(intent_data['keywords'][:5])}")
+        st.markdown("".join([f"<span class='tag'>{t}</span>" for t in intent_data["search_terms"]]), unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
-
+        
+        # Fetch results
         search_query = " ".join(intent_data["search_terms"][:6]) or query
         with st.spinner("Buscando artigos..."):
             scholar_results = search_semantic_scholar(search_query, limit=8)
             crossref_results = search_crossref(search_query, limit=4) if len(scholar_results) < 4 else []
-        local_results = local_search(query, st.session_state.repository)
-
-        left, right = st.columns(2)
-        with left:
+        
+        local_results = local_search(query, get_repository_for_user())
+        
+        col_l, col_r = st.columns(2)
+        
+        with col_l:
             st.markdown("<div class='glass'>", unsafe_allow_html=True)
             st.markdown("<div class='section-title'>Nos seus documentos</div>", unsafe_allow_html=True)
             if not local_results:
                 st.info("Nenhum documento local correspondeu. Envie arquivos no Repositório.")
             else:
                 for doc in local_results[:6]:
-                    st.markdown(
-                        f"""
-                        <div class='doc-card'>
-                            <b>{doc['name']}</b><br>
-                            <span class='small-muted'>{doc['kind']} · {doc['topic']} · relevância {doc['score']}%</span>
-                            <div class='sim-bar-wrap'><div class='sim-bar-fill' style='width:{min(doc['score'],100)}%'></div></div>
-                            <div style='margin-top:.4rem;color:#dbeafe;font-size:.82rem'>{doc['summary'][:220]}</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    sim_bar = f"<div class='sim-bar-wrap'><div class='sim-bar-fill' style='width:{min(doc['score'],100)}%'></div></div>"
+                    st.markdown(f"""
+                    <div class='doc-card'>
+                        <b>{doc['name']}</b><br>
+                        <span class='small-muted'>{doc['kind']} · {doc['topic']} · relevância {doc['score']}%</span>
+                        {sim_bar}
+                        <div style='margin-top:0.5rem;font-size:0.82rem;color:#cbd5e1'>{doc['summary'][:200]}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
-        with right:
+        
+        with col_r:
             st.markdown("<div class='glass'>", unsafe_allow_html=True)
             st.markdown("<div class='section-title'>Artigos na internet</div>", unsafe_allow_html=True)
             web_results = scholar_results + crossref_results
@@ -1551,307 +1991,349 @@ def page_smart_search() -> None:
                 st.info("Não foi possível recuperar artigos agora.")
             else:
                 for art in web_results[:7]:
-                    url = art.get("url", "")
-                    title_html = f'<a href="{url}" target="_blank" style="color:#bfdbfe;text-decoration:none">{art["title"]}</a>' if url else art["title"]
-                    st.markdown(
-                        f"""
-                        <div class='article-card'>
-                            <div class='article-title'>{title_html}</div>
-                            <div class='article-meta'>{art.get('authors','')} · {art.get('year','?')} · {art.get('source','')} · {art.get('citations',0)} cit.</div>
-                            <div class='article-abstract'>{art.get('abstract','')[:240]}...</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                    url = art.get("url","")
+                    title_html = f'<a href="{url}" target="_blank" style="color:#93c5fd;text-decoration:none">{art["title"]}</a>' if url else art["title"]
+                    st.markdown(f"""
+                    <div class='article-card'>
+                        <div class='article-title'>{title_html}</div>
+                        <div class='article-meta'>{art.get('authors','')} · {art.get('year','?')} · {art.get('source','')} · {art.get('citations',0)} cit.</div>
+                        <div class='article-abstract'>{art.get('abstract','')[:220]}...</div>
+                    </div>
+                    """, unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
-
+        
+        # External links
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Continuar pesquisando</div>", unsafe_allow_html=True)
         q_enc = quote_plus(search_query)
         c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown(f"[Google Scholar](https://scholar.google.com/scholar?q={q_enc})")
-        with c2:
-            st.markdown(f"[Semantic Scholar](https://www.semanticscholar.org/search?q={q_enc})")
-        with c3:
-            st.markdown(f"[Google Imagens](https://www.google.com/search?tbm=isch&q={q_enc})")
+        with c1: st.markdown(f"[Google Scholar]( https://scholar.google.com/scholar?q={q_enc})")
+        with c2: st.markdown(f"[Semantic Scholar](https://www.semanticscholar.org/search?q={q_enc})")
+        with c3: st.markdown(f"[Imagens Google](https://www.google.com/search?tbm=isch&q={q_enc})")
         st.markdown("</div>", unsafe_allow_html=True)
-
-        if uploaded_image is not None:
-            image_data = analyze_image_bytes(uploaded_image.getvalue())
+        
+        # Image search if uploaded
+        if up_image is not None:
+            img = Image.open(up_image)
+            arr = np.array(img.convert("RGB"))
+            mean_rgb = arr.reshape(-1,3).mean(axis=0)
+            brightness = float(np.mean(np.dot(arr[...,:3],[0.299,0.587,0.114])))
+            
             st.markdown("<div class='glass'>", unsafe_allow_html=True)
             st.markdown("<div class='section-title'>Análise visual</div>", unsafe_allow_html=True)
-            v1, v2, v3, v4 = st.columns(4)
-            with v1:
-                st.markdown(f"<div class='metric-card blue'><div class='metric-label'>Largura</div><div class='metric-value'>{image_data.get('width','?')}</div></div>", unsafe_allow_html=True)
-            with v2:
-                st.markdown(f"<div class='metric-card cyan'><div class='metric-label'>Altura</div><div class='metric-value'>{image_data.get('height','?')}</div></div>", unsafe_allow_html=True)
-            with v3:
-                st.markdown(f"<div class='metric-card green'><div class='metric-label'>Brilho</div><div class='metric-value'>{image_data.get('brightness','?')}</div></div>", unsafe_allow_html=True)
-            with v4:
-                st.markdown(f"<div class='metric-card purple'><div class='metric-label'>Detalhe</div><div class='metric-value'>{image_data.get('detail_level','?')}</div></div>", unsafe_allow_html=True)
-            st.image(uploaded_image, use_container_width=True)
-            if image_data.get("palette_tags"):
-                st.markdown("".join([f"<span class='chain-badge'>{tag}</span>" for tag in image_data.get("palette_tags", [])[:5]]), unsafe_allow_html=True)
+            vc1, vc2, vc3, vc4 = st.columns(4)
+            with vc1:
+                st.markdown(f"<div class='metric-card blue'><div class='metric-label'>Largura</div><div class='metric-value'>{img.width}px</div></div>", unsafe_allow_html=True)
+            with vc2:
+                st.markdown(f"<div class='metric-card cyan'><div class='metric-label'>Altura</div><div class='metric-value'>{img.height}px</div></div>", unsafe_allow_html=True)
+            with vc3:
+                st.markdown(f"<div class='metric-card green'><div class='metric-label'>Brilho</div><div class='metric-value'>{brightness:.0f}</div></div>", unsafe_allow_html=True)
+            with vc4:
+                st.markdown(f"<div class='metric-card purple'><div class='metric-label'>Modo</div><div class='metric-value'>{img.mode}</div></div>", unsafe_allow_html=True)
+            st.image(img, caption="Imagem enviada", use_container_width=True)
             st.markdown("</div>", unsafe_allow_html=True)
+    
     st.session_state.quick_query = ""
 
-
-def page_repository() -> None:
+# ============================================================
+# REPOSITORY
+# ============================================================
+def page_repository():
     st.markdown("<div class='page-title'>Repositório</div>", unsafe_allow_html=True)
-    st.markdown("<div class='page-sub'>Seu acervo privado por perfil: análise de imagem, PDF, planilha, texto e código com isolamento criptografado</div>", unsafe_allow_html=True)
+    st.markdown("<div class='page-sub'>Envie seus documentos para análise completa: texto, palavras-chave, resumo, estrutura e conexões</div>", unsafe_allow_html=True)
+    
     st.markdown("<div class='glass'>", unsafe_allow_html=True)
-    st.markdown("<span class='privacy-pill'>Escopo do perfil atual</span><span class='privacy-pill'>Dados criptografados em disco</span>", unsafe_allow_html=True)
     files = st.file_uploader(
         "Adicionar documentos",
         accept_multiple_files=True,
-        type=["pdf", "docx", "txt", "md", "csv", "xlsx", "xls", "png", "jpg", "jpeg", "webp", "py", "json"],
-        help="Cada arquivo é analisado conforme seu tipo e salvo apenas no workspace da conta logada.",
-        key="repo_uploader",
+        type=["pdf","docx","txt","md","csv","xlsx","xls","png","jpg","jpeg","webp","py","json"],
     )
-    if st.button("Analisar e adicionar", type="primary", use_container_width=True):
+    
+    if st.button("Analisar e adicionar", use_container_width=True, type="primary"):
         if not files:
             st.warning("Selecione arquivos primeiro.")
         else:
             progress = st.progress(0)
             for idx, up in enumerate(files):
-                progress.progress((idx + 1) / len(files), text=f"Analisando {up.name}...")
-                record = make_document_record(up.name, up.getvalue())
-                st.session_state.repository.append(record)
-                update_user_interest(st.session_state.current_user, record.get("keywords", [])[:14])
+                progress.progress((idx+1)/len(files), text=f"Analisando {up.name}...")
+                content = up.getvalue()
+                record = make_document_record(up.name, content)
+                get_repository_for_user().append(record)
+                update_user_interest(st.session_state.current_user, record["keywords"][:12])
             save_db()
-            st.success(f"{len(files)} arquivo(s) analisados e adicionados ao perfil atual.")
+            st.success(f"{len(files)} arquivo(s) analisados e adicionados.")
             st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
-
-    docs = st.session_state.repository
+    
+    docs = get_repository_for_user()
     if not docs:
-        st.info("Seu repositório privado está vazio. Envie documentos acima.")
+        st.info("Seu repositório está vazio. Envie documentos acima.")
         return
-
+    
     st.markdown("<div class='glass'>", unsafe_allow_html=True)
     st.markdown("<div class='section-title'>Documentos catalogados</div>", unsafe_allow_html=True)
-    filter_text = st.text_input("Filtrar por nome, tema, autor ou palavra-chave", placeholder="Buscar...")
-    filtered = local_search(filter_text, docs) if filter_text else docs
+    
+    search_name = st.text_input("Filtrar por nome, tema, autor ou palavra-chave", placeholder="Buscar...")
+    filtered = local_search(search_name, docs) if search_name else docs
+    
     for doc in filtered[:50]:
         with st.expander(f"**{doc['name']}** · {doc['kind']} · {doc['topic']}"):
-            left, right = st.columns([1.45, 1])
-            with left:
+            col_info, col_stats = st.columns([1.5, 1])
+            
+            with col_info:
                 st.markdown(f"**Resumo:**  \n{doc['summary']}")
-                for note in doc.get("modality_notes", [])[:4]:
-                    st.markdown(f"<div class='insight-box'>{note}</div>", unsafe_allow_html=True)
                 st.markdown("**Palavras-chave:**")
-                st.markdown("".join([f"<span class='tag'>{kw}</span>" for kw in doc.get("keywords", [])[:18]]), unsafe_allow_html=True)
+                st.markdown("".join([f"<span class='tag'>{k}</span>" for k in doc['keywords'][:18]]), unsafe_allow_html=True)
+                
+                # Show sections if available (PDFs)
                 if doc.get("sections"):
                     st.markdown("**Seções detectadas:**")
-                    for section_name, section_text in doc.get("sections", {}).items():
-                        st.markdown(f"*{section_name}:* {section_text[:240]}...")
-                if doc.get("tabular_profile"):
-                    tp = doc["tabular_profile"]
-                    st.markdown(f"**Perfil tabular:** {tp.get('rows',0)} linhas · até {tp.get('cols',0)} colunas · {tp.get('numeric_columns',0)} colunas numéricas")
-                if doc.get("image_meta"):
-                    im = doc["image_meta"]
-                    st.markdown(f"**Leitura visual:** {im.get('width','?')}×{im.get('height','?')} px · {im.get('orientation','?')} · detalhe {im.get('detail_level','?')} · brilho {im.get('brightness','?')}")
-                    if im.get("palette_tags"):
-                        st.markdown("".join([f"<span class='chain-badge'>{tag}</span>" for tag in im.get("palette_tags", [])[:5]]), unsafe_allow_html=True)
-            with right:
-                st.markdown(
-                    f"""
-                    <div class='glass-sm'>
-                        <div class='metric-label'>Metadados</div>
-                        <table class='soft-table'>
-                            <tr><td style='color:#94a3c0'>Autor</td><td>{doc.get('author','?')[:34]}</td></tr>
-                            <tr><td style='color:#94a3c0'>Ano</td><td>{doc.get('year','?')}</td></tr>
-                            <tr><td style='color:#94a3c0'>Idioma</td><td>{doc.get('language','?')}</td></tr>
-                            <tr><td style='color:#94a3c0'>Tamanho</td><td>{doc.get('size_kb','?')} KB</td></tr>
-                            <tr><td style='color:#94a3c0'>Palavras</td><td>{doc.get('readability',{}).get('words','?')}</td></tr>
-                            <tr><td style='color:#94a3c0'>Páginas est.</td><td>{doc.get('readability',{}).get('estimated_pages','?')}</td></tr>
-                            <tr><td style='color:#94a3c0'>Leitura</td><td>{doc.get('readability',{}).get('reading_time_min','?')} min</td></tr>
-                            <tr><td style='color:#94a3c0'>Referências</td><td>{doc.get('ref_count','?')}</td></tr>
-                            <tr><td style='color:#94a3c0'>Clareza</td><td>{doc.get('readability',{}).get('clarity','?')}/100</td></tr>
-                        </table>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            related = related_documents(doc, docs, 4)
+                    for sec_name, sec_text in doc["sections"].items():
+                        st.markdown(f"*{sec_name}:* {sec_text[:200]}...")
+            
+            with col_stats:
+                st.markdown(f"""
+                <div class='glass-sm'>
+                    <div class='metric-label'>Metadados</div>
+                    <table style='font-size:0.82rem;color:#cbd5e1;width:100%;margin-top:0.4rem'>
+                        <tr><td style='color:#94a3c0'>Autor</td><td>{doc.get('author','?')[:30]}</td></tr>
+                        <tr><td style='color:#94a3c0'>Ano</td><td>{doc.get('year','?')}</td></tr>
+                        <tr><td style='color:#94a3c0'>Idioma</td><td>{doc.get('language','?')}</td></tr>
+                        <tr><td style='color:#94a3c0'>Tamanho</td><td>{doc.get('size_kb','?')} KB</td></tr>
+                        <tr><td style='color:#94a3c0'>Palavras</td><td>{doc.get('readability',{}).get('words','?')}</td></tr>
+                        <tr><td style='color:#94a3c0'>Páginas est.</td><td>{doc.get('readability',{}).get('estimated_pages','?')}</td></tr>
+                        <tr><td style='color:#94a3c0'>Leitura</td><td>{doc.get('readability',{}).get('reading_time_min','?')} min</td></tr>
+                        <tr><td style='color:#94a3c0'>Referências</td><td>{doc.get('ref_count','?')}</td></tr>
+                        <tr><td style='color:#94a3c0'>Clareza</td><td>{doc.get('readability',{}).get('clarity','?')}/100</td></tr>
+                    </table>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            # Related documents
+            related = related_documents(doc, docs, limit=4)
             if related:
                 st.markdown("**Documentos relacionados:**")
-                for rel in related:
-                    width = min(int(rel["similarity"]), 100)
-                    st.markdown(
-                        f"""
-                        <div style='display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem'>
-                            <span style='font-size:.8rem;color:#e2e8f0;flex:1'>{rel['name'][:45]}</span>
-                            <span style='font-size:.75rem;color:#94a3c0'>{rel['similarity']}%</span>
-                        </div>
-                        <div class='sim-bar-wrap'><div class='sim-bar-fill' style='width:{width}%'></div></div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
+                for r in related:
+                    bar_w = min(int(r['similarity']), 100)
+                    st.markdown(f"""
+                    <div style='display:flex;align-items:center;gap:0.5rem;margin-bottom:0.35rem'>
+                        <span style='font-size:0.8rem;color:#e2e8f0;flex:1'>{r['name'][:45]}</span>
+                        <span style='font-size:0.75rem;color:#94a3c0'>{r['similarity']}%</span>
+                    </div>
+                    <div class='sim-bar-wrap'><div class='sim-bar-fill' style='width:{bar_w}%'></div></div>
+                    """, unsafe_allow_html=True)
+    
+    st.markdown("<br>")
     if st.button("Limpar repositório", use_container_width=True):
-        st.session_state.repository = []
+        ensure_workspace(st.session_state.current_user)["repository"] = []
+        sync_workspace_state(st.session_state.current_user)
         save_db()
         st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-
-def page_analysis() -> None:
+# ============================================================
+# ADVANCED ANALYSIS
+# ============================================================
+def page_analysis():
     st.markdown("<div class='page-title'>Análise Avançada</div>", unsafe_allow_html=True)
-    st.markdown("<div class='page-sub'>Leitura estatística, textual, comparativa e 3D do repositório privado do perfil atual</div>", unsafe_allow_html=True)
-    docs = st.session_state.repository
+    st.markdown("<div class='page-sub'>Análise estatística, temporal, temática e de conteúdo do seu repositório</div>", unsafe_allow_html=True)
+
+    docs = get_repository_for_user()
     if not docs:
         st.info("Envie documentos no Repositório para liberar análises.")
         return
 
-    df = pd.DataFrame([
-        {
-            "name": d.get("name"), "kind": d.get("kind"), "topic": d.get("topic"), "author": d.get("author"),
-            "year": d.get("year"), "nationality": d.get("nationality"), "size_kb": d.get("size_kb"),
-            "language": d.get("language"), "words": d.get("readability", {}).get("words", 0),
-            "clarity": d.get("readability", {}).get("clarity", 0), "ref_count": d.get("ref_count", 0),
-            "keyword_count": len(d.get("keywords", [])), "sections": len(d.get("sections", {})),
-        }
-        for d in docs
-    ])
+    df = pd.DataFrame([{
+        "name": d.get("name"), "kind": d.get("kind"), "topic": d.get("topic"),
+        "author": d.get("author"), "year": d.get("year"), "nationality": d.get("nationality"),
+        "size_kb": d.get("size_kb"), "language": d.get("language"),
+        "words": d.get("readability",{}).get("words",0),
+        "clarity": d.get("readability",{}).get("clarity",0),
+        "ref_count": d.get("ref_count",0),
+    } for d in docs])
+
     dominant_language = safe_top_value(df["language"], default="N/A")
     dominant_topic = safe_top_value(df["topic"], default="Pesquisa Geral")
+
+    st.markdown("<div class='glass'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>Visão geral do acervo</div>", unsafe_allow_html=True)
+    s1, s2, s3, s4, s5, s6 = st.columns(6)
     total_words = int(pd.to_numeric(df["words"], errors="coerce").fillna(0).sum())
     clarity_series = pd.to_numeric(df["clarity"], errors="coerce").fillna(0)
     avg_clarity = round(float(clarity_series.mean()), 1) if not clarity_series.empty else 0
-    avg_refs = round(float(pd.to_numeric(df["ref_count"], errors="coerce").fillna(0).mean()), 1)
-
-    row = st.columns(6)
-    metrics = [
-        ("Documentos", len(docs), "blue"), ("Palavras", f"{total_words:,}", "cyan"), ("Tema líder", dominant_topic, "purple"),
-        ("Idioma", dominant_language, "green"), ("Clareza média", avg_clarity, "yellow"), ("Refs/doc", avg_refs, "blue"),
-    ]
-    for col, (label, value, color) in zip(row, metrics):
+    for col, label, val, color in [
+        (s1, "Documentos", len(docs), "blue"),
+        (s2, "Temas únicos", int(df["topic"].dropna().astype(str).replace("", pd.NA).nunique()), "cyan"),
+        (s3, "Autores únicos", int(df["author"].dropna().astype(str).replace("", pd.NA).nunique()), "green"),
+        (s4, "Total de palavras", f"{total_words:,}", "purple"),
+        (s5, "Clareza média", f"{avg_clarity}/100", "yellow"),
+        (s6, "Idiomas", int(df["language"].dropna().astype(str).replace("", pd.NA).nunique()), "blue"),
+    ]:
         with col:
-            st.markdown(f"<div class='metric-card {color}'><div class='metric-label'>{label}</div><div class='metric-value' style='font-size:1.28rem'>{value}</div></div>", unsafe_allow_html=True)
+            st.markdown(f"""
+            <div class='metric-card {color}'>
+                <div class='metric-label'>{label}</div>
+                <div class='metric-value' style='font-size:1.4rem'>{val}</div>
+            </div>
+            """, unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    left, right = st.columns([1.15, 0.85])
-    with left:
+    c1, c2 = st.columns(2)
+    with c1:
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Espaço analítico 3D do acervo</div>", unsafe_allow_html=True)
-        scatter_df = df.copy()
-        for col_name in ["year", "words", "ref_count", "clarity"]:
-            scatter_df[col_name] = pd.to_numeric(scatter_df[col_name], errors="coerce")
-        scatter_df = scatter_df.dropna(subset=["year", "words", "ref_count"])
-        if not scatter_df.empty:
-            fig = px.scatter_3d(scatter_df, x="year", y="words", z="ref_count", color="topic", size="clarity", hover_name="name")
-            fig.update_layout(height=560, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#dbeafe"), legend=dict(bgcolor="rgba(0,0,0,0)"))
-            fig.update_scenes(bgcolor="rgba(0,0,0,0)")
+        st.markdown("<div class='section-title'>Distribuição por tema</div>", unsafe_allow_html=True)
+        topic_count = df["topic"].dropna().astype(str)
+        topic_count = topic_count[topic_count.str.strip() != ""].value_counts().reset_index()
+        if not topic_count.empty:
+            topic_count.columns = ["Tema","Quantidade"]
+            fig = px.bar(topic_count, x="Tema", y="Quantidade", text="Quantidade", color="Quantidade", color_continuous_scale="Blues")
+            fig.update_layout(height=320, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3c0"), coloraxis_showscale=False, xaxis=dict(tickangle=-30))
+            fig.update_traces(textposition="outside")
             st.plotly_chart(fig, use_container_width=True)
         else:
-            st.info("Dados insuficientes para o gráfico 3D do acervo.")
+            st.info("Ainda não há temas suficientes para gerar este gráfico.")
         st.markdown("</div>", unsafe_allow_html=True)
-    with right:
+
+    with c2:
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Composição do acervo</div>", unsafe_allow_html=True)
-        kinds = df["kind"].dropna().astype(str)
-        kinds = kinds[kinds.str.strip() != ""].value_counts().reset_index()
-        if not kinds.empty:
-            kinds.columns = ["Tipo", "Quantidade"]
-            fig = px.pie(kinds, names="Tipo", values="Quantidade", hole=0.52)
-            fig.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#dbeafe"), legend=dict(bgcolor="rgba(0,0,0,0)"))
+        st.markdown("<div class='section-title'>Distribuição temporal</div>", unsafe_allow_html=True)
+        year_series = pd.to_numeric(df["year"], errors="coerce").dropna()
+        year_count = year_series.astype(int).value_counts().sort_index().reset_index()
+        if not year_count.empty:
+            year_count.columns = ["Ano","Quantidade"]
+            fig = px.area(year_count, x="Ano", y="Quantidade", color_discrete_sequence=["#60a5fa"])
+            fig.update_layout(height=320, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3c0"))
+            fig.update_traces(fill="tozeroy", line=dict(width=2))
             st.plotly_chart(fig, use_container_width=True)
-        topics = df["topic"].dropna().astype(str)
-        topics = topics[topics.str.strip() != ""].value_counts().head(8).reset_index()
-        if not topics.empty:
-            topics.columns = ["Tema", "Quantidade"]
-            fig = px.bar(topics, x="Tema", y="Quantidade")
-            fig.update_layout(height=240, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#dbeafe"), xaxis=dict(tickangle=-20))
+        else:
+            st.info("Não foi possível detectar anos válidos nos documentos.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Tipos de documento</div>", unsafe_allow_html=True)
+        kind_count = df["kind"].dropna().astype(str)
+        kind_count = kind_count[kind_count.str.strip() != ""].value_counts().reset_index()
+        if not kind_count.empty:
+            kind_count.columns = ["Tipo","Quantidade"]
+            fig = px.pie(kind_count, names="Tipo", values="Quantidade", hole=0.5, color_discrete_sequence=["#60a5fa", "#4ade80", "#c084fc", "#f97316", "#67e8f9"])
+            fig.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3c0"), showlegend=True, legend=dict(bgcolor="rgba(0,0,0,0)"))
             st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Os tipos de documento ainda não puderam ser identificados.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c4:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Autores mais frequentes</div>", unsafe_allow_html=True)
+        auth_count = df[df["author"].fillna("").astype(str).str.strip().ne("") & df["author"].astype(str).ne("Desconhecido")]["author"].value_counts().head(10).reset_index()
+        if not auth_count.empty:
+            auth_count.columns = ["Autor","Contagem"]
+            fig = px.bar(auth_count, x="Contagem", y="Autor", orientation="h", color="Contagem", color_continuous_scale="Greens")
+            fig.update_layout(height=300, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3c0"), coloraxis_showscale=False)
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Autores ainda não foram identificados com segurança.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='glass'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>Mapa 3D de autores por nacionalidade</div>", unsafe_allow_html=True)
-    auth_df = df[df["author"].fillna("").astype(str).str.strip().ne("") & df["author"].astype(str).ne("Desconhecido")].copy()
-    rows = []
-    if not auth_df.empty:
-        grouped = auth_df.groupby(["author", "nationality"]).size().reset_index(name="count")
-        for _, row in grouped.iterrows():
-            coords = NATIONALITY_COORDS.get(row["nationality"])
-            if coords:
-                rows.append({"Autor": row["author"], "País": row["nationality"], "lon": coords["lon"], "lat": coords["lat"], "z": float(row["count"])})
-    if rows:
-        map_df = pd.DataFrame(rows)
-        fig = go.Figure(data=[go.Scatter3d(
-            x=map_df["lon"], y=map_df["lat"], z=map_df["z"], mode="markers+text",
-            marker=dict(size=map_df["z"] * 7 + 6, color=map_df["z"], colorscale="Blues", opacity=0.88, showscale=True),
-            text=map_df["País"], hovertext=map_df["Autor"] + "<br>" + map_df["País"], hoverinfo="text",
-        )])
-        fig.update_layout(height=520, paper_bgcolor="rgba(0,0,0,0)", scene=dict(bgcolor="rgba(0,0,0,0)", xaxis_title="Longitude", yaxis_title="Latitude", zaxis_title="Recorrência"), font=dict(color="#dbeafe"))
+    st.markdown("<div class='section-title'>Palavras-chave mais frequentes no acervo</div>", unsafe_allow_html=True)
+    all_keywords = []
+    for d in docs:
+        all_keywords.extend(d.get("keywords", []))
+    kw_count = Counter([k for k in all_keywords if str(k).strip()]).most_common(30)
+    if kw_count:
+        kw_df = pd.DataFrame(kw_count, columns=["Palavra", "Frequência"])
+        fig = px.bar(kw_df, x="Palavra", y="Frequência", color="Frequência", color_continuous_scale="Blues")
+        fig.update_layout(height=320, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3c0"), coloraxis_showscale=False, xaxis=dict(tickangle=-45))
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.info("Autores insuficientes para compor o mapa 3D.")
+        st.info("Ainda não há palavras-chave suficientes para análise frequencial.")
     st.markdown("</div>", unsafe_allow_html=True)
 
+    if len(docs) > 2:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Clareza vs. Tamanho dos documentos</div>", unsafe_allow_html=True)
+        scatter_df = df.copy()
+        scatter_df["clarity"] = pd.to_numeric(scatter_df["clarity"], errors="coerce")
+        scatter_df["words"] = pd.to_numeric(scatter_df["words"], errors="coerce")
+        scatter_df["size_kb"] = pd.to_numeric(scatter_df["size_kb"], errors="coerce")
+        scatter_df = scatter_df.dropna(subset=["clarity", "words", "size_kb"])
+        if not scatter_df.empty:
+            fig = px.scatter(scatter_df, x="words", y="clarity", color="topic", hover_name="name", size="size_kb", labels={"words":"Palavras","clarity":"Clareza (0-100)","topic":"Tema"}, color_discrete_sequence=["#60a5fa", "#4ade80", "#c084fc", "#f97316", "#67e8f9", "#f87171"])
+            fig.update_layout(height=360, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3c0"), legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color="#94a3c0")))
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Dados insuficientes para o gráfico de dispersão.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
     st.markdown("<div class='glass'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>Análise comparativa entre documentos</div>", unsafe_allow_html=True)
-    selected_docs = docs[:10]
-    if len(selected_docs) >= 2:
-        labels = [d.get("name", "")[:20] for d in selected_docs]
-        matrix = []
-        for a in selected_docs:
-            row_scores = []
-            a_text = " ".join([a.get("summary", ""), " ".join(a.get("keywords", [])), a.get("text", "")[:2000]])
-            for b in selected_docs:
-                b_text = " ".join([b.get("summary", ""), " ".join(b.get("keywords", [])), b.get("text", "")[:2000]])
-                sim = cosine_similarity(a_text, b_text)
-                if a.get("topic") == b.get("topic") and a.get("topic"):
-                    sim += 0.08
-                row_scores.append(round(min(sim, 1.0) * 100, 1))
-            matrix.append(row_scores)
-        heatmap = go.Figure(data=go.Heatmap(z=matrix, x=labels, y=labels, colorscale="Blues", zmin=0, zmax=100))
-        heatmap.update_layout(height=430, paper_bgcolor="rgba(0,0,0,0)", font=dict(color="#dbeafe"), xaxis=dict(tickangle=-30))
-        st.plotly_chart(heatmap, use_container_width=True)
+    st.markdown("<div class='section-title'>Mapa de origem dos documentos</div>", unsafe_allow_html=True)
+    nat_count = df["nationality"].dropna().astype(str)
+    nat_count = nat_count[nat_count.str.strip() != ""].value_counts().reset_index()
+    if not nat_count.empty:
+        nat_count.columns = ["Nacionalidade", "Quantidade"]
+        map_rows = []
+        for _, row in nat_count.iterrows():
+            coords = NATIONALITY_COORDS.get(row["Nacionalidade"])
+            if coords:
+                map_rows.append({"country": row["Nacionalidade"], "count": row["Quantidade"], "lat": coords["lat"], "lon": coords["lon"]})
+        if map_rows:
+            map_df = pd.DataFrame(map_rows)
+            fig = go.Figure(data=[go.Scattergeo(lon=map_df["lon"], lat=map_df["lat"], text=map_df["country"] + ": " + map_df["count"].astype(str), mode="markers", marker=dict(size=map_df["count"]*8+6, opacity=0.85, color=map_df["count"], colorscale="Blues", showscale=True, colorbar=dict(title="Docs")))])
+            fig.update_layout(height=440, paper_bgcolor="rgba(0,0,0,0)", geo=dict(bgcolor="rgba(0,0,0,0)", showland=True, landcolor="rgba(255,255,255,0.06)", showcountries=True, countrycolor="rgba(255,255,255,0.14)", showocean=True, oceancolor="rgba(96,165,250,0.04)", projection_type="natural earth"))
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("As nacionalidades detectadas ainda não têm coordenadas mapeadas no sistema.")
     else:
-        st.info("Adicione pelo menos dois documentos para a comparação matricial.")
+        st.info("Não há nacionalidades detectadas para gerar o mapa.")
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("<div class='glass'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>Leitura textual e comparativa do repositório</div>", unsafe_allow_html=True)
-    topics = df["topic"].dropna().astype(str)
-    topics = topics[topics.str.strip() != ""]
-    dominant_topics = ", ".join(topics.value_counts().head(3).index.tolist()) if not topics.empty else "não identificados"
-    authors = df["author"].dropna().astype(str)
-    authors = authors[(authors.str.strip() != "") & (authors != "Desconhecido")]
-    dominant_authors = ", ".join(authors.value_counts().head(3).index.tolist()) if not authors.empty else "não identificados"
+    st.markdown("<div class='section-title'>Resumo analítico automático</div>", unsafe_allow_html=True)
+    topic_counts = df["topic"].dropna().astype(str)
+    topic_counts = topic_counts[topic_counts.str.strip() != ""]
+    dominant_topics = ", ".join(topic_counts.value_counts().head(3).index.tolist()) if not topic_counts.empty else "não identificados"
+
+    author_counts = df["author"].dropna().astype(str)
+    author_counts = author_counts[(author_counts.str.strip() != "") & (author_counts != "Desconhecido")]
+    dominant_authors = ", ".join(author_counts.value_counts().head(3).index.tolist()) if not author_counts.empty else "não identificados"
+
     year_series = pd.to_numeric(df["year"], errors="coerce").dropna()
     years_range = f"{int(year_series.min())} a {int(year_series.max())}" if not year_series.empty else "não identificado"
-    st.markdown(f"<div class='insight-box'>O perfil atual possui <b>{len(docs)} documentos</b>, com predominância dos temas <b>{dominant_topics}</b>. O intervalo temporal observado vai de <b>{years_range}</b> e o idioma dominante é <b>{dominant_language}</b>.</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='insight-box'>Em termos de autoria, aparecem com mais recorrência <b>{dominant_authors}</b>. A clareza média do conjunto está em <b>{avg_clarity}/100</b>, o que ajuda a identificar textos mais densos ou mais acessíveis.</div>", unsafe_allow_html=True)
-    selected_name = st.selectbox("Inspecionar documento", options=[d.get("name") for d in docs])
-    target = next((d for d in docs if d.get("name") == selected_name), None)
-    if target:
-        lft, rgt = st.columns([1.2, 0.8])
-        with lft:
-            st.markdown(f"**Resumo analítico:** {target.get('summary', '')}")
-            for name, sec in target.get("sections", {}).items():
-                st.markdown(f"**{name}:** {sec[:260]}")
-        with rgt:
-            st.markdown(f"**Tema:** {target.get('topic','')}  \n**Autor:** {target.get('author','')}  \n**Idioma:** {target.get('language','')}  \n**Referências:** {target.get('ref_count',0)}")
-            for note in target.get("modality_notes", [])[:4]:
-                st.markdown(f"<span class='chain-badge'>{note}</span>", unsafe_allow_html=True)
+    avg_words = int(pd.to_numeric(df["words"], errors="coerce").fillna(0).mean()) if not df.empty else 0
+
+    st.markdown(f"""
+    O repositório contém **{len(docs)} documentos** com um total estimado de **{total_words:,} palavras**.
+    Os temas predominantes são **{dominant_topics}**, com destaque principal para **{dominant_topic}**.
+    Os autores mais recorrentes são **{dominant_authors}**. O intervalo temporal identificado vai de **{years_range}**.
+    A média de palavras por documento é de **{avg_words:,}**, com índice médio de clareza de **{avg_clarity}/100**.
+    O sistema identificou **{dominant_language}** como idioma dominante.
+    """)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def page_connections() -> None:
+# ============================================================
+# CONNECTIONS PAGE — 3D NETWORK
+# ============================================================
+def page_connections():
     st.markdown("<div class='page-title'>Conexões entre Pesquisas</div>", unsafe_allow_html=True)
-    st.markdown("<div class='page-sub'>Cadeia 3D entre seu perfil, pesquisadores conectados, temas em comum, documentos do repositório e artigos externos</div>", unsafe_allow_html=True)
-    docs = st.session_state.repository
-    research = current_user().get("research", "")
-    connected = get_connected_users(st.session_state.current_user, 10)
+    st.markdown("<div class='page-sub'>Rede 3D que une sua pesquisa, seus documentos, pesquisadores compatíveis e temas realmente compartilhados entre repositórios</div>", unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        min_strength = st.slider("Limite mínimo de força", 0.05, 0.55, 0.12, 0.01)
-    with c2:
-        include_external = st.checkbox("Incluir artigos externos", value=True)
-    with c3:
-        n_external = st.slider("Artigos externos", 4, 18, 8)
+    user = current_user()
+    docs = get_repository_for_user()
+    research = user.get("research", "")
+    connections = get_connected_users(st.session_state.current_user, limit=10)
+
+    col_ctrl1, col_ctrl2, col_ctrl3 = st.columns(3)
+    with col_ctrl1:
+        min_sim = st.slider("Limite mínimo de similaridade", 0.01, 0.30, 0.06, 0.01,
+                            help="Conexões com similaridade abaixo deste valor são ocultadas")
+    with col_ctrl2:
+        include_external = st.checkbox("Incluir artigos externos correlatos", value=True)
+    with col_ctrl3:
+        n_external = st.slider("Número de artigos externos", 3, 15, 8)
 
     external_articles = []
     if include_external and research:
@@ -1859,262 +2341,268 @@ def page_connections() -> None:
         external_articles = st.session_state.get(cache_key)
         if external_articles is None:
             with st.spinner("Buscando artigos correlatos..."):
-                query = " ".join(extract_keywords_tfidf(research, 6)[:5]) or research
+                terms = extract_keywords_tfidf(research, 6)
+                query = " ".join(terms[:5]) if terms else research
                 external_articles = search_semantic_scholar(query, limit=n_external)
                 if len(external_articles) < 4:
                     external_articles += search_crossref(query, limit=4)
             st.session_state[cache_key] = external_articles
 
-    nodes, edges = build_chain_network(docs, external_articles, research, connected)
-    filtered_edges = [e for e in edges if e.get("weight", 0) >= min_strength]
-    if len(nodes) < 2:
-        st.info("Adicione documentos e configure sua linha de pesquisa no Perfil para gerar a cadeia de conexões.")
+    total_nodes = len(docs) + len(external_articles) + (1 if research else 0)
+    if total_nodes < 2 and not connections:
+        st.info("Adicione documentos no Repositório para que o sistema encontre usuários e cadeias temáticas em comum.")
         return
 
-    m1, m2, m3, m4 = st.columns(4)
-    with m1:
-        st.markdown(f"<div class='metric-card blue'><div class='metric-label'>Nós</div><div class='metric-value'>{len(nodes)}</div></div>", unsafe_allow_html=True)
-    with m2:
-        st.markdown(f"<div class='metric-card cyan'><div class='metric-label'>Conexões ativas</div><div class='metric-value'>{len(filtered_edges)}</div></div>", unsafe_allow_html=True)
-    with m3:
-        researchers = sum(1 for node in nodes if node.get("type") in {"researcher", "researcher_peer"})
-        st.markdown(f"<div class='metric-card green'><div class='metric-label'>Pesquisadores</div><div class='metric-value'>{researchers}</div></div>", unsafe_allow_html=True)
-    with m4:
-        topics = sum(1 for node in nodes if node.get("type") == "topic")
-        st.markdown(f"<div class='metric-card purple'><div class='metric-label'>Temas-pivô</div><div class='metric-value'>{topics}</div></div>", unsafe_allow_html=True)
+    nodes, edges = build_research_network(docs, external_articles, research)
+    filtered_edges = [e for e in edges if e["weight"] >= min_sim]
 
     st.markdown("<div class='glass'>", unsafe_allow_html=True)
-    st.markdown("".join([
-        "<span class='chain-badge'>Perfil atual</span>",
-        "<span class='chain-badge'>Pesquisadores conectados</span>",
-        "<span class='chain-badge'>Temas em comum</span>",
-        "<span class='chain-badge'>Documentos do seu perfil</span>",
-        "<span class='chain-badge'>Artigos externos correlatos</span>",
-    ]), unsafe_allow_html=True)
-    fig = render_3d_network(nodes, filtered_edges)
-    if fig is not None:
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("Não há conexões suficientes para exibir a rede. Reduza o limite mínimo de força.")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.markdown(f"""<div class='metric-card blue'>
+            <div class='metric-label'>Nós totais</div>
+            <div class='metric-value'>{len(nodes)}</div>
+        </div>""", unsafe_allow_html=True)
+    with c2:
+        st.markdown(f"""<div class='metric-card green'>
+            <div class='metric-label'>Conexões ativas</div>
+            <div class='metric-value'>{len(filtered_edges)}</div>
+        </div>""", unsafe_allow_html=True)
+    with c3:
+        st.markdown(f"""<div class='metric-card cyan'>
+            <div class='metric-label'>Pesquisadores compatíveis</div>
+            <div class='metric-value'>{len(connections)}</div>
+        </div>""", unsafe_allow_html=True)
+    with c4:
+        shared_topics = len({topic for conn in connections for topic in conn.get('shared_topics', [])})
+        st.markdown(f"""<div class='metric-card purple'>
+            <div class='metric-label'>Temas em comum</div>
+            <div class='metric-value'>{shared_topics}</div>
+        </div>""", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("<div class='glass'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>Pesquisadores e temas em comum</div>", unsafe_allow_html=True)
-    if connected:
-        for conn in connected:
-            badges = "".join([f"<span class='chain-badge'>{term}</span>" for term in conn.get("shared_terms", [])[:6]]) or "<span class='chain-badge'>tema aproximado</span>"
-            st.markdown(
-                f"""
-                <div class='doc-mini'>
-                    <b>{conn['name']}</b><br>
-                    <span class='small-muted'>{conn.get('topic','Pesquisa Geral')} · similaridade {conn['similarity']}%</span>
-                    <div style='margin-top:.45rem;color:#dbeafe'>{(conn.get('research') or 'Sem linha de pesquisa cadastrada.')[:180]}</div>
-                    <div style='margin-top:.45rem'>{badges}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        st.info("Ainda não há pesquisadores conectados com proximidade temática suficiente.")
-    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("""
+    <div class='glass-sm' style='display:flex;gap:1.2rem;flex-wrap:wrap;margin-bottom:1rem;align-items:center'>
+        <span style='font-size:0.82rem;color:#94a3c0'>Legenda:</span>
+        <span style='font-size:0.82rem'><span style='color:#facc15'>●</span> Sua pesquisa</span>
+        <span style='font-size:0.82rem'><span style='color:#60a5fa'>●</span> Seus documentos</span>
+        <span style='font-size:0.82rem'><span style='color:#4ade80'>●</span> Artigos externos</span>
+        <span style='font-size:0.82rem'><span style='color:#22d3ee'>●</span> Pesquisadores conectados</span>
+        <span style='font-size:0.82rem'><span style='color:#a78bfa'>●</span> Temas compartilhados</span>
+        <span style='font-size:0.82rem'><span style='color:#f472b6'>●</span> Documentos em comum</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    fig_3d = render_3d_network(nodes, filtered_edges)
+    if fig_3d:
+        st.plotly_chart(fig_3d, use_container_width=True)
+
+    chain_nodes, chain_edges = build_connection_chain_network(st.session_state.current_user, limit_users=10)
+    if chain_nodes and chain_edges:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Cadeia 3D de pesquisadores e temas em comum</div>", unsafe_allow_html=True)
+        st.markdown("<div class='small-muted' style='margin-bottom:0.7rem'>Aqui aparecem apenas usuários cuja afinidade foi encontrada dentro dos próprios repositórios enviados para a plataforma.</div>", unsafe_allow_html=True)
+        st.plotly_chart(render_3d_network(chain_nodes, chain_edges), use_container_width=True)
+        chain_rows = []
+        for conn in connections:
+            chain_rows.append({
+                "Pesquisador": conn["name"],
+                "Compatibilidade": f"{conn['similarity']}%",
+                "Temas em comum": ", ".join(conn.get("shared_topics", [])[:3]) or "Sem tema dominante",
+                "Palavras em comum": ", ".join(conn.get("shared_terms", [])[:4]) or "—",
+            })
+        if chain_rows:
+            st.dataframe(pd.DataFrame(chain_rows), use_container_width=True, hide_index=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
     if filtered_edges:
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Cadeias mais fortes</div>", unsafe_allow_html=True)
-        rows = []
-        for edge in sorted(filtered_edges, key=lambda x: -x["weight"])[:24]:
+        st.markdown("<div class='section-title'>Conexões mais fortes</div>", unsafe_allow_html=True)
+        edge_data = []
+        for edge in sorted(filtered_edges, key=lambda x: -x["weight"])[:20]:
             i, j = edge["source"], edge["target"]
-            rows.append({
-                "Origem": nodes[i]["label"],
-                "Destino": nodes[j]["label"],
-                "Força": f"{edge['weight']*100:.1f}%",
-                "Relação": edge.get("relation", "correlação"),
-                "Tema": nodes[i].get("topic") or nodes[j].get("topic") or "geral",
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            if i < len(nodes) and j < len(nodes):
+                edge_data.append({
+                    "Documento A": nodes[i]["label"],
+                    "Documento B": nodes[j]["label"],
+                    "Similaridade": f"{edge['weight']*100:.1f}%",
+                    "Mesmo tema": "Sim" if edge["same_topic"] else "Não",
+                    "Tema": nodes[i]["topic"],
+                })
+        if edge_data:
+            st.dataframe(pd.DataFrame(edge_data), use_container_width=True, hide_index=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-
-def page_chat() -> None:
-    st.markdown("<div class='page-title'>Chat</div>", unsafe_allow_html=True)
-    st.markdown("<div class='page-sub'>Mensagens entre conexões, salas por tema e histórico salvo com proteção criptografada no banco local</div>", unsafe_allow_html=True)
-    current_email = st.session_state.current_user
-    connections = get_connected_users(current_email, 14)
-    rooms = get_available_rooms(current_email)
-    st.markdown("<span class='privacy-pill'>Chat entre conexões</span><span class='privacy-pill'>Mensagens protegidas em disco</span>", unsafe_allow_html=True)
-
-    tab_dm, tab_rooms = st.tabs(["Diretas", "Salas por tema"])
-    with tab_dm:
+    if connections:
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
-        if not connections:
-            st.info("Ainda não há conexões com proximidade temática suficiente para abrir mensagens diretas.")
-        else:
-            mapping = {f"{c['name']} · {c['topic']} · {c['similarity']}%": c["email"] for c in connections}
-            label = st.selectbox("Escolha uma conexão", options=list(mapping.keys()))
-            peer_email = mapping[label]
-            st.markdown("<div class='notice-box'>Somente você e a conexão selecionada visualizam esta conversa direta.</div>", unsafe_allow_html=True)
-            messages = get_dm_messages(peer_email)
-            st.markdown("<div class='chat-shell'>", unsafe_allow_html=True)
-            for msg in messages:
-                bubble_class = "chat-bubble me" if msg.get("sender_email") == current_email else "chat-bubble"
-                st.markdown(
-                    f"""
-                    <div class='{bubble_class}'>
-                        <div class='chat-meta'>
-                            <span><b>{msg.get('sender_name','Usuário')}</b> · {msg.get('sender_topic','Pesquisa Geral')}</span>
-                            <span>{msg.get('created_at','')}</span>
-                        </div>
-                        <div class='chat-text'>{msg.get('text','')}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            st.markdown("</div>", unsafe_allow_html=True)
-            dm_text = st.text_area("Mensagem direta", height=120, key="dm_text")
-            if st.button("Enviar mensagem direta", type="primary", use_container_width=True):
-                if post_chat_message("dm", peer_email, dm_text):
-                    st.rerun()
-                else:
-                    st.warning("Escreva uma mensagem antes de enviar.")
+        st.markdown("<div class='section-title'>Usuários conectados por acervo em comum</div>", unsafe_allow_html=True)
+        for conn in connections[:8]:
+            topics = ", ".join(conn.get("shared_topics", [])[:3]) or "Sem tema dominante"
+            docs_chain = conn.get("shared_docs", [])[:2]
+            docs_html = "".join([
+                f"<div class='small-muted' style='margin-top:0.35rem'>{pair['a'][:42]} ↔ {pair['b'][:42]} · {pair['similarity']*100:.1f}%</div>"
+                for pair in docs_chain
+            ])
+            st.markdown(f"""
+            <div class='doc-card'>
+                <b>{conn['name']}</b><br>
+                <span class='small-muted'>{conn.get('topic','Pesquisa Geral')} · compatibilidade {conn['similarity']}%</span>
+                <div style='margin-top:0.45rem;color:#cbd5e1;font-size:0.82rem'>{(conn.get('research') or 'Sem linha de pesquisa cadastrada.')[:170]}</div>
+                <div style='margin-top:0.45rem'><span class='tag'>{topics}</span></div>
+                {docs_html}
+            </div>
+            """, unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
-    with tab_rooms:
-        left, right = st.columns([0.9, 1.1])
-        with left:
-            st.markdown("<div class='glass'>", unsafe_allow_html=True)
-            st.markdown("<div class='section-title'>Suas conexões acadêmicas</div>", unsafe_allow_html=True)
-            if connections:
-                for conn in connections:
-                    shared = ", ".join(conn.get("shared_terms", [])[:4]) or conn.get("topic", "Pesquisa Geral")
-                    st.markdown(
-                        f"""
-                        <div class='doc-mini'>
-                            <b>{conn['name']}</b><br>
-                            <span class='small-muted'>{conn.get('topic','Pesquisa Geral')} · similaridade {conn['similarity']}%</span>
-                            <div style='margin-top:.4rem;color:#dbeafe;font-size:.81rem'>{(conn.get('research') or 'Sem linha de pesquisa cadastrada.')[:170]}</div>
-                            <div style='margin-top:.45rem'><span class='tag'>{shared}</span></div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-            else:
-                st.info("Ainda não há conexões temáticas suficientes. Continue alimentando seu repositório e seu perfil.")
-            st.markdown("</div>", unsafe_allow_html=True)
-        with right:
-            st.markdown("<div class='glass'>", unsafe_allow_html=True)
-            st.markdown("<div class='section-title'>Chat temático</div>", unsafe_allow_html=True)
-            room = st.selectbox("Sala", options=rooms, index=0)
-            only_connections = st.checkbox("Mostrar somente mensagens das minhas conexões", value=True)
-            messages = get_room_messages(room, only_connections=only_connections)
-            if not messages:
-                st.markdown("<div class='notice-box'>Ainda não há mensagens nesta sala. Você pode iniciar compartilhando um resumo, um artigo ou uma dúvida.</div>", unsafe_allow_html=True)
-            else:
-                st.markdown("<div class='chat-shell'>", unsafe_allow_html=True)
-                for msg in messages:
-                    bubble_class = "chat-bubble me" if msg.get("sender_email") == current_email else "chat-bubble"
-                    st.markdown(
-                        f"""
-                        <div class='{bubble_class}'>
-                            <div class='chat-meta'>
-                                <span><b>{msg.get('sender_name','Usuário')}</b> · {msg.get('sender_topic','Pesquisa Geral')}</span>
-                                <span>{msg.get('created_at','')}</span>
-                            </div>
-                            <div class='chat-text'>{msg.get('text','')}</div>
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                st.markdown("</div>", unsafe_allow_html=True)
-            room_text = st.text_area("Enviar mensagem para a sala", height=120, key="room_text")
-            if st.button("Publicar na sala", type="primary", use_container_width=True):
-                if post_chat_message("room", room, room_text):
-                    st.rerun()
-                else:
-                    st.warning("Escreva uma mensagem antes de publicar.")
-            st.markdown("</div>", unsafe_allow_html=True)
+# ============================================================
+# CHAT
+# ============================================================
+def page_chat():
+    st.markdown("<div class='page-title'>Chat</div>", unsafe_allow_html=True)
+    st.markdown("<div class='page-sub'>Converse apenas com usuários conectados por afinidade real entre repositórios e mantenha cada conversa dentro do seu próprio contexto de pesquisa</div>", unsafe_allow_html=True)
 
+    current_email = st.session_state.current_user
+    connections = get_connected_users(current_email, limit=12)
+    rooms = get_available_rooms(current_email)
+    room_labels = [room["label"] for room in rooms]
 
-def page_profile() -> None:
-    user = current_user()
-    st.markdown("<div class='page-title'>Perfil</div>", unsafe_allow_html=True)
-    st.markdown("<div class='page-sub'>Seu perfil é analisado separadamente, com isolamento por conta e proteção local dos dados</div>", unsafe_allow_html=True)
-    left, right = st.columns(2)
+    left, right = st.columns([0.95, 1.05])
+
     with left:
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Dados do perfil</div>", unsafe_allow_html=True)
-        st.markdown("<span class='privacy-pill'>Workspace separado</span><span class='privacy-pill'>Criptografia local</span>", unsafe_allow_html=True)
-        name = st.text_input("Nome", value=user.get("name", ""))
-        research = st.text_area("Área de pesquisa", value=user.get("research", ""), height=110)
-        options = ["Conexões", "Privado", "Público resumido"]
-        current_vis = user.get("profile_visibility", "Conexões")
-        visibility = st.selectbox("Visibilidade do perfil", options, index=options.index(current_vis) if current_vis in options else 0)
-        if st.button("Salvar perfil", type="primary", use_container_width=True):
-            st.session_state.users[st.session_state.current_user].update({
-                "name": name,
-                "research": research,
-                "profile_visibility": visibility,
-                "privacy_mode": "Criptografado",
-            })
-            save_db()
-            for key in list(st.session_state.keys()):
-                if key.startswith("dashboard_articles_") or key.startswith("conn_articles_"):
-                    del st.session_state[key]
-            st.success("Perfil atualizado com privacidade preservada.")
-            st.rerun()
-        st.markdown("</div>", unsafe_allow_html=True)
-
-        st.markdown("<div class='glass'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Proteção de dados</div>", unsafe_allow_html=True)
-        st.markdown(
-            f"""
-            <div class='insight-box'>
-                Conta atual: <b>{st.session_state.current_user}</b><br>
-                Modo de privacidade: <b>{user.get('privacy_mode','Criptografado')}</b><br>
-                Escopo do repositório: <b>somente este perfil</b><br>
-                Chat: <b>diretas entre conexões + salas por tema</b>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+        st.markdown("<div class='section-title'>Conexões por repositório em comum</div>", unsafe_allow_html=True)
+        if connections:
+            for conn in connections:
+                topics = ", ".join(conn.get("shared_topics", [])[:3]) or "Tema cruzado não dominante"
+                shared_docs = conn.get("shared_docs", [])[:2]
+                docs_html = "".join([
+                    f"<div class='small-muted' style='margin-top:0.28rem'>{pair['a'][:36]} ↔ {pair['b'][:36]}</div>"
+                    for pair in shared_docs
+                ])
+                st.markdown(f"""
+                <div class='doc-card'>
+                    <b>{conn['name']}</b><br>
+                    <span class='small-muted'>{conn.get('topic','Pesquisa Geral')} · compatibilidade {conn['similarity']}%</span>
+                    <div style='margin-top:0.45rem;color:#cbd5e1;font-size:0.81rem'>{(conn.get('research') or 'Sem linha de pesquisa cadastrada.')[:170]}</div>
+                    <div style='margin-top:0.45rem'><span class='tag'>{topics}</span></div>
+                    {docs_html}
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("Quando seu repositório tiver temas em comum com outros usuários, os chats diretos aparecerão aqui automaticamente.")
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right:
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Conversas protegidas</div>", unsafe_allow_html=True)
+        selected_label = st.selectbox("Sala", options=room_labels, index=0)
+        room_meta = next(room for room in rooms if room["label"] == selected_label)
+        only_connections = st.checkbox("Mostrar apenas mensagens das minhas conexões", value=True)
+        messages = get_room_messages(room_meta, only_connections=only_connections)
+
+        if room_meta.get("kind") == "private":
+            st.markdown("<div class='notice-box'>Este espaço é privado e serve para anotações rápidas do seu próprio perfil.</div>", unsafe_allow_html=True)
+        elif room_meta.get("shared_topics"):
+            tags = "".join([f"<span class='tag'>{t}</span>" for t in room_meta.get("shared_topics", [])[:3]])
+            st.markdown(f"<div style='margin-bottom:0.75rem'>{tags}</div>", unsafe_allow_html=True)
+
+        if not messages:
+            st.markdown("<div class='notice-box'>Ainda não há mensagens nesta conversa. Você pode iniciar compartilhando uma referência, dúvida ou palavra-chave.</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='chat-shell'>", unsafe_allow_html=True)
+            for msg in messages:
+                bubble_class = "chat-bubble me" if msg.get("sender_email") == current_email else "chat-bubble"
+                st.markdown(f"""
+                <div class='{bubble_class}'>
+                    <div class='chat-meta'>
+                        <span><b>{msg.get('sender_name','Usuário')}</b> · {msg.get('sender_topic','Pesquisa Geral')}</span>
+                        <span>{msg.get('created_at','')}</span>
+                    </div>
+                    <div class='chat-text'>{msg.get('text','')}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        draft = st.text_area("Enviar mensagem", height=120, placeholder="Compartilhe uma referência, uma pergunta ou um resumo curto...")
+        if st.button("Publicar mensagem", type="primary", use_container_width=True):
+            if post_chat_message(room_meta, draft):
+                st.success("Mensagem enviada.")
+                st.rerun()
+            else:
+                st.warning("Escreva uma mensagem antes de publicar.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+# ============================================================
+# PROFILE
+# ============================================================
+def page_profile():
+    user = current_user()
+    st.markdown("<div class='page-title'>Perfil</div>", unsafe_allow_html=True)
+    st.markdown("<div class='page-sub'>Configure sua área de pesquisa e veja suas preferências aprendidas</div>", unsafe_allow_html=True)
+    
+    col_l, col_r = st.columns(2)
+    
+    with col_l:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Dados do perfil</div>", unsafe_allow_html=True)
+        new_name = st.text_input("Nome", value=user.get("name",""))
+        new_research = st.text_area("Área de pesquisa", value=user.get("research",""),
+                                    height=100, placeholder="Descreva sua linha de pesquisa principal...")
+        
+        if st.button("Salvar perfil", use_container_width=True, type="primary"):
+            st.session_state.users[st.session_state.current_user].update({
+                "name": new_name,
+                "research": new_research,
+            })
+            ensure_workspace(st.session_state.current_user)
+            save_db()
+            # Clear cached articles when research changes
+            for key in list(st.session_state.keys()):
+                if key.startswith("dashboard_articles_") or key.startswith("conn_articles_"):
+                    del st.session_state[key]
+            st.success("Perfil atualizado.")
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+    
+    with col_r:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
         st.markdown("<div class='section-title'>Preferências aprendidas</div>", unsafe_allow_html=True)
         interests = recommend_terms(st.session_state.current_user, 25)
         if interests:
-            st.markdown("".join([f"<span class='tag'>{term}</span>" for term in interests]), unsafe_allow_html=True)
+            st.markdown("".join([f"<span class='tag'>{t}</span>" for t in interests]), unsafe_allow_html=True)
         else:
             st.info("Faça buscas e envie documentos para construir seu perfil.")
+        
         if interests and st.button("Limpar preferências", use_container_width=True):
-            st.session_state.user_interest = {}
+            st.session_state.user_interest[st.session_state.current_user] = {}
             save_db()
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
-
+        
         st.markdown("<div class='glass'>", unsafe_allow_html=True)
-        st.markdown("<div class='section-title'>Histórico de buscas do perfil</div>", unsafe_allow_html=True)
-        history = st.session_state.search_history
+        st.markdown("<div class='section-title'>Histórico de buscas</div>", unsafe_allow_html=True)
+        history = get_search_history_for_user()
         if history:
             recent = history[-10:][::-1]
-            hist_df = pd.DataFrame(recent)[["query", "time", "topic", "intent"]]
-            hist_df.columns = ["Consulta", "Data", "Tema", "Intenção"]
+            hist_df = pd.DataFrame(recent)[["query","time","topic","intent"]]
+            hist_df.columns = ["Consulta","Data","Tema","Intenção"]
             st.dataframe(hist_df, use_container_width=True, hide_index=True)
         else:
-            st.info("Nenhuma busca registrada neste perfil.")
+            st.info("Nenhuma busca registrada.")
         st.markdown("</div>", unsafe_allow_html=True)
-
 
 # ============================================================
 # MAIN
 # ============================================================
-def main() -> None:
-    init_state()
-    inject_css()
+def main():
     if not st.session_state.logged_in:
+        sync_workspace_state(None)
         page_auth()
         return
+
+    sync_workspace_state(st.session_state.current_user)
     render_navbar()
+    
     page = st.session_state.page
     if page == "Dashboard":
         page_dashboard()
@@ -2130,7 +2618,6 @@ def main() -> None:
         page_chat()
     elif page == "Perfil":
         page_profile()
-
 
 if __name__ == "__main__":
     main()
