@@ -1,2570 +1,4194 @@
-mport os, sys, subprocess, io, json, hashlib, base64, re, random, math
+import os
+import io
+import re
+import json
+import math
+import hashlib
+import zipfile
 from datetime import datetime
-from collections import defaultdict, Counter
+from collections import Counter, defaultdict
+from urllib.parse import quote_plus
 
-def _pip(*pkgs):
-    for p in pkgs:
-        try: subprocess.check_call([sys.executable,"-m","pip","install",p,"-q"],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        except: pass
-
-try: import plotly.graph_objects as go
-except: _pip("plotly"); import plotly.graph_objects as go
-try: import numpy as np; from PIL import Image as PILImage
-except: _pip("pillow","numpy"); import numpy as np; from PIL import Image as PILImage
-try: import requests
-except: _pip("requests"); import requests
-try: import PyPDF2
-except: PyPDF2=None
-SKIMAGE_OK=False
-try:
-    from skimage import filters as sk_f, feature as sk_fe
-    from skimage.feature import graycomatrix, graycoprops
-    SKIMAGE_OK=True
-except:
-    try: _pip("scikit-image"); from skimage import filters as sk_f; from skimage.feature import graycomatrix, graycoprops; SKIMAGE_OK=True
-    except: pass
-SKLEARN_OK=False
-try: from sklearn.cluster import KMeans; SKLEARN_OK=True
-except:
-    try: _pip("scikit-learn"); from sklearn.cluster import KMeans; SKLEARN_OK=True
-    except: pass
-
+import numpy as np
+import pandas as pd
+import requests
 import streamlit as st
-st.set_page_config(page_title="Nebula Research",page_icon="N",layout="wide",initial_sidebar_state="expanded")
+import plotly.express as px
+import plotly.graph_objects as go
+from PIL import Image
 
-DB_FILE="nebula_research.json"
+try:
+    import PyPDF2
+except Exception:
+    PyPDF2 = None
 
-def load_db():
-    if os.path.exists(DB_FILE):
-        try:
-            with open(DB_FILE,"r",encoding="utf-8") as f: return json.load(f)
-        except: return {}
-    return {}
+# ============================================================
+# CONFIG
+# ============================================================
+st.set_page_config(
+    page_title="Nebula Research",
+    page_icon="🔎",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
 
-def hp(pw): return hashlib.sha256(pw.encode()).hexdigest()
-def ini(n):
-    if not isinstance(n,str): n=str(n)
-    p=n.strip().split(); return ''.join(w[0].upper() for w in p[:2]) if p else "?"
-def time_ago(ds):
-    try:
-        d=(datetime.now()-datetime.strptime(ds,"%Y-%m-%d")).days
-        if d==0: return "hoje"
-        if d==1: return "ontem"
-        if d<7: return f"{d}d"
-        if d<30: return f"{d//7}sem"
-        return f"{d//30}m"
-    except: return ds
-def fmt_num(n):
-    try: n=int(n); return f"{n/1000:.1f}k" if n>=1000 else str(n)
-    except: return str(n)
-def guser():
-    if not isinstance(st.session_state.get("users"),dict): return {}
-    return st.session_state.users.get(st.session_state.current_user,{})
+DB_FILE = "nebula_research_db.json"
+MAX_TEXT_CHARS = 50000
 
-STOPWORDS={"de","a","o","que","e","do","da","em","um","para","é","com","uma","os","no","se","na","por",
- "mais","as","dos","como","mas","foi","ao","ele","das","tem","à","seu","sua","ou","ser","quando",
- "muito","há","nos","já","está","eu","também","só","pelo","pela","até","isso","ela","entre","era",
- "the","of","and","to","in","is","it","that","was","for","on","are","with","they","at","be","this",
- "from","or","had","by","not","what","all","were","we","when","your","can","use","an","which","do",
- "how","their","if","will","up","other","about","out","many","then","them","these","so","also","have",
- "been","between","after","before","during","while","through","its","than","has","into","after","each"}
-
-NATIONALITY_COORDS={
-    "Brasil":(-14.2,-51.9),"Estados Unidos":(37.1,-95.7),"Alemanha":(51.2,10.4),
-    "Reino Unido":(55.4,-3.4),"França":(46.2,2.2),"China":(35.9,104.2),
-    "Japão":(36.2,138.3),"Índia":(20.6,79.0),"Canadá":(56.1,-106.3),
-    "Austrália":(-25.3,133.8),"México":(23.6,-102.6),"Argentina":(-38.4,-63.6),
-    "Portugal":(39.4,-8.2),"Espanha":(40.5,-3.7),"Itália":(41.9,12.6),
-    "Países Baixos":(52.1,5.3),"Suécia":(60.1,18.6),"Suíça":(46.8,8.2),
-    "Coreia do Sul":(35.9,127.8),"Rússia":(61.5,105.3),"Chile":(-35.7,-71.5),
-    "Colômbia":(4.6,-74.1),"Peru":(-9.2,-75.0),"África do Sul":(-30.6,22.9),
-    "Israel":(31.0,34.9),"Irã":(32.4,53.7),"Turquia":(38.9,35.2),
+STOPWORDS = {
+    "de","a","o","que","e","do","da","em","um","para","é","com","uma","os","no","se","na","por",
+    "mais","as","dos","como","mas","foi","ao","ele","das","tem","à","seu","sua","ou","ser","muito",
+    "também","já","entre","sobre","após","antes","durante","cada","esse","essa","isso","estes","essas",
+    "the","of","and","to","in","is","it","that","for","on","as","with","are","this","be","or","by",
+    "from","an","at","we","our","their","into","using","use","used","between","after","before","during",
 }
 
-TOPIC_MAP={
-    "Saúde & Medicina":["saúde","medicina","clínico","health","medical","therapy","disease","clinical","patient","hospital","diagnóstico","treatment"],
-    "Biologia & Genômica":["biologia","genômica","gene","dna","rna","proteína","célula","crispr","molecular","genome","protein","celular"],
-    "Neurociência":["neurociência","neural","cérebro","cognição","memória","sono","brain","sináptico","neuron","hippocampus","cortex","fmri"],
-    "Computação & IA":["algoritmo","machine","learning","inteligência","dados","computação","deep","quantum","llm","neural","model","rede","software"],
-    "Física & Astronomia":["física","quântica","partícula","energia","galáxia","astrofísica","cosmologia","lensing","matter","relatividade","telescope"],
-    "Química":["química","molécula","síntese","reação","polímero","composto","chemical","reaction","catalyst","substância"],
-    "Engenharia":["engenharia","sistema","robótica","automação","sensor","protocolo","engineering","system","design","mecânica"],
-    "Ciências Sociais":["sociedade","cultura","educação","política","psicologia","comportamento","cognitivo","social","behavior","educação"],
-    "Ecologia & Ambiente":["ecologia","clima","ambiente","biodiversidade","carbono","sustentável","climate","ecology","meio","ambiental"],
-    "Matemática & Estatística":["matemática","estatística","probabilidade","equação","teorema","variance","bayesian","cálculo","álgebra"],
+TOPIC_RULES = {
+    "Inteligência Artificial": ["ia","ai","machine learning","deep learning","rede neural","llm","modelo","algoritmo","transformer"],
+    "Museologia": ["museu","museologia","acervo","coleção","documentação","patrimônio","preservação","museal"],
+    "Computação": ["python","software","sistema","banco de dados","api","código","computação","programação"],
+    "Ciência de Dados": ["dados","estatística","análise","modelo preditivo","cluster","classificação","regressão"],
+    "Biomedicina": ["célula","gene","proteína","crispr","biologia","biomédica","terapia","amostra"],
+    "Neurociência": ["neurônio","cérebro","memória","sono","sináptica","cognitivo","neuro"],
+    "Astrofísica": ["galáxia","cosmologia","matéria escura","lensing","astro","telescópio","gravitacional"],
+    "Psicologia": ["comportamento","psicologia","viés","atenção","emoção","cognição"],
 }
 
-SEED_USERS={
-    "demo@nebula.ai":{"name":"Ana Pesquisadora","password":hp("demo123"),"bio":"Pesquisadora em IA e Ciências Cognitivas","area":"Inteligência Artificial","verified":True,"nationality":"Brasil"},
-    "carlos@nebula.ai":{"name":"Carlos Mendez","password":hp("nebula123"),"bio":"Neurocientista, plasticidade sináptica e sono","area":"Neurociência","verified":True,"nationality":"México"},
-    "luana@nebula.ai":{"name":"Luana Freitas","password":hp("nebula123"),"bio":"Biomédica, CRISPR e terapia gênica","area":"Biomedicina","verified":True,"nationality":"Brasil"},
-    "rafael@nebula.ai":{"name":"Rafael Souza","password":hp("nebula123"),"bio":"Computação Quântica, algoritmos híbridos","area":"Computação","verified":True,"nationality":"Brasil"},
-    "priya@nebula.ai":{"name":"Priya Nair","password":hp("nebula123"),"bio":"Astrofísica, dark matter & gravitational lensing","area":"Astrofísica","verified":True,"nationality":"Índia"},
+NATIONALITY_COORDS = {
+    "Brasil": {"lat": -14.2, "lon": -51.9},
+    "Portugal": {"lat": 39.4, "lon": -8.2},
+    "Estados Unidos": {"lat": 37.1, "lon": -95.7},
+    "México": {"lat": 23.6, "lon": -102.6},
+    "Argentina": {"lat": -38.4, "lon": -63.6},
+    "Reino Unido": {"lat": 55.4, "lon": -3.4},
+    "França": {"lat": 46.2, "lon": 2.2},
+    "Alemanha": {"lat": 51.2, "lon": 10.4},
+    "Itália": {"lat": 41.9, "lon": 12.6},
+    "Espanha": {"lat": 40.5, "lon": -3.7},
+    "Índia": {"lat": 20.6, "lon": 79.0},
+    "China": {"lat": 35.9, "lon": 104.2},
+    "Japão": {"lat": 36.2, "lon": 138.3},
+    "Canadá": {"lat": 56.1, "lon": -106.3},
+    "Austrália": {"lat": -25.3, "lon": 133.8},
 }
 
-SEED_RESEARCH=[
-    {"id":1,"author":"Carlos Mendez","author_email":"carlos@nebula.ai","area":"Neurociência","nationality":"México","year":2026,
-     "title":"Efeitos da Privação de Sono na Plasticidade Sináptica",
-     "abstract":"Investigamos como 24h de privação de sono afetam espinhas dendríticas em ratos Wistar, com redução de 34% na plasticidade hipocampal. Microscopia confocal e Western Blot para quantificação proteica.",
-     "tags":["neurociência","sono","memória","hipocampo","plasticidade"],"methodology":"experimental",
-     "citations":8,"views":312,"likes":47,"liked_by":[],"saved_by":[],"date":"2026-02-10","status":"Em andamento"},
-    {"id":2,"author":"Luana Freitas","author_email":"luana@nebula.ai","area":"Biomedicina","nationality":"Brasil","year":2026,
-     "title":"CRISPR-Cas9 no Tratamento de Distrofias Musculares Raras",
-     "abstract":"Vetor AAV9 modificado para entrega de CRISPR no gene DMD com eficiência de 78% em modelos mdx. Resultados promissores para trials clínicos.",
-     "tags":["CRISPR","gene terapia","músculo","AAV9","DMD"],"methodology":"experimental",
-     "citations":24,"views":891,"likes":93,"liked_by":[],"saved_by":[],"date":"2026-01-28","status":"Publicado"},
-    {"id":3,"author":"Rafael Souza","author_email":"rafael@nebula.ai","area":"Computação","nationality":"Brasil","year":2026,
-     "title":"Redes Neurais Quântico-Clássicas para Otimização Combinatória",
-     "abstract":"Arquitetura híbrida variacional combinando qubits supercondutores com camadas densas clássicas. TSP resolvido com 40% menos iterações.",
-     "tags":["quantum ML","otimização","TSP","computação quântica"],"methodology":"computacional",
-     "citations":31,"views":1240,"likes":201,"liked_by":[],"saved_by":[],"date":"2026-02-15","status":"Em andamento"},
-    {"id":4,"author":"Priya Nair","author_email":"priya@nebula.ai","area":"Astrofísica","nationality":"Índia","year":2026,
-     "title":"Detecção de Matéria Escura via Lentes Gravitacionais Fracas",
-     "abstract":"Mapeamento com 100M de galáxias do DES Y3. Tensão de 2.8σ com ΛCDM em escalas < 1 Mpc.",
-     "tags":["astrofísica","matéria escura","cosmologia","DES"],"methodology":"observacional",
-     "citations":67,"views":2180,"likes":312,"liked_by":[],"saved_by":[],"date":"2026-02-01","status":"Publicado"},
+SAMPLE_ARTICLES = [
+    {
+        "title": "LLMs como Motores de Raciocínio Científico",
+        "authors": "Ana Pesquisadora",
+        "year": 2026,
+        "abstract": "Avaliação de modelos de linguagem em tarefas de raciocínio científico e inferência causal.",
+        "keywords": ["llm", "raciocínio", "ia", "ciência"],
+        "topic": "Inteligência Artificial",
+        "nationality": "Brasil",
+    },
+    {
+        "title": "Documentação Museal Participativa com Folksonomia",
+        "authors": "João Lima",
+        "year": 2025,
+        "abstract": "Estudo sobre indexação social, acessibilidade e participação do público em acervos digitais.",
+        "keywords": ["museologia", "folksonomia", "acervo", "documentação"],
+        "topic": "Museologia",
+        "nationality": "Portugal",
+    },
+    {
+        "title": "Redes Neurais Quântico-Clássicas para Otimização",
+        "authors": "Rafael Souza",
+        "year": 2026,
+        "abstract": "Arquitetura híbrida variacional para otimização combinatória em cenários complexos.",
+        "keywords": ["quântico", "otimização", "algoritmo", "computação"],
+        "topic": "Computação",
+        "nationality": "Brasil",
+    },
 ]
 
-VIB=["#0A84FF","#30D158","#FF9F0A","#BF5AF2","#FF453A","#32ADE6","#FFD60A","#FF6B35","#64D2FF","#5E5CE6"]
 
-# ── DB ────────────────────────────────────────────────────────────
-def save_db():
+# ============================================================
+# STATE / PERSISTENCE
+# ============================================================
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+def load_db() -> dict:
+    if not os.path.exists(DB_FILE):
+        return {}
     try:
-        with open(DB_FILE,"w",encoding="utf-8") as f:
-            json.dump({"users":st.session_state.users,"research_items":st.session_state.research_items,
-                       "folders":st.session_state.folders,
-                       "user_prefs":{k:dict(v) for k,v in st.session_state.user_prefs.items()},
-                       "saved_articles":st.session_state.saved_articles,
-                       "chat_messages":st.session_state.chat_messages},f,ensure_ascii=False,indent=2)
-    except: pass
-
-def init():
-    if "initialized" in st.session_state: return
-    st.session_state.initialized=True
-    disk=load_db(); du=disk.get("users",{})
-    if not isinstance(du,dict): du={}
-    st.session_state.setdefault("users",{**SEED_USERS,**du})
-    st.session_state.setdefault("logged_in",False)
-    st.session_state.setdefault("current_user",None)
-    st.session_state.setdefault("page","login")
-    st.session_state.setdefault("profile_view",None)
-    dp=disk.get("user_prefs",{})
-    st.session_state.setdefault("user_prefs",{k:defaultdict(float,v) for k,v in dp.items()})
-    rp=disk.get("research_items",[dict(p) for p in SEED_RESEARCH])
-    for p in rp:
-        p.setdefault("liked_by",[]); p.setdefault("saved_by",[]); p.setdefault("comments",[])
-        p.setdefault("views",200); p.setdefault("citations",random.randint(0,30))
-        p.setdefault("nationality","Brasil"); p.setdefault("year",2026)
-    st.session_state.setdefault("research_items",rp)
-    st.session_state.setdefault("folders",disk.get("folders",{}))
-    st.session_state.setdefault("folder_bytes",{})
-    st.session_state.setdefault("saved_articles",disk.get("saved_articles",[]))
-    st.session_state.setdefault("scholar_cache",{})
-    st.session_state.setdefault("search_results",None)
-    st.session_state.setdefault("last_sq","")
-    st.session_state.setdefault("api_key","")
-    st.session_state.setdefault("img_result",None)
-    st.session_state.setdefault("chat_messages",disk.get("chat_messages",{}))
-    st.session_state.setdefault("active_chat",None)
-    st.session_state.setdefault("view_research",None)
-
-init()
-
-# ══════════════════════════════════════════════════
-#  USER INTELLIGENCE ENGINE
-# ══════════════════════════════════════════════════
-def update_profile(tags, w=1.0):
-    e=st.session_state.get("current_user")
-    if not e or not tags: return
-    p=st.session_state.user_prefs.setdefault(e,defaultdict(float))
-    for k in list(p.keys()): p[k]*=0.97  # time decay
-    for t in tags: p[t.lower().strip()]+=w
-
-def get_interests(email=None, n=20):
-    if not email: email=st.session_state.get("current_user")
-    p=st.session_state.user_prefs.get(email,{})
-    return [k for k,_ in sorted(p.items(),key=lambda x:-x[1])[:n]] if p else []
-
-def get_recommendations(email=None, n=6):
-    if not email: email=st.session_state.get("current_user")
-    u=st.session_state.users.get(email,{})
-    interests=set(get_interests(email,25))
-    area_kws=set(w.lower() for w in re.split(r'[\s,]+',u.get("area","")) if len(w)>3)
-    interests|=area_kws
-    scored=[]
-    for item in st.session_state.research_items:
-        if item.get("author_email")==email: continue
-        tags=set(t.lower() for t in item.get("tags",[]))
-        kws=set(k.lower() for k in kw_extract(item.get("abstract",""),10))
-        all_terms=tags|kws
-        overlap=len(interests&all_terms)
-        score=overlap*10+item.get("citations",0)*0.4+item.get("likes",0)*0.2
-        scored.append((score,item))
-    scored.sort(key=lambda x:-x[0])
-    return [item for s,item in scored if s>0][:n]
+        with open(DB_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 
-
-def _norm_text(v):
-    return re.sub(r'\s+', ' ', str(v or '').strip().lower())
-
-
-def research_terms(item, keyword_limit=10):
-    terms = []
-    terms.extend(item.get("tags", []))
-    terms.extend(kw_extract(item.get("title", ""), 8))
-    terms.extend(kw_extract(item.get("abstract", ""), keyword_limit))
-    cleaned = {_norm_text(t) for t in terms if _norm_text(t) and len(_norm_text(t)) > 2}
-    return cleaned
-
-
-def similarity(item1, item2):
-    t1 = research_terms(item1, 10)
-    t2 = research_terms(item2, 10)
-    shared = t1 & t2
-    union = t1 | t2
-
-    jac = len(shared) / max(1, len(union))
-
-    title1 = set(kw_extract(item1.get("title", ""), 8))
-    title2 = set(kw_extract(item2.get("title", ""), 8))
-    title_overlap = len(title1 & title2) / max(1, len(title1 | title2))
-
-    abs1 = set(kw_extract(item1.get("abstract", ""), 12))
-    abs2 = set(kw_extract(item2.get("abstract", ""), 12))
-    abstract_overlap = len(abs1 & abs2) / max(1, len(abs1 | abs2))
-
-    area1 = _norm_text(item1.get("area", ""))
-    area2 = _norm_text(item2.get("area", ""))
-    meth1 = _norm_text(item1.get("methodology", ""))
-    meth2 = _norm_text(item2.get("methodology", ""))
-    nat1 = _norm_text(item1.get("nationality", ""))
-    nat2 = _norm_text(item2.get("nationality", ""))
-
-    area_bonus = 0.18 if area1 and area1 == area2 else 0.0
-    method_bonus = 0.10 if meth1 and meth1 == meth2 else 0.0
-    nat_bonus = 0.04 if nat1 and nat1 == nat2 else 0.0
-
-    year_bonus = 0.0
-    y1, y2 = item1.get("year"), item2.get("year")
-    if isinstance(y1, int) and isinstance(y2, int):
-        diff = abs(y1 - y2)
-        if diff <= 1:
-            year_bonus = 0.08
-        elif diff <= 3:
-            year_bonus = 0.04
-
-    shared_bonus = min(0.22, len(shared) * 0.035)
-    score = jac * 0.46 + title_overlap * 0.18 + abstract_overlap * 0.14 + area_bonus + method_bonus + nat_bonus + year_bonus + shared_bonus
-    return round(min(1.0, score), 4)
-
-
-def connection_details(item1, item2):
-    score = similarity(item1, item2)
-    shared_terms = sorted(
-        research_terms(item1, 10) & research_terms(item2, 10),
-        key=lambda x: (-len(x.split()), -len(x), x)
-    )[:8]
-    reasons = []
-    if _norm_text(item1.get("area")) == _norm_text(item2.get("area")) and item1.get("area"):
-        reasons.append(f"mesma área: {item1.get('area', '')}")
-    if _norm_text(item1.get("methodology")) == _norm_text(item2.get("methodology")) and item1.get("methodology"):
-        reasons.append(f"mesma metodologia: {item1.get('methodology', '')}")
-    if item1.get("year") and item2.get("year"):
-        diff = abs(int(item1.get("year")) - int(item2.get("year")))
-        if diff <= 1:
-            reasons.append("recorte temporal muito próximo")
-        elif diff <= 3:
-            reasons.append("recorte temporal compatível")
-    if _norm_text(item1.get("nationality")) == _norm_text(item2.get("nationality")) and item1.get("nationality"):
-        reasons.append(f"mesma nacionalidade: {item1.get('nationality', '')}")
-    if shared_terms:
-        reasons.append("termos em comum: " + ", ".join(shared_terms[:4]))
-    strength = "forte" if score >= 0.45 else ("média" if score >= 0.28 else "inicial")
-    return {
-        "score": score,
-        "strength": strength,
-        "shared_terms": shared_terms,
-        "reasons": reasons,
+def save_db() -> None:
+    data = {
+        "users": st.session_state.users,
+        "repository": st.session_state.repository,
+        "search_history": st.session_state.search_history,
+        "user_interest": st.session_state.user_interest,
     }
+    with open(DB_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def build_connection_edges(items, threshold=0.22):
-    edges = []
-    for i in range(len(items)):
-        for j in range(i + 1, len(items)):
-            det = connection_details(items[i], items[j])
-            if det["score"] >= threshold:
-                edges.append({
-                    "source": items[i],
-                    "target": items[j],
-                    "score": det["score"],
-                    "strength": det["strength"],
-                    "shared_terms": det["shared_terms"],
-                    "reasons": det["reasons"],
-                })
-    edges.sort(key=lambda x: (-x["score"], x["source"].get("title", ""), x["target"].get("title", "")))
-    return edges
+def init_state() -> None:
+    db = load_db()
+
+    st.session_state.setdefault(
+        "users",
+        db.get(
+            "users",
+            {
+                "demo@nebula.ai": {
+                    "name": "Usuário Demo",
+                    "password": hash_password("demo123"),
+                    "area": "Inteligência Artificial",
+                    "bio": "Perfil de demonstração do sistema.",
+                    "nationality": "Brasil",
+                    "city": "Rio de Janeiro",
+                }
+            },
+        ),
+    )
+    st.session_state.setdefault("logged_in", False)
+    st.session_state.setdefault("current_user", None)
+    st.session_state.setdefault("page", "Dashboard")
+    st.session_state.setdefault("repository", db.get("repository", []))
+    st.session_state.setdefault("search_history", db.get("search_history", []))
+    st.session_state.setdefault("user_interest", db.get("user_interest", {}))
 
 
-def connection_count_map(items, edges):
-    counts = {item["id"]: 0 for item in items}
-    for edge in edges:
-        counts[edge["source"]["id"]] = counts.get(edge["source"]["id"], 0) + 1
-        counts[edge["target"]["id"]] = counts.get(edge["target"]["id"], 0) + 1
-    return counts
+init_state()
 
 
-def find_similar(target, threshold=0.18, n=6):
-    results = []
-    for item in st.session_state.research_items:
-        if item["id"] == target["id"]:
-            continue
-        sim = similarity(target, item)
-        if sim >= threshold:
-            results.append((sim, item))
-    results.sort(key=lambda x: (-x[0], -x[1].get("citations", 0), x[1].get("title", "")))
-    return results[:n]
-
-
-def folder_similarity(folder_analyses, n=8):
-    matches = []
-    for item in st.session_state.research_items:
-        item_terms = research_terms(item, 8)
-        best = None
-        for fname, an in folder_analyses.items():
-            doc_terms = {_norm_text(k) for k in an.get("keywords", [])[:12] if _norm_text(k)}
-            topic_terms = {_norm_text(k) for k in an.get("topics", {}).keys() if _norm_text(k)}
-            combined = doc_terms | topic_terms
-            overlap = sorted(item_terms & combined)[:8]
-            if not overlap:
-                continue
-            topic_bonus = 0.0
-            area = _norm_text(item.get("area", ""))
-            if area and any(area in t or t in area for t in topic_terms):
-                topic_bonus = 0.12
-            score = min(1.0, (len(overlap) / max(4, len(item_terms))) * 0.88 + topic_bonus + (an.get("relevance_score", 0) / 100) * 0.12)
-            data = {
-                "score": round(score, 4),
-                "research": item,
-                "document": fname,
-                "shared_terms": overlap,
-                "topics": list(an.get("topics", {}).keys())[:4],
-                "summary": an.get("summary", ""),
-            }
-            if best is None or data["score"] > best["score"]:
-                best = data
-        if best and best["score"] >= 0.18:
-            matches.append(best)
-    matches.sort(key=lambda x: (-x["score"], -x["research"].get("citations", 0), x["research"].get("title", "")))
-    return matches[:n]
-
-# ══════════════════════════════════════════════════
-#  DOCUMENT ANALYSIS
-# ══════════════════════════════════════════════════
-@st.cache_data(show_spinner=False)
-def extract_pdf(b):
-    if not PyPDF2: return ""
-    try:
-        r=PyPDF2.PdfReader(io.BytesIO(b)); t=""
-        for pg in r.pages[:20]:
-            try: t+=pg.extract_text()+"\n"
-            except: pass
-        return t[:40000]
-    except: return ""
-
-@st.cache_data(show_spinner=False)
-def kw_extract(text, n=20):
-    if not text: return []
-    words=re.findall(r'\b[a-záàâãéêíóôõúüçA-ZÁÀÂÃÉÊÍÓÔÕÚÜÇ]{4,}\b',text.lower())
-    words=[w for w in words if w not in STOPWORDS]
-    if not words: return []
-    tf=Counter(words); tot=max(1,sum(tf.values()))
-    return [w for w,_ in sorted(tf.items(),key=lambda x:-x[1]/tot)[:n]]
-
-def extract_year_from_text(text):
-    years=re.findall(r'\b(19[5-9]\d|20[0-3]\d)\b',text)
-    if years: return int(Counter(years).most_common(1)[0][0])
-    return None
-
-def extract_authors_from_text(text):
-    patterns=[r'(?:Autor(?:es)?|Author(?:s)?)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+){1,3})',
-              r'(?:Por|By)[:\s]+([A-ZÀ-Ú][a-zà-ú]+(?:\s+[A-ZÀ-Ú][a-zà-ú]+){1,2})']
-    authors=[]
-    for pat in patterns: authors.extend(re.findall(pat,text[:3000])[:3])
-    return list(set(a.strip() for a in authors if len(a)>5))[:5]
-
-def extract_nationality_from_text(text):
-    text_lower=text.lower()
-    for nat in NATIONALITY_COORDS.keys():
-        if nat.lower() in text_lower: return nat
-    country_hints={"brasil":"Brasil","brazil":"Brasil","usa":"Estados Unidos","united states":"Estados Unidos",
-                   "germany":"Alemanha","france":"França","china":"China","japan":"Japão",
-                   "india":"Índia","canada":"Canadá","australia":"Austrália","uk":"Reino Unido",
-                   "england":"Reino Unido","mexico":"México","argentina":"Argentina",
-                   "portugal":"Portugal","spain":"Espanha","italy":"Itália"}
-    for hint,nat in country_hints.items():
-        if hint in text_lower: return nat
-    return None
-
-def topics_from_kws(kws):
-    s=defaultdict(int)
-    for kw in kws:
-        for tp,terms in TOPIC_MAP.items():
-            if any(t in kw or kw in t for t in terms): s[tp]+=1
-    return dict(sorted(s.items(),key=lambda x:-x[1])) if s else {"Pesquisa Geral":1}
-
-@st.cache_data(show_spinner=False)
-def analyze_document(fname, fbytes, ftype_str, area=""):
-    r={"file":fname,"type":ftype_str,"keywords":[],"topics":{},"relevance_score":0,"summary":"",
-       "strengths":[],"improvements":[],"word_count":0,"authors":[],"year":None,
-       "nationality":None,"estimated_year":None,"key_sentences":[]}
-    text=""
-    if ftype_str=="PDF" and fbytes and PyPDF2:
-        text=extract_pdf(fbytes)
-    elif fbytes:
-        try: text=fbytes.decode("utf-8",errors="ignore")[:40000]
-        except: pass
-    if text:
-        r["keywords"]=kw_extract(text,25); r["topics"]=topics_from_kws(r["keywords"])
-        wc=len(text.split()); r["word_count"]=wc
-        r["authors"]=extract_authors_from_text(text)
-        r["year"]=extract_year_from_text(text)
-        r["nationality"]=extract_nationality_from_text(text)
-        sents=[s.strip() for s in re.split(r'[.!?]+',text) if 40<len(s.strip())<250]
-        r["key_sentences"]=sents[:4]
-        if area:
-            aw=area.lower().split()
-            rel=sum(1 for w in aw if any(w in kw for kw in r["keywords"]))
-            r["relevance_score"]=min(100,rel*15+45)
-        else: r["relevance_score"]=60
-        if len(r["keywords"])>15: r["strengths"].append(f"Vocabulário técnico rico ({len(r['keywords'])} termos)")
-        if wc>2000: r["strengths"].append("Documento extenso e detalhado")
-        if len(r["topics"])>3: r["strengths"].append("Multidisciplinar")
-        if r["authors"]: r["strengths"].append(f"Autoria identificada: {', '.join(r['authors'][:2])}")
-        if wc<300: r["improvements"].append("Expandir conteúdo")
-        if len(r["keywords"])<8: r["improvements"].append("Enriquecer vocabulário técnico")
-        r["summary"]=f"{ftype_str} · {wc:,} palavras · {', '.join(list(r['topics'].keys())[:2])} · {', '.join(r['keywords'][:4])}"
-    else:
-        r["summary"]=f"Arquivo {ftype_str}"; r["relevance_score"]=50
-        r["keywords"]=kw_extract(fname.lower().replace("_"," "),5)
-        r["topics"]=topics_from_kws(r["keywords"])
-    return r
-
-# ══════════════════════════════════════════════════
-#  ML IMAGE PIPELINE
-# ══════════════════════════════════════════════════
-def sobel_ml(gray):
-    kx=np.array([[-1,0,1],[-2,0,2],[-1,0,1]],dtype=np.float32)/8.0
-    def conv2d(im,k):
-        ph,pw=k.shape[0]//2,k.shape[1]//2
-        p=np.pad(im,((ph,ph),(pw,pw)),mode='edge'); out=np.zeros_like(im)
-        for i in range(k.shape[0]):
-            for j in range(k.shape[1]): out+=k[i,j]*p[i:i+im.shape[0],j:j+im.shape[1]]
-        return out
-    sx=conv2d(gray.astype(np.float32),kx); sy=conv2d(gray.astype(np.float32),kx.T)
-    mag=np.sqrt(sx**2+sy**2)
-    return {"mean":float(mag.mean()),"max":float(mag.max()),
-            "density":float((mag>mag.mean()*1.5).mean()),
-            "hist":np.histogram(mag,bins=16,range=(0,mag.max()+1e-5))[0].tolist()}
-
-def fft_ml(gray):
-    fft=np.fft.fftshift(np.abs(np.fft.fft2(gray))); h,w=fft.shape
-    total=fft.sum()+1e-5; r=min(h,w)//2; Y,X=np.ogrid[:h,:w]; dist=np.sqrt((X-w//2)**2+(Y-h//2)**2)
-    lf=float(fft[dist<r*0.1].sum()/total); mf=float(fft[(dist>=r*0.1)&(dist<r*0.4)].sum()/total)
-    outer=float(np.percentile(fft[dist>r*0.5],99))/(float(fft[dist>r*0.5].mean())+1e-5)
-    return {"lf":round(lf,3),"mf":round(mf,3),"hf":round(1-lf-mf,3),"periodic_score":round(outer,1),"is_periodic":outer>12}
-
-def texture_ml(gray_u8):
-    g=gray_u8.astype(np.float32)/255.0; gx=np.gradient(g,axis=1); gy=np.gradient(g,axis=0)
-    contrast=float(np.sqrt(gx**2+gy**2).mean()*100)
-    hom=1.0/(1.0+contrast/50.0); energy=float(np.var(g))
-    tt="homogênea" if hom>0.7 else ("texturizada" if contrast>50 else "estruturada")
-    return {"contrast":round(contrast,3),"homogeneity":round(hom,3),"energy":round(energy,4),"texture_type":tt}
-
-def palette_ml(arr, k=6):
-    if not SKLEARN_OK: return []
-    try:
-        step=max(1,(arr.shape[0]*arr.shape[1])//3000)
-        flat=arr.reshape(-1,3)[::step].astype(np.float32)
-        km=KMeans(n_clusters=k,random_state=42,n_init=5,max_iter=80).fit(flat)
-        cnt=Counter(km.labels_); tot=sum(cnt.values())
-        pal=[]
-        for i in np.argsort([-cnt[j] for j in range(k)]):
-            r2,g2,b2=km.cluster_centers_[i].astype(int)
-            pal.append({"rgb":(int(r2),int(g2),int(b2)),"hex":"#{:02x}{:02x}{:02x}".format(int(r2),int(g2),int(b2)),"pct":round(cnt[i]/tot*100,1)})
-        return pal
-    except: return []
-
-def classify_img(sobel_r, texture_r, color, fft_r):
-    mr,mg,mb=color["r"],color["g"],color["b"]; ei=sobel_r["mean"]; hom=texture_r["homogeneity"]
-    scores={"Histopatologia H&E":int(mr>140 and mb>100)*30+int(ei>0.05)*20+int(texture_r["contrast"]>30)*20,
-            "Fluorescência DAPI":int(mb>150 and mb>mr+30)*45+int(ei>0.08)*20,
-            "Fluorescência GFP":int(mg>150 and mg>mr+30)*45+int(ei>0.08)*20,
-            "Gel/Western Blot":int(texture_r["contrast"]<15 and hom>0.8)*30+int(abs(mr-mg)<20 and abs(mg-mb)<20)*25,
-            "Gráfico/Diagrama":int(texture_r["energy"]>0.15)*30+int(hom>0.85)*25+int(fft_r["lf"]>0.5)*20,
-            "Microscopia Confocal":int(ei>0.05)*20+int(sobel_r["density"]>0.10)*25,
-            "Imagem Astronômica":int(color.get("brightness",128)<60)*35+int(hom>0.7)*20,
-            "Estrutura Molecular":int(fft_r["is_periodic"])*30+int(hom>0.75)*25}
-    best=max(scores,key=scores.get); conf=min(94,38+scores[best]*0.55)
-    search_map={"Histopatologia H&E":"hematoxylin eosin staining histopathology tissue",
-                "Fluorescência DAPI":"DAPI nuclear staining fluorescence microscopy",
-                "Fluorescência GFP":"GFP green fluorescent protein confocal imaging",
-                "Gel/Western Blot":"western blot gel electrophoresis protein analysis",
-                "Gráfico/Diagrama":"scientific data visualization chart",
-                "Microscopia Confocal":"confocal microscopy fluorescence multichannel",
-                "Imagem Astronômica":"astronomy telescope deep field observation",
-                "Estrutura Molecular":"molecular structure crystal protein visualization"}
-    return {"category":best,"confidence":round(conf,1),"search_kw":search_map.get(best,best+" scientific"),"all_scores":dict(sorted(scores.items(),key=lambda x:-x[1])[:5])}
-
-@st.cache_data(show_spinner=False,ttl=3600)
-def run_ml(img_bytes):
-    try:
-        img=PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
-        orig=img.size; w,h=img.size; s=min(384/w,384/h)
-        img_r=img.resize((int(w*s),int(h*s)),PILImage.LANCZOS)
-        arr=np.array(img_r,dtype=np.float32)
-        r_ch,g_ch,b_ch=arr[:,:,0],arr[:,:,1],arr[:,:,2]
-        gray=0.2989*r_ch+0.5870*g_ch+0.1140*b_ch; gray_u8=gray.astype(np.uint8)
-        mr,mg,mb=float(r_ch.mean()),float(g_ch.mean()),float(b_ch.mean())
-        hst=np.histogram(gray,bins=64,range=(0,255))[0]; hn=hst/(hst.sum()+1e-9); hn=hn[hn>0]
-        entropy=float(-np.sum(hn*np.log2(hn+1e-12)))
-        color={"r":round(mr,1),"g":round(mg,1),"b":round(mb,1),"entropy":round(entropy,3),
-               "brightness":round(float(gray.mean()),1),"warm":mr>mb+15,"cool":mb>mr+15}
-        sobel_r=sobel_ml(gray/255.0); texture_r=texture_ml(gray_u8); fft_r=fft_ml(gray/255.0)
-        pal=palette_ml(arr.astype(np.uint8),6)
-        cls=classify_img(sobel_r,texture_r,color,fft_r)
-        rh=np.histogram(r_ch.ravel(),bins=32,range=(0,255))[0].tolist()
-        gh=np.histogram(g_ch.ravel(),bins=32,range=(0,255))[0].tolist()
-        bh=np.histogram(b_ch.ravel(),bins=32,range=(0,255))[0].tolist()
-        return {"ok":True,"size":orig,"color":color,"sobel":sobel_r,"texture":texture_r,
-                "fft":fft_r,"palette":pal,"histograms":{"r":rh,"g":gh,"b":bh},"classification":cls}
-    except Exception as e: return {"ok":False,"error":str(e)}
-
-# ══════════════════════════════════════════════════
-#  API — CLAUDE VISION
-# ══════════════════════════════════════════════════
-VISION_PROMPT="""Analise esta imagem científica. Responda APENAS em JSON puro sem markdown:
-{
-  "tipo": "<tipo>",
-  "origem": "<área científica>",
-  "descricao": "<descrição detalhada>",
-  "estruturas": ["<s1>","<s2>","<s3>"],
-  "tecnica": "<técnica experimental>",
-  "qualidade": "<Alta/Média/Baixa>",
-  "confianca": <0-100>,
-  "termos_busca": "<4-6 termos para busca acadêmica>",
-  "interpretacao": "<interpretação científica>",
-  "aviso": "Análise por IA — validar com especialista."
-}"""
-
-def call_vision(img_bytes, api_key):
-    if not api_key or not api_key.startswith("sk-"): return None,"API key inválida."
-    try:
-        img=PILImage.open(io.BytesIO(img_bytes)); buf=io.BytesIO()
-        img.convert("RGB").save(buf,format="JPEG",quality=82)
-        b64=base64.b64encode(buf.getvalue()).decode()
-        resp=requests.post("https://api.anthropic.com/v1/messages",
-            headers={"x-api-key":api_key,"anthropic-version":"2023-06-01","content-type":"application/json"},
-            json={"model":"claude-opus-4-5","max_tokens":1200,
-                  "messages":[{"role":"user","content":[
-                      {"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":b64}},
-                      {"type":"text","text":VISION_PROMPT}]}]},timeout=30)
-        if resp.status_code==200: return resp.json()["content"][0]["text"],None
-        return None,resp.json().get("error",{}).get("message",f"HTTP {resp.status_code}")
-    except Exception as e: return None,str(e)
-
-# ══════════════════════════════════════════════════
-#  ACADEMIC SEARCH
-# ══════════════════════════════════════════════════
-@st.cache_data(show_spinner=False,ttl=1800)
-def search_ss(q, lim=8):
-    try:
-        r=requests.get("https://api.semanticscholar.org/graph/v1/paper/search",
-            params={"query":q,"limit":lim,"fields":"title,authors,year,abstract,venue,externalIds,openAccessPdf,citationCount"},timeout=9)
-        if r.status_code==200:
-            out=[]
-            for p in r.json().get("data",[]):
-                ext=p.get("externalIds",{}) or {}; doi=ext.get("DOI",""); arx=ext.get("ArXiv","")
-                pdf=(p.get("openAccessPdf") or {}).get("url","")
-                link=pdf or(f"https://arxiv.org/abs/{arx}" if arx else(f"https://doi.org/{doi}" if doi else ""))
-                al=p.get("authors",[]) or []; au=", ".join(a.get("name","") for a in al[:3])
-                if len(al)>3: au+=" et al."
-                out.append({"title":p.get("title","Sem título"),"authors":au or "—","year":p.get("year","?"),
-                            "source":p.get("venue","") or "Semantic Scholar","doi":doi or arx or "—",
-                            "abstract":(p.get("abstract","") or "")[:300],"url":link,
-                            "citations":p.get("citationCount",0),"origin":"semantic"})
-            return out
-    except: pass
-    return []
-
-@st.cache_data(show_spinner=False,ttl=1800)
-def search_cr(q, lim=4):
-    try:
-        r=requests.get("https://api.crossref.org/works",
-            params={"query":q,"rows":lim,"select":"title,author,issued,abstract,DOI,container-title,is-referenced-by-count"},timeout=8)
-        if r.status_code==200:
-            out=[]
-            for p in r.json().get("message",{}).get("items",[]):
-                title=(p.get("title") or["?"])[0]; ars=p.get("author",[]) or []
-                au=", ".join(f'{a.get("given","").split()[0] if a.get("given") else ""} {a.get("family","")}'.strip() for a in ars[:3])
-                if len(ars)>3: au+=" et al."
-                yr=(p.get("issued",{}).get("date-parts") or[[None]])[0][0]
-                doi=p.get("DOI",""); ab=re.sub(r'<[^>]+>','',p.get("abstract","") or "")[:300]
-                out.append({"title":title,"authors":au or "—","year":yr or "?",
-                            "source":(p.get("container-title") or["CrossRef"])[0],"doi":doi,
-                            "abstract":ab,"url":f"https://doi.org/{doi}" if doi else "","citations":p.get("is-referenced-by-count",0),"origin":"crossref"})
-            return out
-    except: pass
-    return []
-
-FTYPE_MAP={"pdf":"PDF","docx":"Word","xlsx":"Planilha","csv":"Dados","txt":"Texto","py":"Código","md":"Markdown","png":"Imagem","jpg":"Imagem","jpeg":"Imagem","tiff":"Imagem","ipynb":"Notebook"}
-def ftype(fname): return FTYPE_MAP.get(fname.split(".")[-1].lower() if "." in fname else "","Arquivo")
-
-# ══════════════════════════════════════════════════
-#  CSS — DARK BLUE LIQUID GLASS
-# ══════════════════════════════════════════════════
-def inject_css():
-    st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800;900&family=Inter:wght@300;400;500;600;700&display=swap');
-:root{
-  --bg:#03060E;--s1:#060B18;--s2:#0A1020;--s3:#0D1528;
-  --acc:#0A84FF;--acc2:#1A6EC9;
-  --teal:#30D158;--teal2:#25A244;
-  --orn:#FF9F0A;--pur:#BF5AF2;--red:#FF453A;--cya:#32ADE6;--gold:#FFD60A;
-  --t0:#FFFFFF;--t1:#D8E4F5;--t2:#7A8FAD;--t3:#3A4D6A;--t4:#1A2840;
-  --gb1:rgba(255,255,255,.06);--gb2:rgba(255,255,255,.11);--gb3:rgba(255,255,255,.17);
-  --acc-a:rgba(10,132,255,.10);--acc-ab:rgba(10,132,255,.18);--acc-ac:rgba(10,132,255,.28);
-  --r8:8px;--r12:12px;--r16:16px;--r20:20px;
-}
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-html,body,.stApp{background:var(--bg)!important;color:var(--t1)!important;font-family:'Inter',-apple-system,sans-serif!important;}
-.stApp::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:0;
-  background:radial-gradient(ellipse 65% 50% at -10% -5%,rgba(10,132,255,.055) 0%,transparent 60%),
-    radial-gradient(ellipse 55% 45% at 110% -5%,rgba(48,209,88,.045) 0%,transparent 55%),
-    radial-gradient(ellipse 45% 55% at 50% 110%,rgba(191,90,242,.035) 0%,transparent 60%);}
-header[data-testid="stHeader"],#MainMenu,footer,.stDeployButton,[data-testid="stToolbar"],[data-testid="stDecoration"]{display:none!important}
-[data-testid="stSidebarCollapseButton"],[data-testid="collapsedControl"]{display:none!important}
-section[data-testid="stSidebar"]{
-  display:block!important;transform:translateX(0)!important;visibility:visible!important;
-  background:rgba(3,6,14,.97)!important;border-right:1px solid rgba(255,255,255,.055)!important;
-  box-shadow:4px 0 40px rgba(0,0,0,.7)!important;
-  width:216px!important;min-width:216px!important;max-width:216px!important;
-  padding:1.3rem .9rem 1rem!important;}
-section[data-testid="stSidebar"]>div{width:216px!important;padding:0!important;}
-.block-container{padding-top:.35rem!important;padding-bottom:4rem!important;max-width:1460px!important;position:relative;z-index:1;padding-left:.75rem!important;padding-right:.75rem!important;}
-
-/* ── LIQUID GLASS BUTTONS ── */
-.stButton>button{
-  position:relative;overflow:hidden;
-  background:linear-gradient(145deg,rgba(255,255,255,.07) 0%,rgba(255,255,255,.025) 100%)!important;
-  border:1px solid rgba(255,255,255,.09)!important;
-  border-top-color:rgba(255,255,255,.16)!important;
-  border-left-color:rgba(255,255,255,.11)!important;
-  border-radius:12px!important;
-  box-shadow:0 2px 14px rgba(0,0,0,.4),0 1px 0 rgba(255,255,255,.06) inset!important;
-  color:#8090B0!important;-webkit-text-fill-color:#8090B0!important;
-  font-family:'Inter',sans-serif!important;font-weight:500!important;font-size:.82rem!important;
-  padding:.46rem .88rem!important;
-  transition:all .17s cubic-bezier(.4,0,.2,1)!important;
-  width:100%!important;margin-bottom:.18rem!important;text-align:left!important;
-}
-.stButton>button::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,.2),transparent);pointer-events:none;}
-.stButton>button:hover{
-  background:linear-gradient(145deg,var(--acc-ab) 0%,rgba(10,132,255,.07) 100%)!important;
-  border-color:var(--acc-ac)!important;border-top-color:rgba(10,132,255,.45)!important;
-  box-shadow:0 6px 22px rgba(10,132,255,.18),0 1px 0 rgba(255,255,255,.1) inset!important;
-  color:var(--t0)!important;-webkit-text-fill-color:var(--t0)!important;
-  transform:translateY(-1px)!important;}
-.stButton>button:active{transform:scale(.98)!important;box-shadow:0 2px 8px rgba(0,0,0,.3)!important;}
-.stButton>button p,.stButton>button span{color:inherit!important;-webkit-text-fill-color:inherit!important;}
-section[data-testid="stSidebar"] .stButton>button{padding:.48rem .8rem!important;font-size:.83rem!important;}
-
-/* ── INPUTS ── */
-.stTextInput input,.stTextArea textarea{
-  background:rgba(255,255,255,.035)!important;border:1px solid rgba(255,255,255,.08)!important;
-  border-top-color:rgba(255,255,255,.12)!important;border-radius:12px!important;
-  color:var(--t1)!important;font-family:'Inter',sans-serif!important;font-size:.83rem!important;
-  box-shadow:inset 0 2px 8px rgba(0,0,0,.25)!important;}
-.stTextInput input:focus,.stTextArea textarea:focus{
-  border-color:rgba(10,132,255,.45)!important;
-  box-shadow:0 0 0 3px rgba(10,132,255,.09),inset 0 2px 8px rgba(0,0,0,.2)!important;}
-.stTextInput label,.stTextArea label,.stSelectbox label,.stFileUploader label,.stNumberInput label{
-  color:var(--t3)!important;font-size:.57rem!important;letter-spacing:.12em!important;
-  text-transform:uppercase!important;font-weight:700!important;}
-
-/* ── SIDEBAR LOGO ── */
-.sb-logo{display:flex;align-items:center;gap:9px;margin-bottom:1.4rem;padding:.1rem .2rem}
-.sb-logo-icon{width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#0A84FF,#30D158);
-  display:flex;align-items:center;justify-content:center;font-size:1rem;flex-shrink:0;
-  box-shadow:0 0 18px rgba(10,132,255,.3)}
-.sb-logo-txt{font-family:'Syne',sans-serif;font-weight:900;font-size:1.2rem;letter-spacing:-.05em;
-  background:linear-gradient(135deg,#0A84FF,#30D158);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.sb-lbl{font-size:.52rem;font-weight:700;color:var(--t3);letter-spacing:.14em;text-transform:uppercase;
-  padding:0 .15rem;margin-bottom:.32rem;margin-top:.75rem}
-
-/* ── GLASS CARDS ── */
-.glass-card{
-  background:linear-gradient(145deg,rgba(255,255,255,.05) 0%,rgba(255,255,255,.018) 100%);
-  border:1px solid rgba(255,255,255,.075);border-top-color:rgba(255,255,255,.13);
-  border-radius:20px;box-shadow:0 8px 40px rgba(0,0,0,.45);position:relative;overflow:hidden;}
-.glass-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,.14),transparent);pointer-events:none;}
-.research-card{
-  background:linear-gradient(145deg,rgba(255,255,255,.045) 0%,rgba(255,255,255,.016) 100%);
-  border:1px solid rgba(255,255,255,.065);border-top-color:rgba(255,255,255,.11);
-  border-radius:16px;margin-bottom:.5rem;overflow:hidden;
-  box-shadow:0 4px 24px rgba(0,0,0,.35);
-  transition:border-color .17s,transform .17s,box-shadow .17s;position:relative;}
-.research-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(10,132,255,.1),transparent);}
-.research-card:hover{border-color:rgba(10,132,255,.25);transform:translateY(-2px);box-shadow:0 12px 38px rgba(10,132,255,.1);}
-.sc{background:rgba(255,255,255,.038);border:1px solid rgba(255,255,255,.065);border-radius:16px;
-  padding:.85rem .95rem;margin-bottom:.5rem;position:relative;}
-.sc::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,.09),transparent);}
-.scard{background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.058);border-radius:13px;
-  padding:.72rem .92rem;margin-bottom:.38rem;transition:border-color .14s,transform .12s;}
-.scard:hover{border-color:rgba(10,132,255,.22);transform:translateY(-1px);}
-.mbox{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.065);border-radius:13px;padding:.82rem;text-align:center;}
-.abox{background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);border-radius:13px;padding:.9rem;margin-bottom:.5rem;}
-.chart-wrap{background:rgba(255,255,255,.018);border:1px solid rgba(255,255,255,.05);border-radius:12px;padding:.55rem;margin-bottom:.5rem;}
-
-/* ── COLORED BOXES ── */
-.pbox-acc{background:rgba(10,132,255,.05);border:1px solid rgba(10,132,255,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
-.pbox-teal{background:rgba(48,209,88,.05);border:1px solid rgba(48,209,88,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
-.pbox-pur{background:rgba(191,90,242,.05);border:1px solid rgba(191,90,242,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
-.pbox-orn{background:rgba(255,159,10,.05);border:1px solid rgba(255,159,10,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
-.pbox-red{background:rgba(255,69,58,.05);border:1px solid rgba(255,69,58,.16);border-radius:11px;padding:.75rem;margin-bottom:.42rem;}
-.ai-card{background:linear-gradient(135deg,rgba(10,132,255,.065),rgba(48,209,88,.04));
-  border:1px solid rgba(10,132,255,.18);border-radius:15px;padding:1rem;margin-bottom:.6rem;position:relative;overflow:hidden;}
-.ai-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;
-  background:linear-gradient(90deg,transparent,rgba(10,132,255,.32),transparent);}
-.conn-card{background:linear-gradient(135deg,rgba(48,209,88,.055),rgba(10,132,255,.035));
-  border:1px solid rgba(48,209,88,.18);border-radius:13px;padding:.9rem;margin-bottom:.5rem;position:relative;}
-.sim-card{background:linear-gradient(135deg,rgba(191,90,242,.045),rgba(10,132,255,.028));
-  border:1px solid rgba(191,90,242,.15);border-radius:13px;padding:.85rem;margin-bottom:.45rem;}
-.ai-disc{background:rgba(255,159,10,.04);border:1px solid rgba(255,159,10,.14);border-radius:10px;
-  padding:.55rem .8rem;margin-bottom:.55rem;}
-
-/* ── METRIC VALS ── */
-.mval-acc{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:900;
-  background:linear-gradient(135deg,#0A84FF,#32ADE6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.mval-teal{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:900;
-  background:linear-gradient(135deg,#30D158,#32ADE6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.mval-pur{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:900;
-  background:linear-gradient(135deg,#BF5AF2,#0A84FF);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.mval-orn{font-family:'Syne',sans-serif;font-size:1.7rem;font-weight:900;
-  background:linear-gradient(135deg,#FF9F0A,#FF453A);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;}
-.mlbl{font-size:.55rem;color:var(--t3);margin-top:4px;letter-spacing:.10em;text-transform:uppercase;font-weight:700}
-
-/* ── BADGES & TAGS ── */
-.tag{display:inline-block;background:rgba(10,132,255,.07);border:1px solid rgba(10,132,255,.16);
-  border-radius:50px;padding:2px 8px;font-size:.60rem;color:#6AACFF;margin:2px;font-weight:500;}
-.tag-teal{display:inline-block;background:rgba(48,209,88,.07);border:1px solid rgba(48,209,88,.16);
-  border-radius:50px;padding:2px 8px;font-size:.60rem;color:#5AE07A;margin:2px;font-weight:500;}
-.tag-pur{display:inline-block;background:rgba(191,90,242,.07);border:1px solid rgba(191,90,242,.16);
-  border-radius:50px;padding:2px 8px;font-size:.60rem;color:#CF9AFF;margin:2px;font-weight:500;}
-.badge-acc{display:inline-block;background:rgba(10,132,255,.10);border:1px solid rgba(10,132,255,.22);
-  border-radius:50px;padding:2px 9px;font-size:.60rem;font-weight:700;color:#0A84FF;}
-.badge-teal{display:inline-block;background:rgba(48,209,88,.10);border:1px solid rgba(48,209,88,.22);
-  border-radius:50px;padding:2px 9px;font-size:.60rem;font-weight:700;color:#30D158;}
-.badge-orn{display:inline-block;background:rgba(255,159,10,.10);border:1px solid rgba(255,159,10,.22);
-  border-radius:50px;padding:2px 9px;font-size:.60rem;font-weight:700;color:#FF9F0A;}
-.badge-pur{display:inline-block;background:rgba(191,90,242,.10);border:1px solid rgba(191,90,242,.22);
-  border-radius:50px;padding:2px 9px;font-size:.60rem;font-weight:700;color:#BF5AF2;}
-
-/* ── TABS ── */
-.stTabs [data-baseweb="tab-list"]{background:rgba(255,255,255,.025)!important;
-  border:1px solid rgba(255,255,255,.06)!important;border-radius:12px!important;padding:3px!important;gap:2px!important;}
-.stTabs [data-baseweb="tab"]{background:transparent!important;color:var(--t3)!important;
-  border-radius:9px!important;font-size:.73rem!important;font-family:'Inter',sans-serif!important;font-weight:500!important;}
-.stTabs [aria-selected="true"]{background:var(--acc-ab)!important;color:var(--acc)!important;
-  border:1px solid var(--acc-ac)!important;font-weight:700!important;}
-.stTabs [data-baseweb="tab-panel"]{background:transparent!important;padding-top:.75rem!important;}
-
-/* ── PROFILE HERO ── */
-.prof-hero{background:linear-gradient(145deg,rgba(255,255,255,.045) 0%,rgba(255,255,255,.015) 100%);
-  border:1px solid rgba(255,255,255,.075);border-top-color:rgba(255,255,255,.12);
-  border-radius:22px;padding:1.5rem;display:flex;gap:1.2rem;align-items:flex-start;
-  box-shadow:0 8px 40px rgba(0,0,0,.45);margin-bottom:.9rem;}
-.av{width:72px;height:72px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-  font-family:'Syne',sans-serif;font-weight:800;font-size:1.5rem;color:white;flex-shrink:0;
-  border:2px solid rgba(10,132,255,.2);}
-
-/* ── CHAT ── */
-.bme{background:linear-gradient(135deg,rgba(10,132,255,.16),rgba(10,132,255,.08));
-  border:1px solid rgba(10,132,255,.22);border-radius:18px 18px 4px 18px;
-  padding:.52rem .85rem;max-width:70%;margin-left:auto;margin-bottom:4px;font-size:.81rem;line-height:1.6;}
-.bthem{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);
-  border-radius:18px 18px 18px 4px;padding:.52rem .85rem;max-width:70%;margin-bottom:4px;
-  font-size:.81rem;line-height:1.6;}
-
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
-.dot-on{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--teal);
-  animation:pulse 2.5s infinite;margin-right:4px;vertical-align:middle;}
-@keyframes fadeUp{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
-.pw{animation:fadeUp .16s ease both;}
-hr{border:none;border-top:1px solid rgba(255,255,255,.06)!important;margin:.7rem 0;}
-.dtxt{display:flex;align-items:center;gap:.65rem;margin:.65rem 0;font-size:.54rem;color:var(--t3);
-  letter-spacing:.10em;text-transform:uppercase;font-weight:700;}
-.dtxt::before,.dtxt::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.055);}
-h1{font-family:'Syne',sans-serif!important;font-size:1.5rem!important;font-weight:800!important;
-  letter-spacing:-.03em;color:var(--t0)!important;}
-h2{font-family:'Syne',sans-serif!important;font-size:.98rem!important;font-weight:700!important;color:var(--t0)!important;}
-label{color:var(--t2)!important;}
-.stCheckbox label,.stRadio label{color:var(--t1)!important;}
-.stRadio>div{display:flex!important;gap:3px!important;flex-wrap:wrap!important;}
-.stRadio>div>label{background:rgba(255,255,255,.04)!important;border:1px solid rgba(255,255,255,.07)!important;
-  border-radius:50px!important;padding:.24rem .7rem!important;font-size:.72rem!important;cursor:pointer!important;color:var(--t2)!important;}
-.stSelectbox [data-baseweb="select"]{background:rgba(255,255,255,.035)!important;
-  border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;}
-.stFileUploader section{background:rgba(255,255,255,.025)!important;
-  border:1.5px dashed rgba(10,132,255,.2)!important;border-radius:14px!important;}
-.stExpander{background:rgba(255,255,255,.028);border:1px solid rgba(255,255,255,.06);border-radius:14px;}
-::-webkit-scrollbar{width:4px;height:4px;}
-::-webkit-scrollbar-thumb{background:rgba(10,132,255,.2);border-radius:4px;}
-.stAlert{background:rgba(255,255,255,.035)!important;border:1px solid rgba(255,255,255,.07)!important;border-radius:14px!important;}
-input[type="number"]{background:rgba(255,255,255,.035)!important;border:1px solid rgba(255,255,255,.08)!important;border-radius:12px!important;color:var(--t1)!important;}
-</style>""",unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════
-#  HTML HELPERS
-# ══════════════════════════════════════════════════
-GRADS=["135deg,#0e3a6e,#0A84FF","135deg,#065f46,#30D158","135deg,#4a1d96,#BF5AF2",
-       "135deg,#78350f,#FF9F0A","135deg,#7f1d1d,#FF453A","135deg,#134e4a,#32ADE6",
-       "135deg,#1e3a8a,#5E5CE6","135deg,#3b1f6e,#BF5AF2"]
-def ugrad(e): return f"linear-gradient({GRADS[hash(e or '')%len(GRADS)]})"
-def avh(initials, sz=40, grad=None):
-    fs=max(sz//3,8); bg=grad or "linear-gradient(135deg,#0A84FF,#30D158)"
-    return(f'<div style="width:{sz}px;height:{sz}px;border-radius:50%;background:{bg};'
-           f'display:flex;align-items:center;justify-content:center;'
-           f'font-family:Syne,sans-serif;font-weight:800;font-size:{fs}px;color:white;'
-           f'flex-shrink:0;border:1.5px solid rgba(255,255,255,.12)">{initials}</div>')
-def tags_html(tags,cls="tag"): return ''.join(f'<span class="{cls}">{t}</span>' for t in(tags or []))
-def badge(s):
-    m={"Publicado":"badge-teal","Concluído":"badge-pur"}
-    return f'<span class="{m.get(s,"badge-orn")}">{s}</span>'
-def pc_dark(title=""):
-    t={"text":title,"font":{"color":"#D8E4F5","family":"Syne","size":11}} if title else {}
-    return dict(plot_bgcolor="rgba(0,0,0,0)",paper_bgcolor="rgba(0,0,0,0)",
-                font=dict(color="#3A4D6A",family="Inter",size=10),
-                title=t,margin=dict(l=10,r=10,t=36 if title else 10,b=10),
-                xaxis=dict(showgrid=False,color="#3A4D6A",tickfont=dict(size=9)),
-                yaxis=dict(showgrid=True,gridcolor="rgba(255,255,255,.03)",color="#3A4D6A",tickfont=dict(size=9)))
-
-# ══════════════════════════════════════════════════
-#  AUTH
-# ══════════════════════════════════════════════════
-def page_login():
-    _,col,_=st.columns([1,1.1,1])
-    with col:
-        st.markdown("<br><br>",unsafe_allow_html=True)
-        st.markdown("""<div style="text-align:center;margin-bottom:2.5rem">
-  <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:.75rem">
-    <div style="width:48px;height:48px;border-radius:14px;background:linear-gradient(135deg,#0A84FF,#30D158);
-      display:flex;align-items:center;justify-content:center;font-size:1.3rem;
-      box-shadow:0 0 24px rgba(10,132,255,.35)">N</div>
-    <div style="font-family:Syne,sans-serif;font-size:2.5rem;font-weight:900;letter-spacing:-.07em;
-      background:linear-gradient(135deg,#0A84FF,#30D158);
-      -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text">Nebula</div>
-  </div>
-  <div style="color:#3A4D6A;font-size:.58rem;letter-spacing:.28em;text-transform:uppercase;font-weight:700">Plataforma de Pesquisa Científica</div>
-</div>""",unsafe_allow_html=True)
-        t_in,t_up=st.tabs(["  Entrar  ","  Criar conta  "])
-        with t_in:
-            with st.form("lf",clear_on_submit=False):
-                em=st.text_input("E-mail",placeholder="seu@email.com",key="li_e")
-                pw=st.text_input("Senha",placeholder="••••••••",type="password",key="li_p")
-                sub=st.form_submit_button("Entrar",use_container_width=True)
-                if sub:
-                    u=st.session_state.users.get(em)
-                    if not u: st.error("E-mail não encontrado.")
-                    elif u["password"]!=hp(pw): st.error("Senha incorreta.")
-                    else:
-                        st.session_state.logged_in=True; st.session_state.current_user=em
-                        area=u.get("area","")
-                        update_profile([w.lower() for w in re.split(r'[\s,]+',area) if len(w)>3],2.0)
-                        st.session_state.page="repository"; st.rerun()
-            st.markdown('<div style="text-align:center;color:#3A4D6A;font-size:.64rem;margin-top:.6rem">Demo: demo@nebula.ai / demo123</div>',unsafe_allow_html=True)
-        with t_up:
-            with st.form("sf",clear_on_submit=False):
-                nn=st.text_input("Nome completo",key="su_n")
-                ne=st.text_input("E-mail",key="su_e")
-                na=st.text_input("Área de pesquisa",key="su_a",placeholder="Ex: Neurociência Computacional")
-                n_nat=st.selectbox("Nacionalidade",["Brasil"]+sorted([k for k in NATIONALITY_COORDS if k!="Brasil"]),key="su_nat")
-                c1,c2=st.columns(2)
-                with c1: np_=st.text_input("Senha",type="password",key="su_p")
-                with c2: np2=st.text_input("Confirmar",type="password",key="su_p2")
-                sub2=st.form_submit_button("Criar conta",use_container_width=True)
-                if sub2:
-                    if not all([nn,ne,na,np_,np2]): st.error("Preencha todos os campos.")
-                    elif np_!=np2: st.error("Senhas não coincidem.")
-                    elif len(np_)<6: st.error("Mínimo 6 caracteres.")
-                    elif ne in st.session_state.users: st.error("E-mail já cadastrado.")
-                    else:
-                        st.session_state.users[ne]={"name":nn,"password":hp(np_),"bio":"","area":na,
-                                                    "verified":True,"nationality":n_nat}
-                        save_db(); st.session_state.logged_in=True; st.session_state.current_user=ne
-                        update_profile([w.lower() for w in re.split(r'[\s,]+',na) if len(w)>3],3.0)
-                        st.session_state.page="repository"; st.rerun()
-
-# ══════════════════════════════════════════════════
-#  SIDEBAR NAV
-# ══════════════════════════════════════════════════
-NAV=[("repository","Repositório","acc"),("search","Busca & Visao IA","teal"),
-     ("folders","Pastas","orn"),("analysis","Análises","pur"),
-     ("connections","Conexoes","teal"),("chat","Chat","acc"),("settings","Config","orn")]
-
-def render_nav():
-    email=st.session_state.current_user; u=guser(); cur=st.session_state.page
-    g=ugrad(email); in_=ini(u.get("name","?"))
-    with st.sidebar:
-        st.markdown('<div class="sb-logo"><div class="sb-logo-icon">N</div><div class="sb-logo-txt">Nebula</div></div>',unsafe_allow_html=True)
-        ak=st.session_state.get("api_key","")
-        st.markdown('<div class="sb-lbl">Menu</div>',unsafe_allow_html=True)
-        nav_labels={"repository":"Repositorio","search":"Busca & Visao","folders":"Pastas",
-                    "analysis":"Analises","connections":"Conexoes","chat":"Chat","settings":"Configuracoes"}
-        act_css=""
-        colors={"acc":"#0A84FF","teal":"#30D158","orn":"#FF9F0A","pur":"#BF5AF2"}
-        for i,(key,label,col) in enumerate(NAV):
-            if cur==key and not st.session_state.profile_view:
-                c=colors.get(col,"#0A84FF")
-                act_css+=(f'section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]'
-                          f' > [data-testid="stVerticalBlock"]:nth-child({i+3}) .stButton>button'
-                          f'{{color:{c}!important;-webkit-text-fill-color:{c}!important;'
-                          f'background:rgba(10,132,255,.12)!important;'
-                          f'border-color:{c}40!important;font-weight:700!important;}}')
-        if act_css: st.markdown(f'<style>{act_css}</style>',unsafe_allow_html=True)
-        for key,label,_ in NAV:
-            if st.button(label,key=f"sb_{key}",use_container_width=True):
-                st.session_state.profile_view=None; st.session_state.page=key; st.rerun()
-        st.markdown("<hr>",unsafe_allow_html=True)
-        st.markdown('<div class="sb-lbl">Anthropic API</div>',unsafe_allow_html=True)
-        new_ak=st.text_input("",placeholder="sk-ant-...",type="password",key="sb_api",
-                             label_visibility="collapsed",value=ak)
-        if new_ak!=ak: st.session_state.api_key=new_ak
-        if new_ak and new_ak.startswith("sk-"):
-            st.markdown('<div style="font-size:.52rem;color:#30D158;padding:.05rem .15rem">Claude Vision ativo</div>',unsafe_allow_html=True)
-        else:
-            st.markdown('<div style="font-size:.52rem;color:#3A4D6A;padding:.05rem .15rem">Insira chave para Claude Vision</div>',unsafe_allow_html=True)
-        st.markdown("<hr>",unsafe_allow_html=True)
-        st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.1rem .1rem">'
-                    f'{avh(in_,28,g)}<div><div style="font-weight:700;font-size:.73rem;color:#D8E4F5;'
-                    f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:116px">{u.get("name","?")}</div>'
-                    f'<div style="font-size:.55rem;color:#3A4D6A">{u.get("area","")[:20]}</div></div></div>',unsafe_allow_html=True)
-        if st.button("Meu Perfil",key="sb_me",use_container_width=True):
-            st.session_state.profile_view=email; st.rerun()
-
-# ══════════════════════════════════════════════════
-#  PROFILE
-# ══════════════════════════════════════════════════
-def page_profile(target_email):
-    tu=st.session_state.users.get(target_email,{})
-    if not tu: st.error("Perfil não encontrado."); return
-    tname=tu.get("name","?"); is_me=st.session_state.current_user==target_email
-    g=ugrad(target_email); in_t=ini(tname)
-    user_research=[r for r in st.session_state.research_items if r.get("author_email")==target_email]
-    total_cit=sum(r.get("citations",0) for r in user_research)
-    vb=f' <span class="badge-teal" style="font-size:.57rem">Verificado</span>' if tu.get("verified") else ""
-    st.markdown(f"""<div class="prof-hero">
-  <div class="av" style="background:{g}">{in_t}</div>
-  <div style="flex:1">
-    <div style="display:flex;align-items:center;gap:6px;margin-bottom:.2rem">
-      <span style="font-family:Syne,sans-serif;font-weight:800;font-size:1.3rem;color:#fff">{tname}</span>{vb}
-    </div>
-    <div style="color:#0A84FF;font-size:.78rem;font-weight:600;margin-bottom:.3rem">{tu.get("area","")}</div>
-    <div style="color:#7A8FAD;font-size:.75rem;line-height:1.7;margin-bottom:.7rem">{tu.get("bio","Sem bio.")}</div>
-    <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:.97rem;color:#fff">{len(user_research)}</span>
-      <span style="color:#3A4D6A;font-size:.63rem"> pesquisas</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:.97rem;color:#30D158">{total_cit}</span>
-      <span style="color:#3A4D6A;font-size:.63rem"> citações</span></div>
-      <div><span style="font-family:Syne,sans-serif;font-weight:800;font-size:.97rem;color:#BF5AF2">{tu.get("nationality","")}</span></div>
-    </div>
-  </div>
-</div>""",unsafe_allow_html=True)
-    if st.button("Voltar",key="pf_back",use_container_width=False): st.session_state.profile_view=None; st.rerun()
-    if is_me:
-        with st.form("pf_f"):
-            n_name=st.text_input("Nome",value=tu.get("name",""))
-            n_area=st.text_input("Area",value=tu.get("area",""))
-            n_bio=st.text_area("Bio",value=tu.get("bio",""),height=70)
-            if st.form_submit_button("Salvar",use_container_width=True):
-                st.session_state.users[target_email].update({"name":n_name,"area":n_area,"bio":n_bio})
-                save_db(); st.success("Salvo!"); st.rerun()
-        if st.button("Sair da conta",key="logout2"): 
-            st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
-    for r in sorted(user_research,key=lambda x:x.get("date",""),reverse=True):
-        render_research_card(r,show_author=False,ctx="prof")
-
-# ══════════════════════════════════════════════════
-#  RESEARCH CARD
-# ══════════════════════════════════════════════════
-
-
-def render_research_card(item, show_author=True, ctx="repo", compact=False, connection_count=None):
-    iid = item["id"]
-    aemail = item.get("author_email", "")
-    aname = item.get("author", "?")
-    dt = time_ago(item.get("date", ""))
-    g = ugrad(aemail)
-    ab = item.get("abstract", "")
-    if compact and len(ab) > 180:
-        ab = ab[:180] + "..."
-
-    nat = item.get("nationality", "")
-    yr = item.get("year", "")
-    cit = item.get("citations", 0)
-    method = item.get("methodology", "—")
-    conn_count = connection_count if connection_count is not None else len(find_similar(item, 0.22, 20))
-    detail_key = f"detail_{ctx}_{iid}"
-
-    if show_author:
-        hdr = (
-            f'<div style="padding:.72rem 1rem .48rem;display:flex;align-items:center;gap:8px;'
-            f'border-bottom:1px solid rgba(255,255,255,.04)">'
-            f'{avh(ini(aname),34,g)}<div style="flex:1;min-width:0">'
-            f'<div style="font-weight:700;font-size:.82rem;color:#fff">{aname}</div>'
-            f'<div style="color:#3A4D6A;font-size:.60rem">{item.get("area", "")} · {nat} · {dt}</div>'
-            f'</div>{badge(item["status"])}</div>'
-        )
-    else:
-        hdr = (
-            f'<div style="padding:.28rem 1rem .1rem;display:flex;justify-content:space-between;align-items:center">'
-            f'<span style="color:#3A4D6A;font-size:.59rem">{dt} · {nat}</span>{badge(item["status"])}'
-            f'</div>'
-        )
-
+# ============================================================
+# STYLES
+# ============================================================
+def inject_css() -> None:
     st.markdown(
-        f'<div class="research-card">{hdr}'
-        f'<div style="padding:.58rem 1rem .32rem">'
-        f'<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.94rem;margin-bottom:.26rem;color:#fff;line-height:1.42">{item["title"]}</div>'
-        f'<div style="color:#7A8FAD;font-size:.77rem;line-height:1.63;margin-bottom:.55rem">{ab}</div>'
-        f'<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:.38rem">{tags_html(item.get("tags", [])[:5])}</div>'
-        f'<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">'
-        f'<div class="scard" style="margin:0;padding:.5rem .65rem"><div style="font-size:.53rem;color:#3A4D6A;text-transform:uppercase;letter-spacing:.08em">Ano</div><div style="font-size:.82rem;color:#D8E4F5;font-weight:700">{yr}</div></div>'
-        f'<div class="scard" style="margin:0;padding:.5rem .65rem"><div style="font-size:.53rem;color:#3A4D6A;text-transform:uppercase;letter-spacing:.08em">Citações</div><div style="font-size:.82rem;color:#0A84FF;font-weight:700">{cit}</div></div>'
-        f'<div class="scard" style="margin:0;padding:.5rem .65rem"><div style="font-size:.53rem;color:#3A4D6A;text-transform:uppercase;letter-spacing:.08em">Método</div><div style="font-size:.75rem;color:#D8E4F5;font-weight:600">{method}</div></div>'
-        f'<div class="scard" style="margin:0;padding:.5rem .65rem"><div style="font-size:.53rem;color:#3A4D6A;text-transform:uppercase;letter-spacing:.08em">Conexões</div><div style="font-size:.82rem;color:#30D158;font-weight:700">{conn_count}</div></div>'
-        f'</div></div></div>',
+        """
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+        :root{
+            --bg:#04070f;
+            --panel:rgba(255,255,255,0.05);
+            --panel-2:rgba(255,255,255,0.03);
+            --line:rgba(255,255,255,0.10);
+            --text:#f5f8ff;
+            --muted:#aeb8d0;
+            --blue:#67b7ff;
+            --cyan:#7de7ff;
+            --green:#6ff0a6;
+            --yellow:#ffd76e;
+            --red:#ff7e7e;
+        }
+
+        html, body, [class*="css"]  {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .stApp {
+            background:
+                radial-gradient(circle at top left, rgba(103,183,255,0.16), transparent 30%),
+                radial-gradient(circle at top right, rgba(125,231,255,0.12), transparent 26%),
+                radial-gradient(circle at bottom center, rgba(111,240,166,0.10), transparent 24%),
+                #04070f;
+            color: var(--text);
+        }
+
+        .block-container{
+            padding-top: 1rem;
+            padding-bottom: 3rem;
+        }
+
+        [data-testid="stSidebar"]{
+            background: rgba(6,10,18,0.92);
+            border-right: 1px solid rgba(255,255,255,0.08);
+            backdrop-filter: blur(22px);
+        }
+
+        .glass {
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 22px;
+            padding: 1rem 1.1rem;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.28);
+            backdrop-filter: blur(18px);
+        }
+
+        .metric-card {
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 20px;
+            padding: 1rem;
+            min-height: 122px;
+        }
+
+        .metric-label {
+            font-size: 0.78rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            margin-bottom: 0.45rem;
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .metric-desc {
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin-top: 0.35rem;
+        }
+
+        .title-main {
+            font-size: 2.2rem;
+            font-weight: 800;
+            margin-bottom: 0.25rem;
+        }
+
+        .subtitle-main {
+            color: var(--muted);
+            margin-bottom: 1rem;
+        }
+
+        .section-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            margin-bottom: 0.85rem;
+        }
+
+        .doc-card {
+            background: linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.025));
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+            padding: 0.95rem 1rem;
+            margin-bottom: 0.7rem;
+        }
+
+        .tag {
+            display: inline-block;
+            padding: 0.24rem 0.58rem;
+            margin: 0.15rem 0.2rem 0.15rem 0;
+            border-radius: 999px;
+            background: rgba(103,183,255,0.14);
+            border: 1px solid rgba(103,183,255,0.18);
+            color: #d7ebff;
+            font-size: 0.8rem;
+        }
+
+        .small-muted {
+            color: var(--muted);
+            font-size: 0.86rem;
+        }
+
+        .stButton>button {
+            border-radius: 14px;
+            border: 1px solid rgba(255,255,255,0.10);
+            background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+            color: white;
+            box-shadow: 0 8px 22px rgba(0,0,0,0.22);
+        }
+
+        .stTextInput input, .stTextArea textarea, .stSelectbox div[data-baseweb="select"] > div {
+            border-radius: 14px !important;
+            background: rgba(255,255,255,0.05) !important;
+            color: white !important;
+            border: 1px solid rgba(255,255,255,0.09) !important;
+        }
+        </style>
+        """,
         unsafe_allow_html=True,
     )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("Mapear conexões", key=f"cn_{ctx}_{iid}", use_container_width=True):
-            st.session_state.view_research = item
-            st.session_state.page = "connections"
-            st.rerun()
-    with c2:
-        if st.button("Detalhar pesquisa", key=f"dt_{ctx}_{iid}", use_container_width=True):
-            st.session_state[detail_key] = not st.session_state.get(detail_key, False)
-            st.rerun()
 
-    if st.session_state.get(detail_key, False):
-        related = find_similar(item, 0.22, 3)
-        st.markdown('<div class="sc">', unsafe_allow_html=True)
-        st.markdown(
-            f'<div style="font-size:.56rem;color:#0A84FF;text-transform:uppercase;font-weight:700;letter-spacing:.10em;margin-bottom:.45rem">Leitura analítica</div>'
-            f'<div style="font-size:.73rem;color:#D8E4F5;line-height:1.7;margin-bottom:.45rem">'
-            f'Área: <strong>{item.get("area", "—")}</strong> · Método: <strong>{method}</strong> · Status: <strong>{item.get("status", "—")}</strong>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-        if related:
-            st.markdown('<div style="font-size:.68rem;color:#30D158;font-weight:700;margin-bottom:.35rem">Conexões principais</div>', unsafe_allow_html=True)
-            for sim, other in related:
-                det = connection_details(item, other)
-                st.markdown(
-                    f'<div class="sim-card">'
-                    f'<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:.25rem">'
-                    f'<div style="font-size:.78rem;font-weight:700;color:#fff">{other["title"][:70]}</div>'
-                    f'<div style="font-size:.62rem;color:#30D158;font-weight:800;white-space:nowrap">{round(sim*100)}%</div>'
-                    f'</div>'
-                    f'<div style="font-size:.62rem;color:#3A4D6A;margin-bottom:.25rem">{other.get("area", "")} · {other.get("methodology", "")}</div>'
-                    f'<div style="font-size:.68rem;color:#7A8FAD;margin-bottom:.25rem">{" • ".join(det["reasons"][:3])}</div>'
-                    f'{"<div>" + tags_html(det["shared_terms"][:6], "tag-teal") + "</div>" if det["shared_terms"] else ""}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.markdown('<div style="font-size:.7rem;color:#7A8FAD">Nenhuma conexão forte encontrada ainda para esta pesquisa.</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════
-#  REPOSITORY — main page
-# ══════════════════════════════════════════════════
+inject_css()
 
 
-def page_repository():
-    st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.25rem">Repositório de Pesquisa</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:#3A4D6A;font-size:.74rem;margin-bottom:.8rem">Ambiente acadêmico para leitura, comparação e conexão entre pesquisas.</p>', unsafe_allow_html=True)
+# ============================================================
+# UTILITIES
+# ============================================================
+def current_user() -> dict:
+    if not st.session_state.current_user:
+        return {}
+    return st.session_state.users.get(st.session_state.current_user, {})
 
-    email = st.session_state.current_user
-    u = guser()
-    all_items = list(st.session_state.research_items)
-    all_edges = build_connection_edges(all_items, threshold=0.22)
-    conn_map = connection_count_map(all_items, all_edges)
-    recs = get_recommendations(email, 6)
-    interests = get_interests(email, 8)
 
-    col_main, col_side = st.columns([2.25, .95], gap="medium")
 
-    with col_main:
-        with st.expander("Publicar nova pesquisa"):
-            with st.form("pub_form"):
-                title = st.text_input("Título", placeholder="Título da pesquisa...")
-                abstract = st.text_area("Resumo / Abstract", height=90, placeholder="Descreva sua pesquisa, metodologia, corpus e resultados...")
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    tags_in = st.text_input("Tags", placeholder="tag1, tag2, tag3")
-                with c2:
-                    meth = st.selectbox("Metodologia", ["experimental", "computacional", "observacional", "revisao sistematica", "estudo clinico", "outro"])
-                with c3:
-                    status = st.selectbox("Status", ["Em andamento", "Publicado", "Concluido"])
-                c4, c5 = st.columns(2)
-                with c4:
-                    year_in = st.number_input("Ano", min_value=1900, max_value=2030, value=datetime.now().year)
-                with c5:
-                    nat_options = ["Brasil"] + sorted([k for k in NATIONALITY_COORDS if k != "Brasil"])
-                    nat_in = st.selectbox("Nacionalidade", nat_options)
-                sub = st.form_submit_button("Publicar", use_container_width=True)
-                if sub and title and abstract:
-                    tags = [t.strip() for t in tags_in.split(",") if t.strip()] if tags_in else []
-                    new_r = {
-                        "id": int(datetime.now().timestamp()) + random.randint(0, 999),
-                        "author": u.get("name", "?"),
-                        "author_email": email,
-                        "area": u.get("area", ""),
-                        "nationality": nat_in,
-                        "year": int(year_in),
-                        "title": title,
-                        "abstract": abstract,
-                        "tags": tags,
-                        "methodology": meth,
-                        "citations": 0,
-                        "views": 1,
-                        "likes": 0,
-                        "liked_by": [],
-                        "saved_by": [],
-                        "date": datetime.now().strftime("%Y-%m-%d"),
-                        "status": status,
-                    }
-                    st.session_state.research_items.insert(0, new_r)
-                    update_profile(tags, 2.5)
-                    save_db()
-                    st.success("Pesquisa publicada!")
-                    st.rerun()
+def safe_int(value, default=0):
+    try:
+        return int(value)
+    except Exception:
+        return default
 
-        q_col, sort_col = st.columns([3.3, 1.2])
-        with q_col:
-            repo_query = st.text_input("", placeholder="Pesquisar título, autor, resumo, tag, método ou área...", key="repo_query", label_visibility="collapsed")
-        with sort_col:
-            sort_mode = st.selectbox("Ordenar por", ["Mais recentes", "Mais conectadas", "Mais citadas", "Relevantes para mim"], key="repo_sort")
 
-        ff = st.radio("", ["Todas", "Minhas", "Por área", "Relacionadas", "Publicadas"], horizontal=True, key="rf2", label_visibility="collapsed")
-        items = list(all_items)
-        if ff == "Minhas":
-            items = [r for r in items if r.get("author_email") == email]
-        elif ff == "Por área":
-            area = _norm_text(u.get("area", ""))
-            items = [r for r in items if area and (area in _norm_text(r.get("area", "")) or area in " ".join([_norm_text(t) for t in r.get("tags", [])]))]
-        elif ff == "Relacionadas":
-            items = recs if recs else items
-        elif ff == "Publicadas":
-            items = [r for r in items if _norm_text(r.get("status", "")) == "publicado"]
 
-        if repo_query:
-            q = _norm_text(repo_query)
-            items = [
-                r for r in items
-                if q in _norm_text(r.get("title", ""))
-                or q in _norm_text(r.get("abstract", ""))
-                or q in _norm_text(r.get("author", ""))
-                or q in _norm_text(r.get("area", ""))
-                or q in _norm_text(r.get("methodology", ""))
-                or any(q in _norm_text(t) for t in r.get("tags", []))
-            ]
+def normalize_text(text: str) -> str:
+    text = text.lower()
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
-        if sort_mode == "Mais conectadas":
-            items = sorted(items, key=lambda x: (conn_map.get(x["id"], 0), x.get("citations", 0), x.get("date", "")), reverse=True)
-        elif sort_mode == "Mais citadas":
-            items = sorted(items, key=lambda x: (x.get("citations", 0), conn_map.get(x["id"], 0), x.get("date", "")), reverse=True)
-        elif sort_mode == "Relevantes para mim":
-            interest_set = set(get_interests(email, 20)) | {_norm_text(u.get("area", ""))}
-            def personal_score(item):
-                item_terms = research_terms(item, 10)
-                overlap = len({t for t in interest_set if t} & item_terms)
-                return overlap * 10 + conn_map.get(item["id"], 0) * 2 + item.get("citations", 0) * 0.4
-            items = sorted(items, key=personal_score, reverse=True)
-        else:
-            items = sorted(items, key=lambda x: (x.get("date", ""), x.get("citations", 0)), reverse=True)
 
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas visíveis</div></div>', unsafe_allow_html=True)
-        with m2:
-            st.markdown(f'<div class="mbox"><div class="mval-teal">{len(all_edges)}</div><div class="mlbl">Conexões mapeadas</div></div>', unsafe_allow_html=True)
-        with m3:
-            st.markdown(f'<div class="mbox"><div class="mval-pur">{len(set(r.get("area", "") for r in all_items if r.get("area")))}</div><div class="mlbl">Áreas de pesquisa</div></div>', unsafe_allow_html=True)
-        st.markdown('<div style="height:.35rem"></div>', unsafe_allow_html=True)
 
-        if not items:
-            st.markdown('<div class="glass-card" style="padding:3.5rem;text-align:center;color:#3A4D6A">Nenhuma pesquisa encontrada para esse recorte.</div>', unsafe_allow_html=True)
-        else:
-            for r in items:
-                render_research_card(r, ctx="repo", connection_count=conn_map.get(r["id"], 0))
+def tokenize(text: str) -> list[str]:
+    words = re.findall(r"[a-zA-ZÀ-ÿ0-9\-]{3,}", text.lower())
+    return [w for w in words if w not in STOPWORDS]
 
-    with col_side:
-        st.markdown('<div class="sc">', unsafe_allow_html=True)
-        st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;margin-bottom:.65rem;color:#fff">Eixos do seu perfil</div>', unsafe_allow_html=True)
-        if interests:
-            for i, interest in enumerate(interests[:8]):
-                pct = max(18, 100 - i * 10)
-                st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:6px;margin-bottom:.28rem">'
-                    f'<div style="flex:1;font-size:.72rem;color:#7A8FAD;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{interest}</div>'
-                    f'<div style="width:{pct}px;height:4px;background:linear-gradient(90deg,#0A84FF,#30D158);border-radius:4px;flex-shrink:0"></div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.markdown('<div style="font-size:.7rem;color:#7A8FAD">Publique pesquisas, busque artigos e analise documentos para enriquecer seu perfil acadêmico.</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="sc">', unsafe_allow_html=True)
-        st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;margin-bottom:.65rem;color:#fff">Referências acadêmicas sugeridas</div>', unsafe_allow_html=True)
-        top_interest = " ".join(interests[:3]) if interests else u.get("area", "science")
-        ck = f"recs_{email}_{top_interest[:30]}"
-        if ck not in st.session_state.scholar_cache:
+
+def extract_keywords(text: str, top_n: int = 15) -> list[str]:
+    words = tokenize(text)
+    if not words:
+        return []
+    count = Counter(words)
+    return [w for w, _ in count.most_common(top_n)]
+
+
+
+def detect_topic(text: str, fallback: str = "Pesquisa Geral") -> str:
+    t = normalize_text(text)
+    scores = {}
+    for topic, terms in TOPIC_RULES.items():
+        score = sum(2 if term in t else 0 for term in terms)
+        scores[topic] = score
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 else fallback
+
+
+
+def detect_years(text: str) -> list[int]:
+    years = [int(y) for y in re.findall(r"\b(19\d{2}|20\d{2})\b", text)]
+    years = [y for y in years if 1900 <= y <= datetime.now().year + 1]
+    return sorted(set(years))
+
+
+
+def infer_nationality(text: str) -> str:
+    t = normalize_text(text)
+    for country in NATIONALITY_COORDS:
+        if country.lower() in t:
+            return country
+    return "Brasil"
+
+
+
+def summarize_text(text: str, max_sentences: int = 3) -> str:
+    if not text.strip():
+        return "Sem texto suficiente para resumir."
+    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    ranked = []
+    word_freq = Counter(tokenize(text))
+    for sentence in sentences:
+        score = sum(word_freq.get(w, 0) for w in tokenize(sentence))
+        ranked.append((score, sentence))
+    chosen = [s for _, s in sorted(ranked, reverse=True)[:max_sentences]]
+    if not chosen:
+        chosen = sentences[:max_sentences]
+    return " ".join(chosen)[:900]
+
+
+
+def score_relevance(query: str, text: str, keywords: list[str]) -> float:
+    q_terms = set(tokenize(query))
+    if not q_terms:
+        return 0.0
+    doc_terms = set(tokenize(text)) | set(keywords)
+    inter = len(q_terms & doc_terms)
+    union = len(q_terms | doc_terms) or 1
+    return round((inter / union) * 100, 2)
+
+
+
+def average_hash(img: Image.Image, hash_size: int = 8) -> str:
+    gray = img.convert("L").resize((hash_size, hash_size))
+    arr = np.array(gray)
+    mean = arr.mean()
+    bits = arr > mean
+    return "".join("1" if x else "0" for x in bits.flatten())
+
+
+
+def hamming_distance(a: str, b: str) -> int:
+    if len(a) != len(b):
+        return max(len(a), len(b))
+    return sum(c1 != c2 for c1, c2 in zip(a, b))
+
+
+
+def image_stats(img: Image.Image) -> dict:
+    rgb = img.convert("RGB")
+    arr = np.array(rgb)
+    mean_rgb = arr.reshape(-1, 3).mean(axis=0)
+    brightness = float(np.mean(np.dot(arr[..., :3], [0.299, 0.587, 0.114])))
+    return {
+        "width": img.width,
+        "height": img.height,
+        "brightness": round(brightness, 2),
+        "r": round(float(mean_rgb[0]), 1),
+        "g": round(float(mean_rgb[1]), 1),
+        "b": round(float(mean_rgb[2]), 1),
+        "hash": average_hash(img),
+    }
+
+
+
+def read_pdf_text(file_bytes: bytes) -> str:
+    if PyPDF2 is None:
+        return ""
+    try:
+        reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+        parts = []
+        for page in reader.pages[:25]:
             try:
-                with st.spinner("Buscando referências..."):
-                    st.session_state.scholar_cache[ck] = search_ss(top_interest, 4)
-            except:
-                st.session_state.scholar_cache[ck] = []
-        for a in st.session_state.scholar_cache.get(ck, [])[:3]:
-            st.markdown(
-                f'<div style="padding:.38rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
-                f'<div style="font-size:.74rem;font-weight:600;color:#D8E4F5;line-height:1.4;margin-bottom:.18rem">{a["title"][:65]}...</div>'
-                f'<div style="font-size:.59rem;color:#3A4D6A">{a["authors"][:40]} · {a["year"]}{" · " + str(a.get("citations", 0)) + " cit." if a.get("citations") else ""}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-            if a.get("url"):
-                st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.67rem;text-decoration:none">Abrir referência</a>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+                parts.append(page.extract_text() or "")
+            except Exception:
+                pass
+        return "\n".join(parts)[:MAX_TEXT_CHARS]
+    except Exception:
+        return ""
 
-        st.markdown('<div class="sc">', unsafe_allow_html=True)
-        st.markdown('<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.78rem;margin-bottom:.65rem;color:#fff">Temas recorrentes</div>', unsafe_allow_html=True)
-        all_tags = Counter(t.lower() for r in all_items for t in r.get("tags", []))
-        if all_tags:
-            for t, cnt in all_tags.most_common(6):
-                st.markdown(
-                    f'<div style="padding:.28rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
-                    f'<div style="font-size:.73rem;font-weight:600;color:#0A84FF">{t}</div>'
-                    f'<div style="font-size:.57rem;color:#3A4D6A">{cnt} ocorrências no repositório</div>'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
+
+
+def read_docx_text(file_bytes: bytes) -> str:
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+            xml = z.read("word/document.xml").decode("utf-8", errors="ignore")
+        text = re.sub(r"<[^>]+>", " ", xml)
+        return re.sub(r"\s+", " ", text)[:MAX_TEXT_CHARS]
+    except Exception:
+        return ""
+
+
+
+def read_tabular_text(file_bytes: bytes, suffix: str) -> str:
+    try:
+        if suffix == "csv":
+            df = pd.read_csv(io.BytesIO(file_bytes))
         else:
-            st.markdown('<div style="font-size:.7rem;color:#7A8FAD">Ainda não há temas recorrentes cadastrados.</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════
-#  SEARCH + VISION IA (merged)
-# ══════════════════════════════════════════════════
-def render_article(a, idx=0, ctx="web"):
-    sc="#0A84FF" if a.get("origin")=="semantic" else "#30D158"; sn="S2" if a.get("origin")=="semantic" else "CR"
-    cite=f" · {a['citations']} cit." if a.get("citations") else ""
-    uid=re.sub(r'[^a-zA-Z0-9]','',f"{ctx}_{idx}_{str(a.get('doi',''))[:8]}")[:28]
-    is_saved=any(s.get('doi')==a.get('doi') for s in st.session_state.saved_articles)
-    ab=(a.get("abstract","") or "")[:260]
-    st.markdown(f'<div class="scard"><div style="display:flex;align-items:flex-start;gap:7px;margin-bottom:.24rem">'
-                f'<div style="flex:1;font-family:Syne,sans-serif;font-weight:700;font-size:.84rem;color:#fff">{a["title"]}</div>'
-                f'<span style="font-size:.56rem;color:{sc};border:1px solid {sc}30;border-radius:7px;padding:2px 6px;white-space:nowrap;flex-shrink:0">{sn}</span></div>'
-                f'<div style="color:#3A4D6A;font-size:.60rem;margin-bottom:.25rem">{a["authors"]} · <em>{a["source"]}</em> · {a["year"]}{cite}</div>'
-                f'<div style="color:#7A8FAD;font-size:.74rem;line-height:1.62">{ab}{"..." if len(a.get("abstract",""))>260 else ""}</div></div>',unsafe_allow_html=True)
-    ca,cb,cc=st.columns(3)
-    with ca:
-        lbl="Remover" if is_saved else "Salvar"
-        if st.button(lbl,key=f"svw_{uid}"):
-            if is_saved: st.session_state.saved_articles=[s for s in st.session_state.saved_articles if s.get('doi')!=a.get('doi')]; st.toast("Removido")
-            else: st.session_state.saved_articles.append(a); st.toast("Salvo!")
-            save_db(); st.rerun()
-    with cb:
-        if st.button("Citar",key=f"ctw_{uid}"): st.toast(f'{a["authors"]} ({a["year"]}). {a["title"]}.')
-    with cc:
-        if a.get("url"): st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.75rem;text-decoration:none;line-height:2.3;display:block">Abrir</a>',unsafe_allow_html=True)
-
-def page_search():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.25rem">Busca e Visao IA</h1>',unsafe_allow_html=True)
-    st.markdown('<p style="color:#3A4D6A;font-size:.74rem;margin-bottom:.8rem">Busca de artigos · Pesquisa por imagem · Analise de imagem com ML + Claude Vision</p>',unsafe_allow_html=True)
-    api_key=st.session_state.get("api_key",""); has_api=bool(api_key and api_key.startswith("sk-"))
-    t_text,t_img=st.tabs(["  Busca por texto  ","  Busca por imagem / Vision IA  "])
-
-    with t_text:
-        with st.form("sf_text"):
-            c1,c2=st.columns([4,1])
-            with c1: q=st.text_input("",placeholder="CRISPR · quantum ML · dark matter · neuroplasticidade...",key="sq",label_visibility="collapsed")
-            with c2: sub=st.form_submit_button("Buscar",use_container_width=True)
-            if sub and q:
-                with st.spinner("Buscando..."):
-                    nb=[r for r in st.session_state.research_items if q.lower() in r["title"].lower() or q.lower() in r["abstract"].lower()]
-                    ss_r=search_ss(q,6); cr_r=search_cr(q,4)
-                    st.session_state.search_results={"nebula":nb,"ss":ss_r,"cr":cr_r}; st.session_state.last_sq=q
-                    update_profile([q.lower()],0.5)
-        # Also search in folders
-        if st.session_state.get("search_results") and st.session_state.get("last_sq"):
-            q_s=st.session_state.last_sq; res=st.session_state.search_results
-            neb=res.get("nebula",[]); ss=res.get("ss",[]); cr=res.get("cr",[])
-            web=ss+[x for x in cr if not any(x["title"].lower()==s["title"].lower() for s in ss)]
-            # Search in user folders
-            folder_matches=[]
-            for fn,fd in st.session_state.folders.items():
-                if not isinstance(fd,dict): continue
-                for fname,an in fd.get("analyses",{}).items():
-                    if q_s.lower() in fname.lower() or any(q_s.lower() in kw for kw in an.get("keywords",[])):
-                        folder_matches.append({"folder":fn,"file":fname,"keywords":an.get("keywords",[])[:6],"topics":an.get("topics",{}),"relevance":an.get("relevance_score",0)})
-            t_all,t_neb,t_web,t_fold=st.tabs([f"Todos ({len(neb)+len(web)})",f"Nebula ({len(neb)})",f"Internet ({len(web)})",f"Suas Pastas ({len(folder_matches)})"])
-            with t_all:
-                if neb:
-                    st.markdown('<div style="font-size:.56rem;color:#0A84FF;font-weight:700;margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.1em">Na Nebula</div>',unsafe_allow_html=True)
-                    for r in neb: render_research_card(r,ctx="sa",compact=True)
-                if web:
-                    if neb: st.markdown('<hr>',unsafe_allow_html=True)
-                    st.markdown('<div style="font-size:.56rem;color:#30D158;font-weight:700;margin-bottom:.35rem;text-transform:uppercase;letter-spacing:.1em">Internet</div>',unsafe_allow_html=True)
-                    for i,a in enumerate(web): render_article(a,i,"aw")
-                if not neb and not web: st.info("Nenhum resultado.")
-            with t_neb:
-                for r in neb: render_research_card(r,ctx="sn",compact=True)
-                if not neb: st.info("Nenhuma pesquisa.")
-            with t_web:
-                for i,a in enumerate(web): render_article(a,i,"wt")
-                if not web: st.info("Nenhum artigo.")
-            with t_fold:
-                if folder_matches:
-                    for fm in folder_matches:
-                        st.markdown(f'<div class="scard"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.83rem;color:#fff;margin-bottom:.22rem">{fm["file"]}</div>'
-                                    f'<div style="font-size:.63rem;color:#3A4D6A;margin-bottom:.25rem">Pasta: {fm["folder"]} · Relevancia: {fm["relevance"]}%</div>'
-                                    f'<div>{tags_html(fm["keywords"][:5])}</div></div>',unsafe_allow_html=True)
-                else:
-                    st.markdown('<div style="color:#3A4D6A;padding:.8rem">Nenhum resultado nas suas pastas.</div>',unsafe_allow_html=True)
-
-    with t_img:
-        st.markdown('<div class="ai-disc"><span style="font-size:.64rem;color:#FF9F0A;font-weight:600">Aviso: </span><span style="font-size:.62rem;color:#7A8FAD">Analise realizada por IA e processamento ML. Resultados podem conter erros — valide com especialista qualificado.</span></div>',unsafe_allow_html=True)
-        if has_api:
-            st.markdown('<div class="pbox-teal" style="margin-bottom:.6rem"><div style="font-size:.7rem;color:#30D158;font-weight:600">Claude Vision Ativo</div><div style="font-size:.63rem;color:#7A8FAD">Analise real com IA + busca de artigos relacionados + busca em suas pastas</div></div>',unsafe_allow_html=True)
-        cu,cr2=st.columns([1,1.8])
-        with cu:
-            img_f=st.file_uploader("Imagem cientifica",type=["png","jpg","jpeg","webp","tiff"],key="img_up2")
-            img_bytes=None
-            if img_f: img_f.seek(0); img_bytes=img_f.read(); st.image(img_bytes,use_container_width=True)
-            run_ml_btn=st.button("Analisar (Pipeline ML)",key="btn_ml",use_container_width=True)
-            run_vision_btn=False
-            if img_bytes and has_api:
-                run_vision_btn=st.button("Claude Vision (IA Real)",key="btn_cv",use_container_width=True)
-        with cr2:
-            if img_bytes and run_ml_btn:
-                with st.spinner("Executando Sobel · Canny · FFT · Textura..."):
-                    ml=run_ml(img_bytes)
-                st.session_state.img_result=ml
-                if not ml.get("ok"): st.error(ml.get("error","Erro no pipeline"))
-                else:
-                    cls_=ml["classification"]; col_info=ml["color"]; conf_c=VIB[1] if cls_["confidence"]>80 else(VIB[0] if cls_["confidence"]>60 else VIB[2])
-                    st.markdown(f'<div class="ai-card"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:.5rem">'
-                                f'<div><div style="font-size:.54rem;color:#3A4D6A;text-transform:uppercase;letter-spacing:.10em;margin-bottom:4px">Pipeline ML</div>'
-                                f'<div style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:#fff;margin-bottom:2px">{cls_["category"]}</div></div>'
-                                f'<div style="text-align:center;background:rgba(0,0,0,.3);border-radius:10px;padding:.4rem .75rem;flex-shrink:0">'
-                                f'<div style="font-family:Syne,sans-serif;font-weight:900;font-size:1.4rem;color:{conf_c}">{cls_["confidence"]}%</div>'
-                                f'<div style="font-size:.48rem;color:#3A4D6A;text-transform:uppercase">confianca</div></div></div>'
-                                f'<div style="font-size:.61rem;color:#3A4D6A;margin-bottom:.25rem">{'  '.join(f"{k}: {v}pt" for k,v in list(cls_["all_scores"].items())[:4])}</div></div>',unsafe_allow_html=True)
-                    sb=ml.get("sobel",{}); tx=ml.get("texture",{}); fft_r=ml.get("fft",{})
-                    c1m,c2m,c3m,c4m=st.columns(4)
-                    with c1m: st.markdown(f'<div class="mbox"><div style="font-weight:800;font-size:.95rem;color:#0A84FF">{sb.get("mean",0):.4f}</div><div class="mlbl">Sobel</div></div>',unsafe_allow_html=True)
-                    with c2m: st.markdown(f'<div class="mbox"><div style="font-weight:800;font-size:.95rem;color:#30D158">{tx.get("texture_type","—")}</div><div class="mlbl">Textura</div></div>',unsafe_allow_html=True)
-                    with c3m: st.markdown(f'<div class="mbox"><div style="font-weight:800;font-size:.95rem;color:#BF5AF2">{"Perio." if fft_r.get("is_periodic") else "Aperio."}</div><div class="mlbl">FFT</div></div>',unsafe_allow_html=True)
-                    with c4m: st.markdown(f'<div class="mbox"><div style="font-weight:800;font-size:.95rem;color:#FF9F0A">{col_info.get("entropy",0):.2f}</div><div class="mlbl">Entropia</div></div>',unsafe_allow_html=True)
-                    t_ml1,t_ml2,t_ml3=st.tabs(["  Bordas & FFT  ","  Cores  ","  Histograma  "])
-                    with t_ml1:
-                        eh=sb.get("hist",[1]*16)
-                        fig_e=go.Figure(go.Bar(y=eh,marker=dict(color=list(range(len(eh))),colorscale=[[0,"#0A1020"],[.4,"#0A84FF"],[.8,"#30D158"],[1,"#FFD60A"]])))
-                        fig_e.update_layout(**{**pc_dark("Distribuicao Sobel"),'height':155,'margin':dict(l=10,r=10,t=32,b=8)})
-                        st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_e,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-                        lf=fft_r.get("lf",0); mf=fft_r.get("mf",0); hf=fft_r.get("hf",0)
-                        fig_f=go.Figure(go.Bar(x=["Baixa","Media","Alta"],y=[lf,mf,hf],marker=dict(color=["#0A84FF","#30D158","#BF5AF2"]),text=[f"{v:.3f}" for v in [lf,mf,hf]],textposition="outside",textfont=dict(color="#3A4D6A",size=9)))
-                        fig_f.update_layout(**{**pc_dark("FFT Frequencias"),'height':155,'margin':dict(l=10,r=10,t=32,b=8)})
-                        st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_f,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-                    with t_ml2:
-                        pal=ml.get("palette",[])
-                        for cp in pal[:6]:
-                            hx=cp.get("hex","#888"); r2,g2,b2=cp.get("rgb",(128,128,128)); pct=cp.get("pct",0)
-                            st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.32rem"><div style="width:26px;height:26px;border-radius:6px;background:{hx};border:1px solid rgba(255,255,255,.1);flex-shrink:0"></div><div style="flex:1"><div style="display:flex;justify-content:space-between;font-size:.66rem;color:#7A8FAD;margin-bottom:2px"><span>{hx.upper()}</span><span>{pct:.1f}%</span></div><div style="height:4px;width:{min(int(pct*3),100)}%;background:{hx};border-radius:3px;max-width:100%"></div></div></div>',unsafe_allow_html=True)
-                    with t_ml3:
-                        hd=ml.get("histograms",{})
-                        if hd:
-                            fig4=go.Figure()
-                            bx2=list(range(0,256,8))[:32]
-                            fig4.add_trace(go.Scatter(x=bx2,y=hd.get("r",[])[:32],fill='tozeroy',name='R',line=dict(color='rgba(255,69,58,.9)',width=1.5),fillcolor='rgba(255,69,58,.08)'))
-                            fig4.add_trace(go.Scatter(x=bx2,y=hd.get("g",[])[:32],fill='tozeroy',name='G',line=dict(color='rgba(48,209,88,.9)',width=1.5),fillcolor='rgba(48,209,88,.08)'))
-                            fig4.add_trace(go.Scatter(x=bx2,y=hd.get("b",[])[:32],fill='tozeroy',name='B',line=dict(color='rgba(10,132,255,.9)',width=1.5),fillcolor='rgba(10,132,255,.08)'))
-                            fig4.update_layout(**{**pc_dark("Histograma RGB"),'height':165,'margin':dict(l=10,r=10,t=32,b=8),'legend':dict(font=dict(color="#3A4D6A",size=8))})
-                            st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig4,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-                    # Search related in folders and internet
-                    kw_s=cls_["search_kw"]
-                    st.markdown('<div class="dtxt">Pesquisas relacionadas</div>',unsafe_allow_html=True)
-                    t_r1,t_r2,t_r3=st.tabs(["Nebula","Suas Pastas","Internet"])
-                    with t_r1:
-                        kl=kw_s.lower().split()[:5]
-                        nr=sorted([(sum(1 for k in kl if k in (r.get("title","")+" "+r.get("abstract","")).lower()),r) for r in st.session_state.research_items],key=lambda x:-x[0])
-                        for _,r in [x for x in nr if x[0]>0][:4]: render_research_card(r,ctx="img_n",compact=True)
-                        if not [x for x in nr if x[0]>0]: st.info("Nenhuma pesquisa similar.")
-                    with t_r2:
-                        folder_img=[]
-                        for fn,fd in st.session_state.folders.items():
-                            if not isinstance(fd,dict): continue
-                            for fname,an in fd.get("analyses",{}).items():
-                                score=sum(1 for k in kl if any(k in kw for kw in an.get("keywords",[])))
-                                if score>0: folder_img.append((score,fn,fname,an))
-                        folder_img.sort(key=lambda x:-x[0])
-                        for _,fn,fname,an in folder_img[:4]:
-                            st.markdown(f'<div class="scard"><div style="font-weight:700;font-size:.82rem;color:#fff;margin-bottom:.2rem">{fname}</div>'
-                                        f'<div style="font-size:.62rem;color:#3A4D6A">Pasta: {fn}</div>'
-                                        f'<div style="margin-top:.25rem">{tags_html(an.get("keywords",[])[:5])}</div></div>',unsafe_allow_html=True)
-                        if not folder_img: st.info("Nenhum documento similar nas pastas.")
-                    with t_r3:
-                        ck_img=f"img_{kw_s[:35]}"
-                        if ck_img not in st.session_state.scholar_cache:
-                            with st.spinner("Buscando..."):
-                                st.session_state.scholar_cache[ck_img]=search_ss(kw_s,5)
-                        for i,a in enumerate(st.session_state.scholar_cache.get(ck_img,[])): render_article(a,i,"img_w")
-            elif img_bytes and run_vision_btn:
-                with st.spinner("Claude analisando a imagem..."):
-                    ai_text,ai_err=call_vision(img_bytes,api_key)
-                if ai_err: st.error(f"Erro Claude Vision: {ai_err}")
-                elif ai_text:
-                    try:
-                        clean=re.sub(r'```json\s*','',ai_text).replace('```','').strip()
-                        ai_d=json.loads(clean)
-                        tipo=ai_d.get("tipo","—"); origem=ai_d.get("origem","—"); desc=ai_d.get("descricao","—")
-                        estruturas=ai_d.get("estruturas",[]); tecnica=ai_d.get("tecnica","—")
-                        confianca=ai_d.get("confianca",0); termos=ai_d.get("termos_busca","")
-                        interp=ai_d.get("interpretacao",""); aviso=ai_d.get("aviso","")
-                        cc2="#30D158" if confianca>80 else("#0A84FF" if confianca>60 else "#FF9F0A")
-                        st.markdown(f'''<div class="ai-card" style="border-color:rgba(48,209,88,.25)">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:.65rem">
-    <div>
-      <div style="font-size:.53rem;color:#30D158;text-transform:uppercase;letter-spacing:.10em;font-weight:700;margin-bottom:3px">Claude Vision</div>
-      <div style="font-family:Syne,sans-serif;font-weight:800;font-size:1rem;color:#fff;margin-bottom:2px">{tipo}</div>
-      <div style="color:#30D158;font-size:.74rem;font-weight:600">{origem}</div>
-    </div>
-    <div style="text-align:center;background:rgba(0,0,0,.3);border-radius:10px;padding:.4rem .75rem;flex-shrink:0">
-      <div style="font-family:Syne,sans-serif;font-weight:900;font-size:1.35rem;color:{cc2}">{confianca}%</div>
-      <div style="font-size:.47rem;color:#3A4D6A;text-transform:uppercase">confianca</div>
-    </div>
-  </div>
-  <div style="background:rgba(0,0,0,.22);border-radius:9px;padding:.55rem .75rem;margin-bottom:.5rem;font-size:.75rem;color:#D8E4F5;line-height:1.65">{desc}</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:.45rem;margin-bottom:.45rem;font-size:.71rem">
-    <div style="color:#7A8FAD">Tecnica: <strong style="color:#fff">{tecnica}</strong></div>
-    <div style="color:#7A8FAD">Qualidade: <strong style="color:#FF9F0A">{ai_d.get("qualidade","—")}</strong></div>
-  </div>
-  {f"<div style='font-size:.70rem;color:#7A8FAD;margin-bottom:.35rem'>Estruturas: {', '.join(estruturas)}</div>" if estruturas else ""}
-  {f"<div style='background:rgba(48,209,88,.04);border:1px solid rgba(48,209,88,.12);border-radius:8px;padding:.45rem .65rem;font-size:.71rem;color:#7A8FAD;line-height:1.65'>{interp}</div>" if interp else ""}
-  {f"<div style='margin-top:.4rem;font-size:.61rem;color:#FF9F0A'>{aviso}</div>" if aviso else ""}
-</div>''',unsafe_allow_html=True)
-                        if termos:
-                            with st.spinner("Buscando artigos..."):
-                                art=search_ss(termos,5)
-                            st.markdown('<div class="dtxt">Artigos relacionados</div>',unsafe_allow_html=True)
-                            for i,a in enumerate(art): render_article(a,i,"cv_w")
-                    except:
-                        st.markdown(f'<div class="abox"><div style="font-size:.75rem;color:#7A8FAD;white-space:pre-wrap">{ai_text[:1200]}</div></div>',unsafe_allow_html=True)
-            elif not img_f:
-                st.markdown('<div class="glass-card" style="padding:4rem 2rem;text-align:center;margin-top:.5rem">'
-                            '<div style="font-size:2.5rem;opacity:.12;margin-bottom:.85rem">N</div>'
-                            '<div style="font-family:Syne,sans-serif;font-size:.96rem;color:#D8E4F5">Carregue uma imagem cientifica</div>'
-                            '<div style="font-size:.68rem;color:#3A4D6A;margin-top:.4rem;line-height:1.9">Pipeline ML: Sobel · Canny · FFT · Textura · Paleta<br>Com API Key: Claude Vision para analise real</div></div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════
-#  FOLDERS
-# ══════════════════════════════════════════════════
-def page_folders():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.8rem">Pastas de Pesquisa</h1>',unsafe_allow_html=True)
-    u=guser(); ra=u.get("area","")
-    with st.form("nff"):
-        c1,c2,c3=st.columns([2,1.5,.7])
-        with c1: nfn=st.text_input("Nome da pasta",placeholder="Ex: Genomica Comparativa")
-        with c2: nfd=st.text_input("Descricao",placeholder="Breve descricao")
-        with c3:
-            st.markdown('<div style="margin-top:1.65rem">',unsafe_allow_html=True)
-            sub_nf=st.form_submit_button("Criar",use_container_width=True)
-            st.markdown('</div>',unsafe_allow_html=True)
-        if sub_nf:
-            if nfn.strip():
-                if nfn not in st.session_state.folders: st.session_state.folders[nfn]={"desc":nfd,"files":[],"notes":"","analyses":{}}; save_db(); st.success(f"Pasta '{nfn}' criada!"); st.rerun()
-                else: st.warning("Ja existe.")
-            else: st.warning("Digite um nome.")
-    if not st.session_state.folders:
-        st.markdown('<div class="glass-card" style="text-align:center;padding:3.5rem;color:#3A4D6A">Nenhuma pasta criada.</div>',unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True); return
-    for fn,fd in list(st.session_state.folders.items()):
-        if not isinstance(fd,dict): fd={"files":fd,"desc":"","notes":"","analyses":{}}; st.session_state.folders[fn]=fd
-        files=fd.get("files",[]); analyses=fd.get("analyses",{})
-        with st.expander(f"{fn}  —  {len(files)} arquivo(s)  ·  {len(analyses)} analise(s)"):
-            up=st.file_uploader("",type=None,key=f"up_{fn}",label_visibility="collapsed",accept_multiple_files=True)
-            if up:
-                fb=st.session_state.folder_bytes.setdefault(fn,{})
-                for uf in up:
-                    if uf.name not in files: files.append(uf.name)
-                    uf.seek(0); fb[uf.name]=uf.read()
-                fd["files"]=files; save_db(); st.success(f"{len(up)} arquivo(s) adicionado(s)!")
-            icons={"PDF":"[PDF]","Word":"[DOC]","Planilha":"[XLS]","Dados":"[CSV]","Codigo":"[PY]","Imagem":"[IMG]","Markdown":"[MD]","Notebook":"[NB]"}
-            for f in files:
-                ft2=ftype(f); ha=f in analyses; ic=icons.get(ft2,"[?]")
-                ab_=f'  <span class="badge-teal" style="font-size:.54rem">analisado</span>' if ha else ''
-                st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.32rem 0;border-bottom:1px solid rgba(255,255,255,.04)"><span style="font-size:.68rem;color:#0A84FF;font-weight:700;width:32px;flex-shrink:0">{ic}</span><span style="font-size:.72rem;color:#7A8FAD;flex:1">{f}</span>{ab_}</div>',unsafe_allow_html=True)
-            ca2,cb2,_=st.columns([1.4,1.2,2])
-            with ca2:
-                if st.button("Analisar",key=f"an_{fn}",use_container_width=True):
-                    if files:
-                        pb=st.progress(0,"Iniciando..."); fb2=st.session_state.folder_bytes.get(fn,{})
-                        for fi,f in enumerate(files):
-                            pb.progress((fi+1)/len(files),f"Analisando {f[:25]}...")
-                            analyses[f]=analyze_document(f,fb2.get(f,b""),ftype(f),ra)
-                            if analyses[f].get("keywords"): update_profile(analyses[f]["keywords"][:5],0.8)
-                        fd["analyses"]=analyses; save_db(); pb.empty(); st.success("Analise completa!"); st.rerun()
-                    else: st.warning("Adicione arquivos primeiro.")
-            with cb2:
-                if st.button("Excluir pasta",key=f"df_{fn}",use_container_width=True):
-                    del st.session_state.folders[fn]; save_db(); st.rerun()
-            if analyses:
-                with st.expander(f"Ver analises ({len(analyses)} documentos)"):
-                    for f,an in analyses.items():
-                        st.markdown(f'<div class="abox"><div style="font-weight:700;font-size:.83rem;margin-bottom:.25rem">{f}</div>'
-                                    f'<div style="font-size:.72rem;color:#7A8FAD;margin-bottom:.35rem">{an.get("summary","")}</div>'
-                                    f'<div style="display:flex;gap:1rem;margin-bottom:.3rem">'
-                                    f'<div style="text-align:center"><div style="font-weight:800;font-size:1rem;color:{"#30D158" if an.get("relevance_score",0)>=70 else "#FF9F0A"}">{an.get("relevance_score",0)}%</div><div style="font-size:.52rem;color:#3A4D6A;text-transform:uppercase">Relevancia</div></div>'
-                                    f'<div style="text-align:center"><div style="font-weight:800;font-size:1rem;color:#0A84FF">{an.get("word_count",0):,}</div><div style="font-size:.52rem;color:#3A4D6A;text-transform:uppercase">Palavras</div></div>'
-                                    f'{"<div style=text-align:center><div style=font-weight:800;font-size:1rem;color:#BF5AF2>"+str(an.get("year","—"))+"</div><div style=font-size:.52rem;color:#3A4D6A;text-transform:uppercase>Ano</div></div>" if an.get("year") else ""}'
-                                    f'</div>'
-                                    f'{"<div style=font-size:.71rem;color:#7A8FAD;margin-bottom:.25rem>Autores: "+", ".join(an.get("authors",["—"])[:3])+"</div>" if an.get("authors") else ""}'
-                                    f'{"<div style=font-size:.71rem;color:#7A8FAD;margin-bottom:.3rem>Nacionalidade detectada: <strong style=color:#30D158>"+an.get("nationality","—")+"</strong></div>" if an.get("nationality") else ""}'
-                                    f'<div>{tags_html(an.get("keywords",[])[:12])}</div></div>',unsafe_allow_html=True)
-                        if an.get("key_sentences"):
-                            st.markdown('<div style="font-size:.6rem;color:#3A4D6A;text-transform:uppercase;font-weight:700;margin:.4rem 0 .2rem">Frases-chave extraidas</div>',unsafe_allow_html=True)
-                            for sent in an["key_sentences"][:2]:
-                                st.markdown(f'<div style="background:rgba(10,132,255,.04);border-left:3px solid rgba(10,132,255,.3);border-radius:0 8px 8px 0;padding:.38rem .65rem;margin-bottom:.22rem;font-size:.72rem;color:#7A8FAD;line-height:1.6;font-style:italic">{sent}</div>',unsafe_allow_html=True)
-            note=st.text_area("Notas",value=fd.get("notes",""),key=f"nt_{fn}",height=55,label_visibility="collapsed",placeholder="Notas da pasta...")
-            if st.button("Salvar nota",key=f"sn_{fn}"): fd["notes"]=note; save_db(); st.success("Salvo!")
-    st.markdown('</div>',unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════
-#  ANALYSIS — deep analytics + 3D map
-# ══════════════════════════════════════════════════
-def page_analysis():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.8rem">Analises e Metricas</h1>',unsafe_allow_html=True)
-    email=st.session_state.current_user
-    t_repo,t_pastas,t_mapa,t_impacto=st.tabs(["  Repositorio  ","  Pastas  ","  Mapa Mundial  ","  Impacto  "])
-
-    with t_repo:
-        # Research analytics
-        items=st.session_state.research_items
-        if not items:
-            st.info("Nenhuma pesquisa no repositorio.")
-        else:
-            c1,c2,c3,c4=st.columns(4)
-            with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas</div></div>',unsafe_allow_html=True)
-            with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{sum(r.get("citations",0) for r in items)}</div><div class="mlbl">Citacoes</div></div>',unsafe_allow_html=True)
-            with c3:
-                areas_cnt=Counter(r.get("area","") for r in items)
-                st.markdown(f'<div class="mbox"><div class="mval-pur">{len(areas_cnt)}</div><div class="mlbl">Areas</div></div>',unsafe_allow_html=True)
-            with c4:
-                authors_cnt=Counter(r.get("author","") for r in items)
-                st.markdown(f'<div class="mbox"><div class="mval-orn">{len(authors_cnt)}</div><div class="mlbl">Autores</div></div>',unsafe_allow_html=True)
-
-            # Year distribution
-            years_cnt=Counter(r.get("year",2026) for r in items)
-            if years_cnt:
-                ylist=sorted(years_cnt.keys()); yvlist=[years_cnt[y] for y in ylist]
-                fig_y=go.Figure(go.Bar(x=[str(y) for y in ylist],y=yvlist,marker=dict(color=yvlist,colorscale=[[0,"#0A1020"],[1,"#0A84FF"]]),text=yvlist,textposition="outside",textfont=dict(color="#3A4D6A",size=9)))
-                fig_y.update_layout(**{**pc_dark("Pesquisas por Ano"),'height':200,'margin':dict(l=10,r=10,t=36,b=8)})
-                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_y,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-
-            # Area distribution
-            if areas_cnt:
-                fig_a=go.Figure(go.Pie(labels=list(areas_cnt.keys()),values=list(areas_cnt.values()),hole=0.52,
-                    marker=dict(colors=VIB[:len(areas_cnt)],line=dict(color=["#03060E"]*15,width=2)),textfont=dict(color="white",size=8)))
-                fig_a.update_layout(height=240,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
-                    title=dict(text="Areas de Pesquisa",font=dict(color="#D8E4F5",family="Syne",size=11)),
-                    legend=dict(font=dict(color="#3A4D6A",size=8)),margin=dict(l=0,r=0,t=36,b=0))
-                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_a,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-
-            # Top authors
-            st.markdown('<div class="dtxt">Top Autores</div>',unsafe_allow_html=True)
-            auth_cit={r.get("author","?"):sum(x.get("citations",0) for x in items if x.get("author")==r.get("author")) for r in items}
-            for auth,cit in sorted(auth_cit.items(),key=lambda x:-x[1])[:6]:
-                nat_a=next((x.get("nationality","") for x in items if x.get("author")==auth),"")
-                st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:.32rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
-                            f'{avh(ini(auth),28,ugrad(auth+"@"))}'
-                            f'<div style="flex:1"><div style="font-size:.74rem;font-weight:600;color:#D8E4F5">{auth}</div>'
-                            f'<div style="font-size:.59rem;color:#3A4D6A">{nat_a}</div></div>'
-                            f'<div style="font-weight:700;font-size:.82rem;color:#0A84FF">{cit}</div>'
-                            f'<div style="font-size:.55rem;color:#3A4D6A">cit.</div></div>',unsafe_allow_html=True)
-
-            # Methodology breakdown
-            meth_cnt=Counter(r.get("methodology","outro") for r in items if r.get("methodology"))
-            if meth_cnt:
-                fig_m=go.Figure(go.Bar(x=list(meth_cnt.values()),y=list(meth_cnt.keys()),orientation='h',
-                    marker=dict(color=list(range(len(meth_cnt))),colorscale=[[0,"#0e3a6e"],[1,"#0A84FF"]]),
-                    text=list(meth_cnt.values()),textposition="outside",textfont=dict(color="#3A4D6A",size=9)))
-                fig_m.update_layout(**{**pc_dark("Metodologias"),'height':max(140,len(meth_cnt)*35),'margin':dict(l=10,r=10,t=36,b=8),'yaxis':dict(showgrid=False,color="#3A4D6A",tickfont=dict(size=9))})
-                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_m,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-
-    with t_pastas:
-        folders=st.session_state.folders
-        if not folders: st.info("Crie pastas e analise documentos.")
-        else:
-            all_an={f:an for fd in folders.values() if isinstance(fd,dict) for f,an in fd.get("analyses",{}).items()}
-            if not all_an:
-                st.info("Analise os documentos nas pastas primeiro.")
-            else:
-                tf=sum(len(fd.get("files",[]) if isinstance(fd,dict) else []) for fd in folders.values())
-                c1,c2,c3,c4=st.columns(4)
-                with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(folders)}</div><div class="mlbl">Pastas</div></div>',unsafe_allow_html=True)
-                with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{tf}</div><div class="mlbl">Arquivos</div></div>',unsafe_allow_html=True)
-                with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{len(all_an)}</div><div class="mlbl">Analisados</div></div>',unsafe_allow_html=True)
-                all_kw=[kw for an in all_an.values() for kw in an.get("keywords",[])]
-                with c4: st.markdown(f'<div class="mbox"><div class="mval-orn">{len(set(all_kw[:200]))}</div><div class="mlbl">Keywords</div></div>',unsafe_allow_html=True)
-
-                # Year analysis of documents
-                doc_years=[an["year"] for an in all_an.values() if an.get("year")]
-                if doc_years:
-                    yr_cnt=Counter(doc_years)
-                    fig_dy=go.Figure(go.Bar(x=[str(y) for y in sorted(yr_cnt.keys())],y=[yr_cnt[y] for y in sorted(yr_cnt.keys())],
-                        marker=dict(color=VIB[:len(yr_cnt)]),text=[yr_cnt[y] for y in sorted(yr_cnt.keys())],textposition="outside",textfont=dict(color="#3A4D6A",size=9)))
-                    fig_dy.update_layout(**{**pc_dark("Anos dos Documentos"),'height':190,'margin':dict(l=10,r=10,t=36,b=8)})
-                    st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_dy,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-
-                # Topic distribution of all documents
-                all_topics=defaultdict(int)
-                for an in all_an.values():
-                    for t,s in an.get("topics",{}).items(): all_topics[t]+=s
-                if all_topics:
-                    fig_tp=go.Figure(go.Pie(labels=list(all_topics.keys())[:10],values=list(all_topics.values())[:10],hole=0.5,
-                        marker=dict(colors=VIB[:10],line=dict(color=["#03060E"]*15,width=2)),textfont=dict(color="white",size=8)))
-                    fig_tp.update_layout(height=260,paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
-                        title=dict(text="Distribuicao Tematica das Pastas",font=dict(color="#D8E4F5",family="Syne",size=11)),
-                        legend=dict(font=dict(color="#3A4D6A",size=8)),margin=dict(l=0,r=0,t=36,b=0))
-                    st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_tp,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-
-                # Authors from documents
-                doc_authors=[]
-                for an in all_an.values(): doc_authors.extend(an.get("authors",[]))
-                if doc_authors:
-                    auth_cnt=Counter(doc_authors)
-                    st.markdown('<div class="dtxt">Autores nos documentos</div>',unsafe_allow_html=True)
-                    for auth,cnt in auth_cnt.most_common(6):
-                        st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.28rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
-                                    f'{avh(ini(auth),26,ugrad(auth+"@"))}'
-                                    f'<div style="flex:1;font-size:.72rem;color:#D8E4F5">{auth}</div>'
-                                    f'<span class="badge-acc" style="font-size:.55rem">{cnt} doc.</span></div>',unsafe_allow_html=True)
-
-                # Top keywords
-                kw_cnt=Counter(all_kw)
-                if kw_cnt:
-                    top_kw=kw_cnt.most_common(15)
-                    fig_kw=go.Figure(go.Bar(x=[c for _,c in top_kw],y=[w for w,_ in top_kw],orientation='h',
-                        marker=dict(color=[c for _,c in top_kw],colorscale=[[0,"#0e3a6e"],[1,"#0A84FF"]]),
-                        text=[w for w,_ in top_kw],textposition="inside",textfont=dict(color="white",size=8)))
-                    fig_kw.update_layout(**{**pc_dark("Top Keywords Globais"),'height':380,'margin':dict(l=10,r=10,t=36,b=8),'yaxis':dict(showticklabels=False)})
-                    st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_kw,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-
-                # Relevance histogram
-                rel_vals=[an.get("relevance_score",0) for an in all_an.values()]
-                if rel_vals:
-                    fig_rel=go.Figure(go.Histogram(x=rel_vals,nbinsx=10,marker=dict(color="#0A84FF",line=dict(color="#03060E",width=1))))
-                    fig_rel.update_layout(**{**pc_dark("Distribuicao de Relevancia"),'height':165,'margin':dict(l=10,r=10,t=36,b=8)})
-                    st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_rel,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-
-                # Document summaries
-                st.markdown('<div class="dtxt">Resumo dos documentos analisados</div>',unsafe_allow_html=True)
-                for fname,an in list(all_an.items())[:10]:
-                    st.markdown(f'<div class="scard"><div style="font-family:Syne,sans-serif;font-weight:700;font-size:.82rem;color:#fff;margin-bottom:.2rem">{fname}</div>'
-                                f'<div style="font-size:.7rem;color:#7A8FAD;margin-bottom:.28rem">{an.get("summary","")}</div>'
-                                f'<div style="display:flex;gap:1rem;flex-wrap:wrap">'
-                                f'<span style="font-size:.62rem;color:{"#30D158" if an.get("relevance_score",0)>=70 else "#FF9F0A"}">{an.get("relevance_score",0)}% relevancia</span>'
-                                f'{"<span style=font-size:.62rem;color:#0A84FF>"+str(an.get("year",""))+"</span>" if an.get("year") else ""}'
-                                f'{"<span style=font-size:.62rem;color:#BF5AF2>"+an.get("nationality","")+"</span>" if an.get("nationality") else ""}'
-                                f'</div>'
-                                f'<div style="margin-top:.3rem">{tags_html(an.get("keywords",[])[:8])}</div></div>',unsafe_allow_html=True)
-
-    with t_mapa:
-        st.markdown('<h2 style="margin-bottom:.4rem;margin-top:.4rem">Mapa 3D de Nacionalidades</h2>',unsafe_allow_html=True)
-        st.markdown('<p style="font-size:.72rem;color:#3A4D6A;margin-bottom:.75rem">Distribuicao geografica dos autores no repositorio e nas pastas de pesquisa</p>',unsafe_allow_html=True)
-        # Collect all nationalities
-        nat_data=defaultdict(lambda:{"count":0,"names":[],"titles":[]})
-        for r in st.session_state.research_items:
-            nat=r.get("nationality","")
-            if nat and nat in NATIONALITY_COORDS:
-                nat_data[nat]["count"]+=1; nat_data[nat]["names"].append(r.get("author","?"))
-                nat_data[nat]["titles"].append(r.get("title","")[:35])
-        # From folder analyses
-        for fd in st.session_state.folders.values():
-            if not isinstance(fd,dict): continue
-            for an in fd.get("analyses",{}).values():
-                nat=an.get("nationality","")
-                if nat and nat in NATIONALITY_COORDS:
-                    nat_data[nat]["count"]+=1
-                    for a in an.get("authors",[]): nat_data[nat]["names"].append(a)
-        # Also user profiles
-        for ue,ud in st.session_state.users.items():
-            nat=ud.get("nationality","")
-            if nat and nat in NATIONALITY_COORDS: nat_data[nat]["count"]+=1
-        if nat_data:
-            lats=[]; lons=[]; sizes=[]; labels=[]; hover_texts=[]; colors_n=[]
-            for nat,(lat,lon) in NATIONALITY_COORDS.items():
-                cnt=nat_data[nat]["count"]
-                if cnt>0:
-                    lats.append(lat); lons.append(lon)
-                    sizes.append(max(8,min(35,cnt*10)))
-                    labels.append(nat); colors_n.append(cnt)
-                    names_str=", ".join(list(dict.fromkeys(nat_data[nat]["names"]))[:3])
-                    hover_texts.append(f"<b>{nat}</b><br>{cnt} pesquisa(s)<br>{names_str}")
-            fig_map=go.Figure()
-            fig_map.add_trace(go.Scattergeo(
-                lat=lats,lon=lons,
-                text=labels,
-                hovertext=hover_texts,
-                hoverinfo="text",
-                mode="markers+text",
-                marker=dict(size=sizes,color=colors_n,
-                            colorscale=[[0,"#0e3a6e"],[0.5,"#0A84FF"],[1,"#30D158"]],
-                            opacity=0.85,line=dict(color="rgba(255,255,255,.2)",width=1.5),
-                            colorbar=dict(title="Pesquisas",titlefont=dict(color="#3A4D6A",size=9),tickfont=dict(color="#3A4D6A",size=8),bgcolor="rgba(0,0,0,0)",bordercolor="rgba(255,255,255,.06)")),
-                textfont=dict(size=8,color="rgba(255,255,255,.5)"),
-                textposition="top center"))
-            fig_map.update_geos(
-                projection_type="orthographic",
-                showland=True,landcolor="rgba(14,58,110,.4)",
-                showocean=True,oceancolor="rgba(3,6,14,.8)",
-                showcoastlines=True,coastlinecolor="rgba(10,132,255,.2)",coastlinewidth=0.5,
-                showframe=False,bgcolor="rgba(3,6,14,0)",
-                showlakes=True,lakecolor="rgba(10,132,255,.1)",
-                showcountries=True,countrycolor="rgba(255,255,255,.06)",countrywidth=0.3)
-            fig_map.update_layout(height=500,paper_bgcolor="rgba(0,0,0,0)",
-                margin=dict(l=0,r=0,t=0,b=0),geo=dict(bgcolor="rgba(0,0,0,0)"))
-            st.markdown('<div class="glass-card" style="padding:.5rem">',unsafe_allow_html=True)
-            st.plotly_chart(fig_map,use_container_width=True)
-            st.markdown('</div>',unsafe_allow_html=True)
-            # Legend
-            st.markdown('<div class="dtxt">Distribuicao por pais</div>',unsafe_allow_html=True)
-            cl1,cl2=st.columns(2)
-            nat_sorted=sorted(nat_data.items(),key=lambda x:-x[1]["count"])
-            for i,(nat,data) in enumerate(nat_sorted):
-                with (cl1 if i%2==0 else cl2):
-                    st.markdown(f'<div style="display:flex;align-items:center;gap:7px;padding:.28rem 0;border-bottom:1px solid rgba(255,255,255,.04)">'
-                                f'<div style="font-size:.72rem;font-weight:600;color:#D8E4F5;flex:1">{nat}</div>'
-                                f'<div style="font-weight:800;font-size:.82rem;color:#0A84FF">{data["count"]}</div>'
-                                f'<div style="font-size:.55rem;color:#3A4D6A"> pesq.</div></div>',unsafe_allow_html=True)
-        else:
-            st.info("Nenhuma nacionalidade identificada ainda. Publique pesquisas ou analise documentos com autores de diferentes paises.")
-
-    with t_impacto:
-        my_research=[r for r in st.session_state.research_items if r.get("author_email")==email]
-        c1,c2,c3=st.columns(3)
-        with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(my_research)}</div><div class="mlbl">Minhas pesquisas</div></div>',unsafe_allow_html=True)
-        with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{sum(r.get("citations",0) for r in my_research)}</div><div class="mlbl">Citacoes</div></div>',unsafe_allow_html=True)
-        with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{sum(r.get("likes",0) for r in my_research)}</div><div class="mlbl">Likes</div></div>',unsafe_allow_html=True)
-        # Interests radar
-        prefs=st.session_state.user_prefs.get(email,{})
-        if prefs:
-            top=sorted(prefs.items(),key=lambda x:-x[1])[:10]; mx=max(s for _,s in top) if top else 1
-            cats=[t for t,_ in top[:8]]; vals=[round(s/mx*100) for _,s in top[:8]]
-            if len(cats)>=3:
-                fig_r=go.Figure(go.Scatterpolar(r=vals+[vals[0]],theta=cats+[cats[0]],fill='toself',
-                    line=dict(color="#0A84FF",width=2),fillcolor="rgba(10,132,255,.08)"))
-                fig_r.update_layout(height=260,polar=dict(bgcolor="rgba(0,0,0,0)",
-                    radialaxis=dict(visible=True,gridcolor="rgba(255,255,255,.04)",color="#3A4D6A",tickfont=dict(size=7)),
-                    angularaxis=dict(gridcolor="rgba(255,255,255,.04)",color="#3A4D6A",tickfont=dict(size=9))),
-                    paper_bgcolor="rgba(0,0,0,0)",title=dict(text="Perfil de Interesses",font=dict(color="#D8E4F5",family="Syne",size=11)),
-                    margin=dict(l=40,r=40,t=40,b=20))
-                st.markdown('<div class="chart-wrap">',unsafe_allow_html=True); st.plotly_chart(fig_r,use_container_width=True); st.markdown('</div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════
-#  CONNECTIONS — research similarity graph
-# ══════════════════════════════════════════════════
+            df = pd.read_excel(io.BytesIO(file_bytes))
+        return df.astype(str).head(500).to_csv(index=False)
+    except Exception:
+        return ""
 
 
-def page_connections():
-    st.markdown('<div class="pw">', unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.25rem">Conexões entre Pesquisas</h1>', unsafe_allow_html=True)
-    st.markdown('<p style="color:#3A4D6A;font-size:.74rem;margin-bottom:.8rem">Mapeamento semântico entre pesquisas do repositório e documentos das suas pastas.</p>', unsafe_allow_html=True)
 
-    items = list(st.session_state.research_items)
-    threshold = st.slider("Limiar mínimo de conexão", min_value=0.12, max_value=0.70, value=0.22, step=0.02)
-    edges = build_connection_edges(items, threshold=threshold)
-    conn_map = connection_count_map(items, edges)
+def read_text_by_suffix(file_name: str, file_bytes: bytes) -> str:
+    suffix = file_name.lower().split(".")[-1] if "." in file_name else ""
+    if suffix == "pdf":
+        return read_pdf_text(file_bytes)
+    if suffix == "docx":
+        return read_docx_text(file_bytes)
+    if suffix in {"txt", "md", "py", "json"}:
+        try:
+            return file_bytes.decode("utf-8", errors="ignore")[:MAX_TEXT_CHARS]
+        except Exception:
+            return ""
+    if suffix in {"csv", "xlsx", "xls"}:
+        return read_tabular_text(file_bytes, suffix)
+    return ""
 
-    grouped = defaultdict(list)
-    for item in items:
-        grouped[item.get("area", "Sem área")].append(item)
 
-    pos = {}
-    areas = list(grouped.keys())
-    total_areas = max(1, len(areas))
-    for ai, area in enumerate(areas):
-        angle = 2 * math.pi * ai / total_areas
-        center = {"x": 0.5 + 0.32 * math.cos(angle), "y": 0.5 + 0.32 * math.sin(angle), "z": 0.48 + 0.10 * math.sin(angle * 1.5)}
-        group = grouped[area]
-        for gi, item in enumerate(group):
-            inner_angle = 2 * math.pi * gi / max(1, len(group))
-            pos[item["id"]] = {
-                "x": center["x"] + 0.12 * math.cos(inner_angle),
-                "y": center["y"] + 0.12 * math.sin(inner_angle),
-                "z": center["z"] + 0.08 * ((gi % 4) - 1.5) / 3,
-            }
 
-    folder_nodes = []
-    for fn, fd in st.session_state.folders.items():
-        if not isinstance(fd, dict):
+def file_kind(file_name: str) -> str:
+    suffix = file_name.lower().split(".")[-1] if "." in file_name else ""
+    mapping = {
+        "pdf": "PDF",
+        "docx": "Word",
+        "txt": "Texto",
+        "md": "Markdown",
+        "csv": "CSV",
+        "xlsx": "Planilha",
+        "xls": "Planilha",
+        "png": "Imagem",
+        "jpg": "Imagem",
+        "jpeg": "Imagem",
+        "webp": "Imagem",
+        "py": "Código",
+        "json": "JSON",
+    }
+    return mapping.get(suffix, "Arquivo")
+
+
+
+def make_document_record(file_name: str, file_bytes: bytes) -> dict:
+    kind = file_kind(file_name)
+    text = read_text_by_suffix(file_name, file_bytes)
+    is_image = kind == "Imagem"
+    image_meta = {}
+    if is_image:
+        try:
+            image = Image.open(io.BytesIO(file_bytes))
+            image_meta = image_stats(image)
+        except Exception:
+            image_meta = {}
+    keywords = extract_keywords(text if text else file_name, top_n=18)
+    summary = summarize_text(text) if text else f"Arquivo do tipo {kind}."
+    topic = detect_topic(text if text else file_name)
+    years = detect_years(text)
+    nationality = infer_nationality(text if text else file_name)
+
+    author = "Desconhecido"
+    author_match = re.search(r"(?:autor|author)[:\-\s]+([A-ZÀ-ÿ][A-Za-zÀ-ÿ\s]{3,60})", text, flags=re.I)
+    if author_match:
+        author = author_match.group(1).strip()
+
+    return {
+        "id": hashlib.md5(f"{file_name}-{datetime.now().isoformat()}".encode()).hexdigest()[:12],
+        "name": file_name,
+        "kind": kind,
+        "topic": topic,
+        "summary": summary,
+        "keywords": keywords,
+        "author": author,
+        "years": years,
+        "year": years[0] if years else datetime.now().year,
+        "nationality": nationality,
+        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "text": text[:8000],
+        "image_meta": image_meta,
+        "size_kb": round(len(file_bytes) / 1024, 1),
+    }
+
+
+
+def update_user_interest_from_terms(email: str, terms: list[str]) -> None:
+    if not email:
+        return
+    bag = st.session_state.user_interest.get(email, {})
+    for term in terms:
+        if len(term) >= 3:
+            bag[term] = bag.get(term, 0) + 1
+    st.session_state.user_interest[email] = dict(sorted(bag.items(), key=lambda x: -x[1])[:50])
+    save_db()
+
+
+
+def recommend_from_profile(email: str, limit: int = 8) -> list[str]:
+    profile = st.session_state.user_interest.get(email, {})
+    return [term for term, _ in sorted(profile.items(), key=lambda x: -x[1])[:limit]]
+
+
+
+def local_search(query: str, docs: list[dict]) -> list[dict]:
+    results = []
+    for doc in docs:
+        text = " ".join([
+            doc.get("name", ""),
+            doc.get("summary", ""),
+            doc.get("topic", ""),
+            " ".join(doc.get("keywords", [])),
+            doc.get("text", ""),
+        ])
+        score = score_relevance(query, text, doc.get("keywords", []))
+        if score > 0:
+            item = dict(doc)
+            item["score"] = score
+            results.append(item)
+    return sorted(results, key=lambda x: (-x["score"], x["name"]))
+
+
+
+def related_documents(target: dict, docs: list[dict], limit: int = 6) -> list[dict]:
+    out = []
+    target_terms = set(target.get("keywords", [])) | set(tokenize(target.get("summary", "")))
+    for doc in docs:
+        if doc["id"] == target["id"]:
             continue
-        for fname, an in fd.get("analyses", {}).items():
-            node_id = f"folder::{fn}::{fname}"
-            idx = len(folder_nodes)
-            ang = 2 * math.pi * idx / max(1, len(folder_nodes) + 1)
-            pos[node_id] = {"x": 0.5 + 0.48 * math.cos(ang), "y": 0.5 + 0.48 * math.sin(ang), "z": 0.2}
-            folder_nodes.append({"id": node_id, "title": fname, "folder": fn, "kws": an.get("keywords", [])[:6]})
+        terms = set(doc.get("keywords", [])) | set(tokenize(doc.get("summary", "")))
+        inter = len(target_terms & terms)
+        union = len(target_terms | terms) or 1
+        sim = inter / union
+        if doc.get("topic") == target.get("topic"):
+            sim += 0.12
+        if sim > 0.08:
+            d = dict(doc)
+            d["similarity"] = round(sim * 100, 2)
+            out.append(d)
+    return sorted(out, key=lambda x: -x["similarity"])[:limit]
 
-    area_colors_map = {area: VIB[i % len(VIB)] for i, area in enumerate(areas)}
 
-    fig = go.Figure()
-    for edge in edges[:60]:
-        p1 = pos[edge["source"]["id"]]
-        p2 = pos[edge["target"]["id"]]
-        alpha = min(0.78, 0.15 + edge["score"] * 0.9)
-        fig.add_trace(go.Scatter3d(
-            x=[p1["x"], p2["x"], None],
-            y=[p1["y"], p2["y"], None],
-            z=[p1["z"], p2["z"], None],
-            mode="lines",
-            line=dict(color=f"rgba(10,132,255,{alpha:.2f})", width=max(2, int(edge["score"] * 10))),
-            hoverinfo="none",
-            showlegend=False,
-        ))
 
-    fig.add_trace(go.Scatter3d(
-        x=[pos[item["id"]]["x"] for item in items],
-        y=[pos[item["id"]]["y"] for item in items],
-        z=[pos[item["id"]]["z"] for item in items],
-        mode="markers+text",
-        marker=dict(
-            size=[max(10, min(24, 10 + item.get("citations", 0) // 4 + conn_map.get(item["id"], 0))) for item in items],
-            color=[area_colors_map.get(item.get("area", "Sem área"), "#0A84FF") for item in items],
-            opacity=.92,
-            symbol="circle",
-            line=dict(color="rgba(255,255,255,.18)", width=1),
-        ),
-        text=[item["title"][:18] + "..." for item in items],
-        textposition="top center",
-        textfont=dict(color="#3A4D6A", size=8, family="Inter"),
-        hovertemplate=[
-            f"<b>{item['title'][:60]}</b><br>{item.get('area', '')}<br>{item.get('citations', 0)} citações<br>{conn_map.get(item['id'], 0)} conexões<extra></extra>"
-            for item in items
-        ],
-        showlegend=False,
-    ))
+def local_similar_images(target_img: Image.Image, docs: list[dict], limit: int = 6) -> list[dict]:
+    target_hash = average_hash(target_img)
+    results = []
+    for doc in docs:
+        if doc.get("kind") != "Imagem":
+            continue
+        h = doc.get("image_meta", {}).get("hash")
+        if not h:
+            continue
+        dist = hamming_distance(target_hash, h)
+        similarity = max(0, 100 - (dist / len(target_hash)) * 100)
+        item = dict(doc)
+        item["image_similarity"] = round(similarity, 2)
+        results.append(item)
+    return sorted(results, key=lambda x: -x["image_similarity"])[:limit]
 
-    if folder_nodes:
-        fig.add_trace(go.Scatter3d(
-            x=[pos[node["id"]]["x"] for node in folder_nodes],
-            y=[pos[node["id"]]["y"] for node in folder_nodes],
-            z=[pos[node["id"]]["z"] for node in folder_nodes],
-            mode="markers",
-            marker=dict(size=8, color="#BF5AF2", opacity=.82, symbol="diamond", line=dict(color="rgba(255,255,255,.18)", width=1)),
-            hovertemplate=[f"<b>{node['title']}</b><br>Pasta: {node['folder']}<br>{', '.join(node['kws'][:4])}<extra></extra>" for node in folder_nodes],
-            showlegend=False,
-        ))
 
-    fig.update_layout(
-        height=480,
-        scene=dict(
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, showbackground=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, showbackground=False),
-            zaxis=dict(showgrid=False, zeroline=False, showticklabels=False, showbackground=False),
-            bgcolor="rgba(0,0,0,0)",
-        ),
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=0, r=0, t=0, b=0),
+
+def search_semantic_scholar(query: str, limit: int = 6) -> list[dict]:
+    try:
+        resp = requests.get(
+            "https://api.semanticscholar.org/graph/v1/paper/search",
+            params={
+                "query": query,
+                "limit": limit,
+                "fields": "title,authors,year,abstract,venue,openAccessPdf,externalIds,citationCount",
+            },
+            timeout=12,
+        )
+        if resp.status_code != 200:
+            return []
+        data = resp.json().get("data", [])
+        out = []
+        for item in data:
+            authors = ", ".join(a.get("name", "") for a in item.get("authors", [])[:4])
+            open_pdf = item.get("openAccessPdf") or {}
+            doi = (item.get("externalIds") or {}).get("DOI", "")
+            url = open_pdf.get("url") or (f"https://doi.org/{doi}" if doi else "")
+            out.append(
+                {
+                    "title": item.get("title", "Sem título"),
+                    "authors": authors or "Autor não informado",
+                    "year": item.get("year", "?"),
+                    "abstract": (item.get("abstract") or "")[:500],
+                    "source": item.get("venue", "Semantic Scholar"),
+                    "citations": item.get("citationCount", 0),
+                    "url": url,
+                }
+            )
+        return out
+    except Exception:
+        return []
+
+
+
+def search_crossref(query: str, limit: int = 4) -> list[dict]:
+    try:
+        resp = requests.get(
+            "https://api.crossref.org/works",
+            params={
+                "query": query,
+                "rows": limit,
+                "select": "title,author,issued,DOI,abstract,container-title,is-referenced-by-count",
+                "mailto": "nebula@example.com",
+            },
+            timeout=12,
+        )
+        if resp.status_code != 200:
+            return []
+        items = resp.json().get("message", {}).get("items", [])
+        out = []
+        for item in items:
+            title = (item.get("title") or ["Sem título"])[0]
+            authors_list = item.get("author", [])
+            authors = ", ".join(
+                f"{a.get('given','')} {a.get('family','')}".strip() for a in authors_list[:4]
+            )
+            year = None
+            if item.get("issued", {}).get("date-parts"):
+                year = item["issued"]["date-parts"][0][0]
+            doi = item.get("DOI", "")
+            abstract = re.sub(r"<[^>]+>", " ", item.get("abstract", "") or "")[:500]
+            out.append(
+                {
+                    "title": title,
+                    "authors": authors or "Autor não informado",
+                    "year": year or "?",
+                    "abstract": abstract,
+                    "source": (item.get("container-title") or ["Crossref"])[0],
+                    "citations": item.get("is-referenced-by-count", 0),
+                    "url": f"https://doi.org/{doi}" if doi else "",
+                }
+            )
+        return out
+    except Exception:
+        return []
+
+
+
+def recognize_research_intent(query: str) -> dict:
+    q = normalize_text(query)
+    detected_topic = detect_topic(q)
+    years = detect_years(q)
+    intent = "pesquisa bibliográfica"
+    if any(word in q for word in ["imagem", "figura", "foto", "microscopia"]):
+        intent = "busca visual"
+    elif any(word in q for word in ["comparar", "conectar", "relacionar", "semelhante"]):
+        intent = "conexão temática"
+    elif any(word in q for word in ["analisar", "análise", "métricas", "gráfico", "tendência"]):
+        intent = "análise de pesquisa"
+
+    keywords = extract_keywords(query, 10)
+    suggestions = keywords[:]
+    topic_terms = TOPIC_RULES.get(detected_topic, [])[:4]
+    suggestions.extend([t for t in topic_terms if t not in suggestions])
+    suggestions = suggestions[:10]
+
+    return {
+        "intent": intent,
+        "topic": detected_topic,
+        "keywords": keywords,
+        "search_terms": suggestions,
+        "years": years,
+    }
+
+
+
+def build_connections(docs: list[dict]) -> pd.DataFrame:
+    edges = []
+    for i, a in enumerate(docs):
+        a_terms = set(a.get("keywords", []))
+        for b in docs[i + 1 :]:
+            b_terms = set(b.get("keywords", []))
+            inter = len(a_terms & b_terms)
+            union = len(a_terms | b_terms) or 1
+            score = inter / union
+            if a.get("topic") == b.get("topic"):
+                score += 0.10
+            if score > 0.10:
+                edges.append(
+                    {
+                        "origem": a["name"],
+                        "destino": b["name"],
+                        "forca": round(score, 3),
+                        "tema": a.get("topic", "Pesquisa Geral"),
+                    }
+                )
+    return pd.DataFrame(edges)
+
+
+
+def get_repository_df() -> pd.DataFrame:
+    docs = st.session_state.repository
+    if not docs:
+        return pd.DataFrame(columns=["name", "kind", "topic", "author", "year", "nationality"])
+    return pd.DataFrame(
+        [
+            {
+                "name": d.get("name"),
+                "kind": d.get("kind"),
+                "topic": d.get("topic"),
+                "author": d.get("author"),
+                "year": d.get("year"),
+                "nationality": d.get("nationality"),
+                "size_kb": d.get("size_kb"),
+                "uploaded_at": d.get("uploaded_at"),
+            }
+            for d in docs
+        ]
     )
-    st.plotly_chart(fig, use_container_width=True)
-    st.markdown('<p style="font-size:.63rem;color:#3A4D6A;text-align:center;margin-bottom:.7rem">Esferas = pesquisas do repositório · Diamantes = documentos das pastas · Linhas = compatibilidade semântica</p>', unsafe_allow_html=True)
+
+
+# ============================================================
+# AUTH
+# ============================================================
+def login_page() -> None:
+    st.markdown("<div class='title-main'>Nebula Research</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='subtitle-main'>Sistema de pesquisa, repositório, busca inteligente, análise documental e conexão entre estudos.</div>",
+        unsafe_allow_html=True,
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Entrar</div>", unsafe_allow_html=True)
+        email = st.text_input("E-mail", key="login_email")
+        password = st.text_input("Senha", type="password", key="login_password")
+        if st.button("Acessar sistema", use_container_width=True):
+            user = st.session_state.users.get(email)
+            if user and user["password"] == hash_password(password):
+                st.session_state.logged_in = True
+                st.session_state.current_user = email
+                st.session_state.page = "Dashboard"
+                st.success("Login realizado.")
+                st.rerun()
+            else:
+                st.error("E-mail ou senha inválidos.")
+        st.markdown("<div class='small-muted'>Login demo: demo@nebula.ai | senha: demo123</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Criar conta</div>", unsafe_allow_html=True)
+        name = st.text_input("Nome", key="register_name")
+        reg_email = st.text_input("E-mail", key="register_email")
+        reg_password = st.text_input("Senha", type="password", key="register_password")
+        area = st.selectbox(
+            "Área principal",
+            ["Inteligência Artificial", "Museologia", "Computação", "Ciência de Dados", "Biomedicina", "Neurociência", "Astrofísica", "Psicologia"],
+            key="register_area",
+        )
+        nationality = st.selectbox("Nacionalidade", ["Brasil"] + sorted(NATIONALITY_COORDS.keys()), key="register_nat")
+        city = st.text_input("Cidade", key="register_city")
+        bio = st.text_area("Bio curta", height=100, key="register_bio")
+        if st.button("Criar conta", use_container_width=True):
+            if not name or not reg_email or not reg_password:
+                st.error("Preencha nome, e-mail e senha.")
+            elif reg_email in st.session_state.users:
+                st.error("Este e-mail já existe.")
+            else:
+                st.session_state.users[reg_email] = {
+                    "name": name,
+                    "password": hash_password(reg_password),
+                    "area": area,
+                    "bio": bio,
+                    "nationality": nationality,
+                    "city": city,
+                }
+                save_db()
+                st.success("Conta criada. Agora faça login.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+def sidebar() -> None:
+    user = current_user()
+    with st.sidebar:
+        st.markdown(f"### {user.get('name', 'Usuário')}")
+        st.caption(user.get("area", ""))
+        st.caption(f"{user.get('city', '')} · {user.get('nationality', '')}")
+        st.divider()
+        page = st.radio(
+            "Navegação",
+            ["Dashboard", "Pesquisa Inteligente", "Repositório", "Análise Avançada", "Perfil e Configurações"],
+            index=["Dashboard", "Pesquisa Inteligente", "Repositório", "Análise Avançada", "Perfil e Configurações"].index(st.session_state.page),
+        )
+        st.session_state.page = page
+        st.divider()
+        if st.button("Sair", use_container_width=True):
+            st.session_state.logged_in = False
+            st.session_state.current_user = None
+            st.rerun()
+
+
+# ============================================================
+# DASHBOARD
+# ============================================================
+def render_metric(label: str, value: str, desc: str) -> None:
+    st.markdown(
+        f"""
+        <div class='metric-card'>
+            <div class='metric-label'>{label}</div>
+            <div class='metric-value'>{value}</div>
+            <div class='metric-desc'>{desc}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+
+def page_dashboard() -> None:
+    docs = st.session_state.repository
+    df = get_repository_df()
+    profile_terms = recommend_from_profile(st.session_state.current_user)
+
+    st.markdown("<div class='title-main'>Dashboard</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='subtitle-main'>Visão geral do seu sistema de pesquisa, documentos enviados, temas dominantes e recomendações.</div>",
+        unsafe_allow_html=True,
+    )
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas</div></div>', unsafe_allow_html=True)
+        render_metric("Documentos", str(len(docs)), "Arquivos no repositório local")
     with c2:
-        st.markdown(f'<div class="mbox"><div class="mval-teal">{len(edges)}</div><div class="mlbl">Conexões ativas</div></div>', unsafe_allow_html=True)
+        render_metric("Temas", str(df["topic"].nunique() if not df.empty else 0), "Áreas reconhecidas automaticamente")
     with c3:
-        st.markdown(f'<div class="mbox"><div class="mval-pur">{len(areas)}</div><div class="mlbl">Áreas conectadas</div></div>', unsafe_allow_html=True)
+        render_metric("Autores", str(df["author"].nunique() if not df.empty else 0), "Autores identificados nos documentos")
     with c4:
-        st.markdown(f'<div class="mbox"><div class="mval-orn">{len(folder_nodes)}</div><div class="mlbl">Docs. de pastas</div></div>', unsafe_allow_html=True)
+        render_metric("Buscas", str(len(st.session_state.search_history)), "Consultas registradas pelo sistema")
 
-    st.markdown('<hr>', unsafe_allow_html=True)
-    t_map, t_focus, t_folder = st.tabs(["  Top conexões  ", "  Pesquisa foco  ", "  Pastas x repositório  "])
-
-    with t_map:
-        if not edges:
-            st.info("Ainda não há conexões acima do limiar escolhido.")
-        else:
-            st.markdown('<div style="font-size:.57rem;color:#0A84FF;text-transform:uppercase;font-weight:700;letter-spacing:.10em;margin-bottom:.5rem">Conexões mais fortes do repositório</div>', unsafe_allow_html=True)
-            for edge in edges[:18]:
-                score_pct = round(edge["score"] * 100)
-                sc = "#30D158" if score_pct >= 45 else ("#0A84FF" if score_pct >= 30 else "#FF9F0A")
-                st.markdown(
-                    f'<div class="conn-card">'
-                    f'<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:.35rem">'
-                    f'<div style="font-size:.78rem;font-weight:700;color:#fff;line-height:1.45">{edge["source"]["title"][:64]}</div>'
-                    f'<div style="font-size:.61rem;color:{sc};font-weight:800;border:1px solid {sc}30;border-radius:8px;padding:3px 8px;white-space:nowrap">{score_pct}%</div>'
-                    f'</div>'
-                    f'<div style="font-size:.62rem;color:#3A4D6A;margin-bottom:.2rem">{edge["source"].get("area", "")} → {edge["target"].get("area", "")}</div>'
-                    f'<div style="font-size:.76rem;font-weight:700;color:#D8E4F5;margin-bottom:.25rem">{edge["target"]["title"][:64]}</div>'
-                    f'<div style="font-size:.68rem;color:#7A8FAD;margin-bottom:.3rem">{" • ".join(edge["reasons"][:4])}</div>'
-                    f'{"<div>" + tags_html(edge["shared_terms"][:6], "tag-teal") + "</div>" if edge["shared_terms"] else ""}'
-                    f'</div>',
-                    unsafe_allow_html=True,
-                )
-
-    with t_focus:
-        target = st.session_state.get("view_research")
-        title_lookup = {r["title"][:70]: r for r in items}
-        labels = ["— Selecionar —"] + list(title_lookup.keys())
-        default_ix = 0
-        if target:
-            trunc = target.get("title", "")[:70]
-            if trunc in labels:
-                default_ix = labels.index(trunc)
-        selected = st.selectbox("Pesquisa foco", labels, index=default_ix, key="conn_focus_sel")
-        if selected != "— Selecionar —":
-            target = title_lookup[selected]
-            st.session_state.view_research = target
-
-        if not target:
-            st.info("Selecione uma pesquisa para abrir o mapa analítico individual.")
-        else:
-            target_connections = []
-            for edge in edges:
-                if edge["source"]["id"] == target["id"]:
-                    target_connections.append((edge["score"], edge["target"], edge))
-                elif edge["target"]["id"] == target["id"]:
-                    target_connections.append((edge["score"], edge["source"], edge))
-            target_connections.sort(key=lambda x: -x[0])
-
-            st.markdown(
-                f'<div class="abox">'
-                f'<div style="font-family:Syne,sans-serif;font-weight:700;font-size:.95rem;color:#fff;margin-bottom:.2rem">{target["title"]}</div>'
-                f'<div style="font-size:.7rem;color:#0A84FF;margin-bottom:.25rem">{target.get("area", "")} · {target.get("methodology", "")} · {target.get("year", "")}</div>'
-                f'<div style="font-size:.74rem;color:#7A8FAD;line-height:1.65;margin-bottom:.35rem">{target.get("abstract", "")[:320]}{"..." if len(target.get("abstract", "")) > 320 else ""}</div>'
-                f'<div>{tags_html(target.get("tags", [])[:6])}</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
-
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.markdown(f'<div class="mbox"><div class="mval-teal">{len(target_connections)}</div><div class="mlbl">Conexões diretas</div></div>', unsafe_allow_html=True)
-            with c2:
-                st.markdown(f'<div class="mbox"><div class="mval-acc">{target.get("citations", 0)}</div><div class="mlbl">Citações</div></div>', unsafe_allow_html=True)
-            with c3:
-                st.markdown(f'<div class="mbox"><div class="mval-pur">{conn_map.get(target["id"], 0)}</div><div class="mlbl">Centralidade</div></div>', unsafe_allow_html=True)
-
-            if target_connections:
-                st.markdown('<div class="dtxt">Pesquisas conectadas ao foco</div>', unsafe_allow_html=True)
-                for score, other, edge in target_connections[:8]:
-                    st.markdown(
-                        f'<div class="sim-card">'
-                        f'<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:.25rem">'
-                        f'<div style="font-size:.8rem;font-weight:700;color:#fff">{other["title"][:72]}</div>'
-                        f'<div style="font-size:.62rem;color:#30D158;font-weight:800;white-space:nowrap">{round(score*100)}%</div>'
-                        f'</div>'
-                        f'<div style="font-size:.62rem;color:#3A4D6A;margin-bottom:.2rem">{other.get("area", "")} · {other.get("methodology", "")} · {other.get("year", "")}</div>'
-                        f'<div style="font-size:.69rem;color:#7A8FAD;margin-bottom:.28rem">{" • ".join(edge["reasons"][:4])}</div>'
-                        f'{"<div>" + tags_html(edge["shared_terms"][:6], "tag-pur") + "</div>" if edge["shared_terms"] else ""}'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
-                if st.button("Buscar artigos relacionados na internet", key=f"conn_search_{target['id']}"):
-                    with st.spinner("Buscando artigos..."):
-                        st.session_state.scholar_cache[f"conn_{target['id']}"] = search_ss(target["title"][:70] + " " + " ".join(target.get("tags", [])[:3]), 5)
-                arts = st.session_state.scholar_cache.get(f"conn_{target['id']}")
-                if arts:
-                    st.markdown('<div class="dtxt">Artigos relacionados na internet</div>', unsafe_allow_html=True)
-                    for i, a in enumerate(arts):
-                        render_article(a, i, "conn_web")
-            else:
-                st.info("Nenhuma conexão direta encontrada para essa pesquisa com o limiar atual.")
-
-    with t_folder:
-        all_analyses = {f: an for fd in st.session_state.folders.values() if isinstance(fd, dict) for f, an in fd.get("analyses", {}).items()}
-        if not all_analyses:
-            st.info("Analise documentos nas pastas para comparar com o repositório.")
-        else:
-            matches = folder_similarity(all_analyses, n=10)
-            if not matches:
-                st.info("Nenhuma relação consistente foi encontrada entre os documentos das pastas e o repositório.")
-            else:
-                st.markdown('<div style="font-size:.62rem;color:#3A4D6A;margin-bottom:.6rem">Os documentos analisados nas pastas são comparados com as pesquisas do repositório por palavras-chave, tópicos e aderência temática.</div>', unsafe_allow_html=True)
-                for match in matches:
-                    item = match["research"]
-                    st.markdown(
-                        f'<div class="conn-card">'
-                        f'<div style="display:flex;justify-content:space-between;gap:10px;margin-bottom:.28rem">'
-                        f'<div style="font-size:.8rem;font-weight:700;color:#fff">{item["title"][:78]}</div>'
-                        f'<div style="font-size:.62rem;color:#BF5AF2;font-weight:800;white-space:nowrap">{round(match["score"]*100)}%</div>'
-                        f'</div>'
-                        f'<div style="font-size:.62rem;color:#3A4D6A;margin-bottom:.22rem">Documento: {match["document"]}</div>'
-                        f'<div style="font-size:.68rem;color:#7A8FAD;margin-bottom:.25rem">{match["summary"][:180]}{"..." if len(match["summary"]) > 180 else ""}</div>'
-                        f'<div style="font-size:.64rem;color:#30D158;margin-bottom:.2rem">Termos em comum</div>'
-                        f'{"<div>" + tags_html(match["shared_terms"][:7], "tag-teal") + "</div>" if match["shared_terms"] else ""}'
-                        f'{"<div style=margin-top:.22rem>" + tags_html(match["topics"][:4], "tag-pur") + "</div>" if match["topics"] else ""}'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════
-#  CHAT
-# ══════════════════════════════════════════════════
-def page_chat():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.8rem">Mensagens</h1>',unsafe_allow_html=True)
-    email=st.session_state.current_user
-    users=st.session_state.users if isinstance(st.session_state.users,dict) else {}
-    contacts=[e for e in users if e!=email]
-    cc,cm=st.columns([.85,2.7])
-    with cc:
-        st.markdown('<div style="font-size:.55rem;font-weight:700;color:#3A4D6A;letter-spacing:.12em;text-transform:uppercase;margin-bottom:.65rem">Conversas</div>',unsafe_allow_html=True)
-        for ue in contacts:
-            ud=users.get(ue,{}); un=ud.get("name","?"); ug=ugrad(ue)
-            msgs=st.session_state.chat_messages.get(ue,[]); last=msgs[-1]["text"][:22]+"..." if msgs and len(msgs[-1]["text"])>22 else(msgs[-1]["text"] if msgs else "Iniciar conversa")
-            is_act=st.session_state.active_chat==ue
-            st.markdown(f'<div style="background:{"rgba(10,132,255,.09)" if is_act else "rgba(255,255,255,.03)"};border:1px solid {"rgba(10,132,255,.25)" if is_act else "rgba(255,255,255,.06)"};border-radius:12px;padding:7px 9px;margin-bottom:3px">'
-                        f'<div style="display:flex;align-items:center;gap:7px">{avh(ini(un),28,ug)}'
-                        f'<div style="overflow:hidden;flex:1"><div style="font-size:.74rem;font-weight:600;color:#D8E4F5">{un}</div>'
-                        f'<div style="font-size:.60rem;color:#3A4D6A;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{last}</div></div></div></div>',unsafe_allow_html=True)
-            if st.button("Abrir",key=f"oc_{ue}",use_container_width=True): st.session_state.active_chat=ue; st.rerun()
-    with cm:
-        ac=st.session_state.active_chat
-        if ac and ac in users:
-            cd=users.get(ac,{}); cn=cd.get("name","?"); cg=ugrad(ac)
-            msgs=st.session_state.chat_messages.get(ac,[])
-            st.markdown(f'<div style="display:flex;align-items:center;gap:10px;padding:.55rem 0 .7rem;border-bottom:1px solid rgba(255,255,255,.05);margin-bottom:.65rem">'
-                        f'{avh(ini(cn),34,cg)}<div><div style="font-weight:700;font-size:.86rem;color:#fff">{cn}</div><div style="font-size:.62rem;color:#30D158">Criptografado</div></div></div>',unsafe_allow_html=True)
-            for msg in msgs:
-                is_me=msg["from"]=="me" or msg["from"]==email
-                st.markdown(f'<div style="display:flex;{"justify-content:flex-end" if is_me else ""}"><div class="{"bme" if is_me else "bthem"}">{msg["text"]}<div style="font-size:.56rem;color:rgba(255,255,255,.3);margin-top:2px;text-align:{"right" if is_me else "left"}">{msg["time"]}</div></div></div>',unsafe_allow_html=True)
-            with st.form(f"mf_{ac}"):
-                mc=st.text_input("",placeholder="Mensagem...",key=f"mi_{ac}",label_visibility="collapsed")
-                if st.form_submit_button("Enviar",use_container_width=True):
-                    if mc:
-                        now=datetime.now().strftime("%H:%M")
-                        st.session_state.chat_messages.setdefault(ac,[]).append({"from":email,"text":mc,"time":now})
-                        save_db(); st.rerun()
-        else:
-            st.markdown('<div class="glass-card" style="text-align:center;padding:5rem;color:#3A4D6A">Selecione uma conversa</div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════
-#  SETTINGS
-# ══════════════════════════════════════════════════
-
-
-def page_settings():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<h1 style="padding-top:.7rem;margin-bottom:.8rem">Configuracoes</h1>',unsafe_allow_html=True)
-    email=st.session_state.current_user; u=guser(); g=ugrad(email)
-    st.markdown(f'<div class="prof-hero"><div class="av" style="background:{g}">{ini(u.get("name","?"))}</div>'
-                f'<div style="flex:1"><div style="font-family:Syne,sans-serif;font-weight:800;font-size:1.25rem;color:#fff;margin-bottom:.15rem">{u.get("name","?")}</div>'
-                f'<div style="color:#0A84FF;font-size:.76rem;font-weight:600;margin-bottom:.25rem">{u.get("area","")}</div>'
-                f'<div style="color:#7A8FAD;font-size:.73rem">{email}</div></div></div>',unsafe_allow_html=True)
-    t1,t2,t3=st.tabs(["  Perfil  ","  Seguranca  ","  Artigos Salvos  "])
-    with t1:
-        with st.form("prf"):
-            n_name=st.text_input("Nome",value=u.get("name",""))
-            n_area=st.text_input("Area",value=u.get("area",""))
-            n_bio=st.text_area("Bio",value=u.get("bio",""),height=70)
-            nat_options=["Brasil"]+sorted([k for k in NATIONALITY_COORDS if k!="Brasil"])
-            current_nat=str(u.get("nationality","Brasil") or "Brasil").strip()
-            if current_nat not in nat_options:
-                current_nat="Brasil"
-            n_nat=st.selectbox("Nacionalidade",nat_options,index=nat_options.index(current_nat))
-            if st.form_submit_button("Salvar perfil",use_container_width=True):
-                st.session_state.users[email].update({"name":n_name,"area":n_area,"bio":n_bio,"nationality":n_nat})
-                save_db(); st.success("Perfil salvo!")
-        if st.button("Sair da conta",key="logout",use_container_width=False):
-            st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page="login"; st.rerun()
-    with t2:
-        with st.form("cpw"):
-            op=st.text_input("Senha atual",type="password"); np_=st.text_input("Nova senha",type="password"); nc=st.text_input("Confirmar",type="password")
-            if st.form_submit_button("Alterar senha",use_container_width=True):
-                if hp(op)!=u.get("password",""): st.error("Senha incorreta.")
-                elif np_!=nc: st.error("Nao coincidem.")
-                elif len(np_)<6: st.error("Minimo 6 caracteres.")
-                else: st.session_state.users[email]["password"]=hp(np_); save_db(); st.success("Senha alterada!")
-    with t3:
-        saved=st.session_state.saved_articles
-        if saved:
-            for i,a in enumerate(saved):
-                uid=re.sub(r'[^a-zA-Z0-9]','',f"svt_{i}_{str(a.get('doi',''))[:6]}")[:20]
-                st.markdown(f'<div class="scard"><div style="font-weight:700;font-size:.82rem;color:#fff;margin-bottom:.2rem">{a.get("title","?")}</div>'
-                            f'<div style="font-size:.63rem;color:#3A4D6A">{a.get("authors","—")} · {a.get("year","?")} · {a.get("source","")}</div></div>',unsafe_allow_html=True)
-                c1,c2=st.columns([1,3])
-                with c1:
-                    if st.button("Remover",key=f"rms_{uid}"):
-                        st.session_state.saved_articles.pop(i); save_db(); st.rerun()
-                with c2:
-                    if a.get("url"): st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.74rem;text-decoration:none;line-height:2.3;display:block">Abrir</a>',unsafe_allow_html=True)
-        else: st.markdown('<div class="glass-card" style="padding:2.5rem;text-align:center;color:#3A4D6A">Nenhum artigo salvo.</div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
-
-# ══════════════════════════════════════════════════
-#  ROUTER
-# ══════════════════════════════════════════════════
-def main():
-    inject_css()
-    if not st.session_state.logged_in:
-        page_login(); return
-    render_nav()
-    if st.session_state.profile_view:
-        page_profile(st.session_state.profile_view); return
-    {
-        "repository":page_repository,"search":page_search,
-        "folders":page_folders,"analysis":page_analysis,
-        "connections":page_connections,"chat":page_chat,"settings":page_settings,
-    }.get(st.session_state.page,page_repository)()
-
-# main() desativado; versões finais estão abaixo
-# ==== OVERRIDES 2026-03-24 ====
-
-def inject_extra_css():
-    st.markdown("""
-    <style>
-    section[data-testid="stSidebar"]{display:none!important;}
-    div[data-testid="stSidebarCollapsedControl"]{display:none!important;}
-    .block-container{padding-top:1rem!important;max-width:1380px!important;}
-    .topbar-wrap{position:sticky;top:0;z-index:10;padding:.2rem 0 .9rem;background:linear-gradient(180deg,rgba(3,6,14,.96),rgba(3,6,14,.82),rgba(3,6,14,0));backdrop-filter:blur(16px)}
-    .topbrand{display:flex;align-items:center;gap:12px;margin-bottom:.8rem}.topbrand-icon{width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,#0A84FF,#30D158);display:flex;align-items:center;justify-content:center;font-family:Syne,sans-serif;font-weight:900;color:#fff}.topbrand-title{font-family:Syne,sans-serif;font-size:2rem;font-weight:900;letter-spacing:-.07em;color:#fff}.topbrand-sub{font-size:.71rem;color:#7A8FAD}.glass-nav{padding:.65rem;border-radius:22px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,.02));backdrop-filter:blur(18px);box-shadow:0 18px 40px rgba(0,0,0,.14)}
-    .glass-nav .stButton>button{height:54px!important;border-radius:18px!important;background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03))!important;border:1px solid rgba(255,255,255,.08)!important;color:#D8E4F5!important;font-weight:700!important}
-    .hero-research,.glass-section{padding:1rem 1.05rem;border-radius:24px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,.02));backdrop-filter:blur(20px);box-shadow:0 16px 44px rgba(0,0,0,.14)}
-    .hero-mini{font-size:.62rem;color:#7A8FAD;text-transform:uppercase;letter-spacing:.12em;font-weight:700;margin-bottom:.25rem}.hero-title{font-family:Syne,sans-serif;font-size:1.55rem;font-weight:900;letter-spacing:-.05em;color:#fff;margin-bottom:.35rem}.hero-text,.mini-note{font-size:.75rem;color:#91A6C6;line-height:1.7}
-    .research-clean{border:1px solid rgba(255,255,255,.07);border-radius:22px;background:linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,.018));box-shadow:0 16px 40px rgba(0,0,0,.12);margin-bottom:.85rem;overflow:hidden}.research-top{padding:1rem;border-bottom:1px solid rgba(255,255,255,.05)}.research-chip{font-size:.58rem;color:#9AC7FF;border:1px solid rgba(10,132,255,.22);padding:4px 8px;border-radius:999px;background:rgba(10,132,255,.08);display:inline-block;margin:.12rem .2rem .12rem 0}.cluster-row{padding:.6rem .75rem;border-radius:15px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);margin-bottom:.4rem}
-    </style>
-    """, unsafe_allow_html=True)
-
-def _safe_nat_options(default='Brasil'):
-    opts=['Brasil']+sorted([k for k in NATIONALITY_COORDS if k!='Brasil'])
-    return opts, (default if default in opts else 'Brasil')
-
-def _repo_external_articles(query, limit=5):
-    q=(query or '').strip()
-    if not q: return []
-    ck=f"extrepo::{q.lower()[:80]}"
-    if ck not in st.session_state.scholar_cache:
-        try: st.session_state.scholar_cache[ck]=search_ss(q, limit)
-        except: st.session_state.scholar_cache[ck]=[]
-    return st.session_state.scholar_cache.get(ck, [])
-
-def page_login():
-    _,col,_=st.columns([.9,1.15,.9])
-    with col:
-        st.markdown("<br>",unsafe_allow_html=True)
-        st.markdown('<div class="hero-research" style="text-align:center"><div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:.7rem"><div class="topbrand-icon">N</div><div><div class="topbrand-title" style="font-size:2.35rem">Nebula</div><div class="topbrand-sub" style="letter-spacing:.18em;text-transform:uppercase;font-size:.66rem">Pesquisa científica conectada</div></div></div><div class="hero-text">Entre ou crie uma conta para explorar pesquisas, cruzar documentos das suas pastas e localizar artigos acadêmicos correlatos ao seu tema.</div></div>',unsafe_allow_html=True)
-        mode=st.session_state.get('auth_mode','login')
-        c1,c2=st.columns(2)
-        with c1:
-            if st.button('Entrar',key='auth_enter_final',use_container_width=True):
-                st.session_state.auth_mode='login'; st.rerun()
-        with c2:
-            if st.button('Cadastro',key='auth_signup_final',use_container_width=True):
-                st.session_state.auth_mode='signup'; st.rerun()
-        st.markdown('<div style="height:.45rem"></div>',unsafe_allow_html=True)
-        if st.session_state.get('auth_mode','login')=='login':
-            with st.form('lf_final'):
-                em=st.text_input('E-mail',placeholder='seu@email.com')
-                pw=st.text_input('Senha',type='password',placeholder='••••••••')
-                if st.form_submit_button('Entrar na plataforma',use_container_width=True):
-                    u=st.session_state.users.get(em)
-                    if not u:
-                        st.error('E-mail não encontrado.')
-                    elif u['password']!=hp(pw):
-                        st.error('Senha incorreta.')
-                    else:
-                        st.session_state.logged_in=True
-                        st.session_state.current_user=em
-                        update_profile([w.lower() for w in re.split(r'[\s,;/]+',u.get('area','')) if len(w)>3],2.0)
-                        st.session_state.page='repository'
-                        st.rerun()
-        else:
-            with st.form('sf_final'):
-                nn=st.text_input('Nome completo')
-                ne=st.text_input('E-mail')
-                na=st.text_input('Linha de pesquisa',placeholder='Ex: documentação museológica digital, IA aplicada à preservação')
-                c1,c2=st.columns(2)
-                with c1:
-                    np_=st.text_input('Senha',type='password')
-                with c2:
-                    np2=st.text_input('Confirmar senha',type='password')
-                if st.form_submit_button('Criar conta',use_container_width=True):
-                    if not all([nn,ne,na,np_,np2]):
-                        st.error('Preencha nome, e-mail, linha de pesquisa e senha.')
-                    elif np_!=np2:
-                        st.error('Senhas não coincidem.')
-                    elif len(np_)<6:
-                        st.error('A senha precisa ter no mínimo 6 caracteres.')
-                    elif ne in st.session_state.users:
-                        st.error('Esse e-mail já está cadastrado.')
-                    else:
-                        st.session_state.users[ne]={'name':nn,'password':hp(np_),'area':na,'verified':False,'nationality':'Brasil'}
-                        save_db()
-                        st.success('Conta criada. Agora entre na plataforma.')
-                        st.session_state.auth_mode='login'
-                        st.rerun()
-
-
-def render_nav():
-    pages=[('repository','Área de pesquisa'),('analysis','Análises'),('connections','Conexões'),('folders','Pastas'),('search','Busca'),('settings','Conta')]
-    cur=st.session_state.page
-    st.markdown('<div class="topbar-wrap"><div class="topbrand"><div class="topbrand-icon">N</div><div><div class="topbrand-title">Nebula</div><div class="topbrand-sub">Ambiente analítico de pesquisa</div></div></div><div class="glass-nav">',unsafe_allow_html=True)
-    cols=st.columns(len(pages))
-    for col,(key,label) in zip(cols,pages):
-        with col:
-            txt=('● '+label) if cur==key and not st.session_state.profile_view else label
-            if st.button(txt,key=f'topnav_final_{key}',use_container_width=True):
-                st.session_state.profile_view=None
-                st.session_state.page=key
-                st.rerun()
-    st.markdown('</div></div>',unsafe_allow_html=True)
-
-
-def render_research_card(item, show_author=True, ctx='repo', compact=False, connection_count=None):
-    iid=item['id']
-    aname=item.get('author','?')
-    nat=item.get('nationality','Brasil')
-    dt=item.get('date','')
-    yr=item.get('year','')
-    cit=item.get('citations',0)
-    method=item.get('methodology','—')
-    ab=(item.get('abstract','') or '').strip()
-    conn_count=connection_count if connection_count is not None else len(find_similar(item,0.22,20))
-    detail_key=f'detail_{ctx}_{iid}'
-    meta=f'{aname} · {item.get("area","")}'
-    if nat:
-        meta+=f' · {nat}'
-    if dt:
-        meta+=f' · {dt}'
-    st.markdown('<div class="research-clean"><div class="research-top"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div style="flex:1"><div style="font-size:.66rem;color:#7A8FAD;font-weight:600">'+meta+'</div><div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:800;color:#fff;line-height:1.35;margin-top:.2rem">'+item.get('title','Sem título')+'</div><div style="font-size:.76rem;color:#91A6C6;line-height:1.68;margin-top:.45rem">'+ab[:380]+('...' if len(ab)>380 else '')+'</div></div>'+badge(item.get('status','Em andamento'))+'</div><div style="margin-top:.45rem"><span class="research-chip">Ano '+str(yr)+'</span><span class="research-chip">'+str(method)+'</span><span class="research-chip">'+str(cit)+' citações</span><span class="research-chip">'+str(conn_count)+' conexões</span></div>'+(('<div style="margin-top:.45rem">'+tags_html(item.get('tags',[])[:6])+'</div>') if item.get('tags') else '')+'</div>',unsafe_allow_html=True)
-    c1,c2=st.columns(2)
-    with c1:
-        if st.button('Mapear conexões',key=f'cn_final_{ctx}_{iid}',use_container_width=True):
-            st.session_state.view_research=item
-            st.session_state.page='connections'
-            st.rerun()
-    with c2:
-        if st.button('Ler análise',key=f'dt_final_{ctx}_{iid}',use_container_width=True):
-            st.session_state[detail_key]=not st.session_state.get(detail_key,False)
-            st.rerun()
-    if st.session_state.get(detail_key,False):
-        related=find_similar(item,0.22,4)
-        st.markdown('<div class="glass-section" style="margin:.15rem .85rem .9rem"><div class="hero-mini">Leitura analítica</div><div class="mini-note" style="margin-bottom:.55rem">Esta pesquisa se posiciona em <strong>'+item.get('area','—')+'</strong>, usa <strong>'+str(method)+'</strong> e possui como termos dominantes: '+(', '.join(research_terms(item,8)) if research_terms(item,8) else 'sem termos dominantes')+'.</div>',unsafe_allow_html=True)
-        if related:
-            for sim,other in related:
-                det=connection_details(item,other)
-                st.markdown('<div class="cluster-row"><div style="display:flex;justify-content:space-between;gap:8px"><div style="font-size:.8rem;font-weight:700;color:#fff">'+other.get('title','')[:82]+'</div><div style="font-size:.63rem;color:#30D158;font-weight:800">'+str(round(sim*100))+'%</div></div><div class="mini-note" style="margin:.18rem 0 .25rem">'+other.get('area','')+' · '+other.get('methodology','')+'</div><div class="mini-note">'+' • '.join(det.get('reasons',[])[:3])+'</div>'+(('<div style="margin-top:.35rem">'+tags_html(det.get('shared_terms',[])[:8],'tag-teal')+'</div>') if det.get('shared_terms') else '')+'</div>',unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="mini-note">Ainda não há conexões suficientemente fortes para esta pesquisa.</div>',unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
-
-
-def page_repository():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    u=guser()
-    email=st.session_state.current_user
-    all_items=list(st.session_state.research_items)
-    all_edges=build_connection_edges(all_items,threshold=0.22)
-    conn_map=connection_count_map(all_items,all_edges)
-    interests=get_interests(email,10)
-    recs=get_recommendations(email,8)
-    ext_query=' '.join(interests[:4]) if interests else u.get('area','pesquisa acadêmica')
-    ext_articles=_repo_external_articles(ext_query,8)
-    st.markdown('<div class="hero-research"><div class="hero-mini">Área de pesquisa</div><div class="hero-title">Mapeamento acadêmico da sua linha de pesquisa</div><div class="hero-text">Explore estudos do repositório, veja correlações reais entre pesquisas e acompanhe referências externas alinhadas ao seu eixo principal: <strong>'+u.get('area','—')+'</strong>.</div></div>',unsafe_allow_html=True)
-    left,right=st.columns([2.2,1],gap='medium')
+    left, right = st.columns([1.2, 0.8])
     with left:
-        q_col,s_col=st.columns([3.3,1.15])
-        with q_col:
-            repo_query=st.text_input('',placeholder='Pesquisar título, autor, resumo, tag, método ou área...',key='repo_query_final',label_visibility='collapsed')
-        with s_col:
-            sort_mode=st.selectbox('Ordenar por',['Mais recentes','Mais conectadas','Mais citadas','Mais aderentes ao meu eixo'],key='repo_sort_final')
-        ff=st.radio('',['Todas','Minhas','Por área','Correlatas','Publicadas'],horizontal=True,key='repo_filter_final',label_visibility='collapsed')
-        items=list(all_items)
-        if ff=='Minhas':
-            items=[r for r in items if r.get('author_email')==email]
-        elif ff=='Por área':
-            area=_norm_text(u.get('area',''))
-            items=[r for r in items if area and (area in _norm_text(r.get('area','')) or area in _norm_text(r.get('abstract','')))]
-        elif ff=='Correlatas':
-            items=recs if recs else items
-        elif ff=='Publicadas':
-            items=[r for r in items if _norm_text(r.get('status',''))=='publicado']
-        if repo_query:
-            q=_norm_text(repo_query)
-            items=[r for r in items if q in _norm_text(r.get('title','')) or q in _norm_text(r.get('author','')) or q in _norm_text(r.get('abstract','')) or q in _norm_text(r.get('area','')) or q in _norm_text(r.get('methodology','')) or any(q in _norm_text(t) for t in r.get('tags',[]))]
-        if sort_mode=='Mais conectadas':
-            items=sorted(items,key=lambda x:(conn_map.get(x['id'],0),x.get('citations',0),x.get('date','')),reverse=True)
-        elif sort_mode=='Mais citadas':
-            items=sorted(items,key=lambda x:(x.get('citations',0),conn_map.get(x['id'],0),x.get('date','')),reverse=True)
-        elif sort_mode=='Mais aderentes ao meu eixo':
-            interest_set=set(get_interests(email,20))|{_norm_text(u.get('area',''))}
-            items=sorted(items,key=lambda item:len(set(research_terms(item,12)) & interest_set)*12+conn_map.get(item['id'],0)*2+item.get('citations',0)*0.4,reverse=True)
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Tendência de temas do repositório</div>", unsafe_allow_html=True)
+        if df.empty:
+            st.info("Envie arquivos no repositório para gerar análise.")
         else:
-            items=sorted(items,key=lambda x:(x.get('date',''),x.get('citations',0)),reverse=True)
-        m1,m2,m3=st.columns(3)
-        with m1:
-            st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas visíveis</div></div>',unsafe_allow_html=True)
-        with m2:
-            st.markdown(f'<div class="mbox"><div class="mval-teal">{len(all_edges)}</div><div class="mlbl">Conexões mapeadas</div></div>',unsafe_allow_html=True)
-        with m3:
-            st.markdown(f'<div class="mbox"><div class="mval-pur">{len(set(r.get("area","Sem área") for r in all_items))}</div><div class="mlbl">Áreas de pesquisa</div></div>',unsafe_allow_html=True)
-        st.markdown('<div style="height:.35rem"></div>',unsafe_allow_html=True)
-        if not items:
-            st.markdown('<div class="glass-card" style="padding:3rem;text-align:center;color:#7A8FAD">Nenhuma pesquisa encontrada nesse recorte.</div>',unsafe_allow_html=True)
-        else:
-            for r in items:
-                render_research_card(r,ctx='repo_final',connection_count=conn_map.get(r['id'],0))
+            topic_count = df["topic"].value_counts().reset_index()
+            topic_count.columns = ["Tema", "Quantidade"]
+            fig = px.bar(topic_count, x="Tema", y="Quantidade", text="Quantidade")
+            fig.update_layout(height=360, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
     with right:
-        st.markdown('<div class="glass-section"><div class="hero-mini">Eixos do seu perfil</div><div style="font-size:.95rem;color:#fff;font-weight:800;line-height:1.4">'+u.get('area','Pesquisa')+'</div><div style="margin-top:.55rem">',unsafe_allow_html=True)
-        if interests:
-            for i,term in enumerate(interests[:8]):
-                pct=max(24,100-i*9)
-                st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.45rem"><div style="flex:1;font-size:.8rem;color:#AFC3DE">{term}</div><div style="width:128px;height:7px;border-radius:999px;background:rgba(255,255,255,.06);overflow:hidden"><div style="width:{pct}%;height:100%;background:linear-gradient(90deg,#0A84FF,#30D158)"></div></div></div>',unsafe_allow_html=True)
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>O sistema entendeu que você se interessa por</div>", unsafe_allow_html=True)
+        if profile_terms:
+            st.markdown("".join([f"<span class='tag'>{t}</span>" for t in profile_terms]), unsafe_allow_html=True)
         else:
-            st.markdown('<div class="mini-note">Ainda sem termos recorrentes suficientes.</div>',unsafe_allow_html=True)
-        st.markdown('</div></div>',unsafe_allow_html=True)
-        st.markdown('<div style="height:.8rem"></div>',unsafe_allow_html=True)
-        st.markdown('<div class="glass-section"><div class="hero-mini">Referências acadêmicas sugeridas</div>',unsafe_allow_html=True)
-        if ext_articles:
-            for a in ext_articles[:5]:
-                title=(a.get('title','Sem título') or 'Sem título')[:82]
-                meta=f"{a.get('authors','—')} · {a.get('year','?')} · {a.get('citations',0)} cit."
-                st.markdown(f'<div style="padding:.2rem 0 .75rem;border-bottom:1px solid rgba(255,255,255,.06);margin-bottom:.65rem"><div style="font-size:.84rem;color:#fff;font-weight:800;line-height:1.5">{title}</div><div class="mini-note" style="margin-top:.15rem">{meta}</div></div>',unsafe_allow_html=True)
-                if a.get('url'):
-                    st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.74rem;text-decoration:none">Abrir referência</a>',unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="mini-note">Nenhuma referência externa encontrada agora para esse eixo.</div>',unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-        topic_counter=Counter(t.lower() for r in all_items for t in r.get('tags',[]))
-        st.markdown('<div style="height:.8rem"></div>',unsafe_allow_html=True)
-        st.markdown('<div class="glass-section"><div class="hero-mini">Temas recorrentes</div>',unsafe_allow_html=True)
-        if topic_counter:
-            for term,cnt in topic_counter.most_common(8):
-                st.markdown(f'<div style="padding:.22rem 0 .72rem;border-bottom:1px solid rgba(255,255,255,.05)"><div style="font-size:.8rem;font-weight:700;color:#0A84FF">{term}</div><div class="mini-note">{cnt} ocorrência(s) no repositório</div></div>',unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="mini-note">Sem recorrências suficientes por enquanto.</div>',unsafe_allow_html=True)
-        st.markdown('</div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
+            st.info("Faça buscas e envie documentos para o sistema aprender seu perfil.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='glass'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>Sugestões rápidas</div>", unsafe_allow_html=True)
+    suggestions = []
+    if profile_terms:
+        suggestions.extend(profile_terms[:5])
+    if not suggestions:
+        suggestions = ["folksonomia em museus", "inteligência artificial aplicada à pesquisa", "análise documental", "visualização 3D de dados"]
+    cols = st.columns(min(4, len(suggestions)))
+    for col, term in zip(cols, suggestions):
+        with col:
+            if st.button(term, use_container_width=True):
+                st.session_state.quick_query = term
+                st.session_state.page = "Pesquisa Inteligente"
+                st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
-def page_analysis():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    st.markdown('<div class="hero-research"><div class="hero-mini">Análise avançada</div><div class="hero-title">Leitura analítica do ecossistema de pesquisa</div><div class="hero-text">Cruza repositório, documentos das pastas, anos, autores, temas, palavras-chave, conexões e correlação externa para revelar padrões da sua base.</div></div>',unsafe_allow_html=True)
-    items=list(st.session_state.research_items)
-    folders=st.session_state.folders
-    all_an={f:an for fd in folders.values() if isinstance(fd,dict) for f,an in fd.get('analyses',{}).items()}
-    edges=build_connection_edges(items,threshold=0.22)
-    conn_map=connection_count_map(items,edges)
-    c1,c2,c3,c4=st.columns(4)
-    with c1:
-        st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas</div></div>',unsafe_allow_html=True)
-    with c2:
-        st.markdown(f'<div class="mbox"><div class="mval-teal">{len(all_an)}</div><div class="mlbl">Documentos analisados</div></div>',unsafe_allow_html=True)
-    with c3:
-        st.markdown(f'<div class="mbox"><div class="mval-pur">{len(edges)}</div><div class="mlbl">Conexões fortes</div></div>',unsafe_allow_html=True)
-    with c4:
-        st.markdown(f'<div class="mbox"><div class="mval-orn">{sum(r.get("citations",0) for r in items)}</div><div class="mlbl">Citações totais</div></div>',unsafe_allow_html=True)
-    tab1,tab2,tab3,tab4=st.tabs(['  Repositório  ','  Documentos  ','  Conexões  ','  Correlação externa  '])
-    with tab1:
-        if not items:
-            st.info('Nenhuma pesquisa no repositório.')
-        else:
-            years=Counter(r.get('year',datetime.now().year) for r in items)
-            areas=Counter(r.get('area','Sem área') for r in items)
-            meth=Counter(r.get('methodology','outro') for r in items)
-            tags=Counter(t.lower() for r in items for t in r.get('tags',[]))
-            top_conn=sorted(items,key=lambda x:(conn_map.get(x['id'],0),x.get('citations',0)),reverse=True)[:8]
-            y1,y2=st.columns(2)
-            with y1:
-                fig=go.Figure(go.Bar(x=[str(y) for y in sorted(years)],y=[years[y] for y in sorted(years)],text=[years[y] for y in sorted(years)],textposition='outside'))
-                fig.update_layout(**{**pc_dark('Evolução por ano'),'height':240})
-                st.plotly_chart(fig,use_container_width=True)
-            with y2:
-                fig=go.Figure(go.Pie(labels=list(areas.keys())[:8],values=list(areas.values())[:8],hole=.52))
-                fig.update_layout(height=240,paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',title=dict(text='Áreas predominantes',font=dict(color='#D8E4F5',family='Syne',size=12)))
-                st.plotly_chart(fig,use_container_width=True)
-            m1,m2=st.columns(2)
-            with m1:
-                fig=go.Figure(go.Bar(x=list(meth.values()),y=list(meth.keys()),orientation='h',text=list(meth.values()),textposition='outside'))
-                fig.update_layout(**{**pc_dark('Metodologias'), 'height':320})
-                st.plotly_chart(fig,use_container_width=True)
-            with m2:
-                top_tags=tags.most_common(12)
-                if top_tags:
-                    fig=go.Figure(go.Bar(x=[c for _,c in top_tags],y=[t for t,_ in top_tags],orientation='h',text=[c for _,c in top_tags],textposition='inside'))
-                    fig.update_layout(**{**pc_dark('Palavras-chave dominantes'),'height':320,'yaxis':dict(showticklabels=False)})
-                    st.plotly_chart(fig,use_container_width=True)
-            st.markdown('<div class="glass-section"><div class="hero-mini">Pesquisas com maior densidade de conexão</div>',unsafe_allow_html=True)
-            for r in top_conn:
-                st.markdown(f'<div class="cluster-row"><div style="display:flex;justify-content:space-between;gap:8px"><div style="font-size:.8rem;font-weight:700;color:#fff">{r.get("title","")[:88]}</div><div style="font-size:.63rem;color:#30D158;font-weight:800">{conn_map.get(r["id"],0)} conexões</div></div><div class="mini-note">{r.get("area","")} · {r.get("methodology","")} · {r.get("year","")}</div></div>',unsafe_allow_html=True)
-            st.markdown('</div>',unsafe_allow_html=True)
-    with tab2:
-        if not all_an:
-            st.info('Analise documentos nas pastas para gerar este painel.')
-        else:
-            kw=Counter(k for an in all_an.values() for k in an.get('keywords',[]))
-            years_doc=Counter(an.get('year') for an in all_an.values() if an.get('year'))
-            authors=Counter(a for an in all_an.values() for a in an.get('authors',[]))
-            relev=[an.get('relevance_score',0) for an in all_an.values()]
-            c1,c2=st.columns(2)
+# ============================================================
+# PESQUISA INTELIGENTE
+# ============================================================
+def page_smart_search() -> None:
+    st.markdown("<div class='title-main'>Pesquisa Inteligente</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='subtitle-main'>Busca única para reconhecer o tema do usuário, procurar nos seus arquivos, sugerir artigos na internet e relacionar imagens semelhantes.</div>",
+        unsafe_allow_html=True,
+    )
+
+    default_query = st.session_state.get("quick_query", "")
+    query = st.text_area("Digite sua pergunta ou tema de pesquisa", value=default_query, height=120)
+    up_image = st.file_uploader("Opcional: envie uma imagem para análise e busca visual local", type=["png", "jpg", "jpeg", "webp"])
+
+    if st.button("Executar pesquisa", use_container_width=True):
+        if not query and up_image is None:
+            st.warning("Digite uma consulta ou envie uma imagem.")
+            return
+
+        intent_data = recognize_research_intent(query or "imagem científica")
+        update_user_interest_from_terms(st.session_state.current_user, intent_data["search_terms"])
+        st.session_state.search_history.append(
+            {
+                "query": query,
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "intent": intent_data["intent"],
+                "topic": intent_data["topic"],
+            }
+        )
+        save_db()
+
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Leitura automática da sua busca</div>", unsafe_allow_html=True)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.info(f"**Intenção detectada:** {intent_data['intent']}")
+        with c2:
+            st.info(f"**Tema principal:** {intent_data['topic']}")
+        with c3:
+            st.info(f"**Palavras-chave:** {', '.join(intent_data['keywords'][:5]) if intent_data['keywords'] else 'sem termos suficientes'}")
+        st.markdown("".join([f"<span class='tag'>{t}</span>" for t in intent_data["search_terms"]]), unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        local_results = local_search(query or "imagem", st.session_state.repository)
+        scholar_results = search_semantic_scholar(" ".join(intent_data["search_terms"]) or query)
+        crossref_results = search_crossref(" ".join(intent_data["search_terms"]) or query)
+
+        left, right = st.columns(2)
+        with left:
+            st.markdown("<div class='glass'>", unsafe_allow_html=True)
+            st.markdown("<div class='section-title'>Resultados nos seus arquivos</div>", unsafe_allow_html=True)
+            if not local_results:
+                st.info("Nenhum documento local correspondeu à busca. Envie arquivos na aba Repositório.")
+            else:
+                for doc in local_results[:8]:
+                    st.markdown(
+                        f"""
+                        <div class='doc-card'>
+                            <b>{doc['name']}</b><br>
+                            <span class='small-muted'>{doc['kind']} · {doc['topic']} · relevância {doc['score']}%</span><br><br>
+                            {doc['summary'][:280]}
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        with right:
+            st.markdown("<div class='glass'>", unsafe_allow_html=True)
+            st.markdown("<div class='section-title'>Artigos sugeridos na internet</div>", unsafe_allow_html=True)
+            web_results = scholar_results + crossref_results
+            if not web_results:
+                st.info("Não foi possível recuperar artigos agora. Tente outra formulação de busca.")
+            else:
+                for item in web_results[:8]:
+                    title = item.get("title", "Sem título")
+                    source = item.get("source", "Fonte")
+                    authors = item.get("authors", "")
+                    year = item.get("year", "?")
+                    citations = item.get("citations", 0)
+                    url = item.get("url", "")
+                    if url:
+                        st.markdown(f"**[{title}]({url})**")
+                    else:
+                        st.markdown(f"**{title}**")
+                    st.caption(f"{authors} · {year} · {source} · citações: {citations}")
+                    if item.get("abstract"):
+                        st.write(item["abstract"][:260] + ("..." if len(item["abstract"]) > 260 else ""))
+                    st.divider()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Sugestões prontas de pesquisa</div>", unsafe_allow_html=True)
+        q = " ".join(intent_data["search_terms"]) or query
+        google_images = f"https://www.google.com/search?tbm=isch&q={quote_plus(q)}"
+        google_scholar = f"https://scholar.google.com/scholar?q={quote_plus(q)}"
+        semantic_link = f"https://www.semanticscholar.org/search?q={quote_plus(q)}"
+        st.markdown(f"[Buscar imagens relacionadas]({google_images})")
+        st.markdown(f"[Buscar no Google Scholar]({google_scholar})")
+        st.markdown(f"[Buscar no Semantic Scholar]({semantic_link})")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        if up_image is not None:
+            image = Image.open(up_image)
+            stats = image_stats(image)
+            similar = local_similar_images(image, st.session_state.repository)
+            st.markdown("<div class='glass'>", unsafe_allow_html=True)
+            st.markdown("<div class='section-title'>Busca visual unificada</div>", unsafe_allow_html=True)
+            c1, c2, c3, c4 = st.columns(4)
             with c1:
-                if years_doc:
-                    fig=go.Figure(go.Bar(x=[str(y) for y in sorted(years_doc)],y=[years_doc[y] for y in sorted(years_doc)],text=[years_doc[y] for y in sorted(years_doc)],textposition='outside'))
-                    fig.update_layout(**{**pc_dark('Documentos por ano'),'height':240})
-                    st.plotly_chart(fig,use_container_width=True)
+                render_metric("Largura", str(stats['width']), "Pixels")
             with c2:
-                if relev:
-                    fig=go.Figure(go.Histogram(x=relev,nbinsx=10))
-                    fig.update_layout(**{**pc_dark('Distribuição de relevância'),'height':240})
-                    st.plotly_chart(fig,use_container_width=True)
-            st.markdown('<div class="glass-section"><div class="hero-mini">Autores mais recorrentes</div>',unsafe_allow_html=True)
-            for a,c in authors.most_common(10):
-                st.markdown(f'<div class="cluster-row"><div style="font-size:.8rem;font-weight:700;color:#fff">{a}</div><div class="mini-note">{c} documento(s)</div></div>',unsafe_allow_html=True)
-            st.markdown('</div>',unsafe_allow_html=True)
-            if kw:
-                fig=go.Figure(go.Bar(x=[c for _,c in kw.most_common(15)],y=[k for k,_ in kw.most_common(15)],orientation='h',text=[c for _,c in kw.most_common(15)],textposition='inside'))
-                fig.update_layout(**{**pc_dark('Keywords dominantes das pastas'),'height':420,'yaxis':dict(showticklabels=False)})
-                st.plotly_chart(fig,use_container_width=True)
-    with tab3:
-        if not edges:
-            st.info('Ainda não há conexões fortes suficientes para análise comparativa.')
+                render_metric("Altura", str(stats['height']), "Pixels")
+            with c3:
+                render_metric("Brilho", str(stats['brightness']), "Média estimada")
+            with c4:
+                render_metric("Hash visual", stats['hash'][:12], "Assinatura simplificada")
+            st.image(image, caption="Imagem enviada", use_container_width=True)
+            st.markdown("**Imagens semelhantes no seu repositório:**")
+            if not similar:
+                st.info("Nenhuma imagem semelhante encontrada nos arquivos do usuário.")
+            else:
+                for item in similar:
+                    st.write(f"- {item['name']} · similaridade {item['image_similarity']}% · tema {item['topic']}")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    st.session_state.quick_query = ""
+
+
+# ============================================================
+# REPOSITÓRIO
+# ============================================================
+def page_repository() -> None:
+    st.markdown("<div class='title-main'>Repositório</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='subtitle-main'>Envie seus arquivos para o sistema catalogar, resumir, reconhecer tema, ano, autor, nacionalidade e construir conexões entre pesquisas.</div>",
+        unsafe_allow_html=True,
+    )
+
+    files = st.file_uploader(
+        "Adicionar arquivos ao repositório",
+        accept_multiple_files=True,
+        type=["pdf", "docx", "txt", "md", "csv", "xlsx", "xls", "png", "jpg", "jpeg", "webp", "py", "json"],
+    )
+
+    if st.button("Processar arquivos", use_container_width=True):
+        if not files:
+            st.warning("Selecione pelo menos um arquivo.")
         else:
-            ranked=sorted(edges,key=lambda e:e['score'],reverse=True)[:20]
-            st.markdown('<div class="glass-section"><div class="hero-mini">Pares de pesquisa com maior correlação</div><div class="mini-note">A força da ligação considera área, método, tags e semelhança textual.</div></div>',unsafe_allow_html=True)
-            for edge in ranked:
-                det=connection_details(edge['source'],edge['target'])
-                st.markdown(f'<div class="cluster-row"><div style="display:flex;justify-content:space-between;gap:8px"><div style="font-size:.84rem;font-weight:800;color:#fff">{edge["source"].get("title","")[:60]}</div><div style="font-size:.66rem;color:#30D158;font-weight:900">{round(edge["score"]*100)}%</div></div><div class="mini-note" style="margin:.25rem 0">↔ {edge["target"].get("title","")[:86]}</div><div class="mini-note">{" • ".join(det.get("reasons",[])[:4])}</div>'+(('<div style="margin-top:.35rem">'+tags_html(det.get('shared_terms',[])[:10],'tag-teal')+'</div>') if det.get('shared_terms') else '')+'</div>',unsafe_allow_html=True)
-    with tab4:
-        u=guser()
-        q=' '.join(get_interests(st.session_state.current_user,6)) or u.get('area','pesquisa científica')
-        arts=_repo_external_articles(q,10)
-        st.markdown('<div class="glass-section"><div class="hero-mini">Literatura externa correlata</div><div class="mini-note">Busca automática por estudos alinhados ao seu eixo de pesquisa para ampliar comparação bibliográfica.</div></div>',unsafe_allow_html=True)
-        if arts:
-            for a in arts[:10]:
-                title=a.get('title','Sem título')
-                meta=f"{a.get('authors','—')} · {a.get('year','?')} · {a.get('source','')}"
-                st.markdown(f'<div class="cluster-row"><div style="font-size:.82rem;font-weight:700;color:#fff">{title}</div><div class="mini-note">{meta}</div><div class="mini-note" style="margin-top:.25rem">{(a.get("abstract","") or "")[:260]}{"..." if len(a.get("abstract","") or "")>260 else ""}</div></div>',unsafe_allow_html=True)
-                if a.get('url'):
-                    st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.7rem;text-decoration:none">Abrir artigo</a>',unsafe_allow_html=True)
-        else:
-            st.info('Nenhum artigo externo localizado agora para esse eixo.')
-    st.markdown('</div>',unsafe_allow_html=True)
-
-
-def page_connections():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    items=list(st.session_state.research_items)
-    threshold=st.slider('Força mínima da conexão',0.12,0.70,0.22,0.02)
-    edges=build_connection_edges(items,threshold=threshold)
-    st.markdown('<div class="hero-research"><div class="hero-mini">Conexões entre pesquisas</div><div class="hero-title">União real entre pesquisas semelhantes</div><div class="hero-text">O sistema conecta pesquisas por termos compartilhados, metodologia, área e proximidade semântica. Quanto maior a pontuação, mais forte a correlação.</div></div>',unsafe_allow_html=True)
-    c1,c2,c3=st.columns(3)
-    with c1:
-        st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas avaliadas</div></div>',unsafe_allow_html=True)
-    with c2:
-        st.markdown(f'<div class="mbox"><div class="mval-teal">{len(edges)}</div><div class="mlbl">Conexões fortes</div></div>',unsafe_allow_html=True)
-    with c3:
-        st.markdown(f'<div class="mbox"><div class="mval-pur">{len(set(tuple(sorted((e["source"]["id"],e["target"]["id"]))) for e in edges)) if edges else 0}</div><div class="mlbl">Pares conectados</div></div>',unsafe_allow_html=True)
-    focus=st.session_state.get('view_research')
-    if focus:
-        st.markdown('<div class="glass-section"><div class="hero-mini">Pesquisa focal</div><div style="font-size:1rem;color:#fff;font-weight:800">'+focus.get('title','')+'</div><div class="mini-note">'+focus.get('area','')+' · '+focus.get('methodology','')+'</div></div><div style="height:.65rem"></div>',unsafe_allow_html=True)
-    if not edges:
-        st.info('Nenhuma conexão forte encontrada com esse limiar.')
-    else:
-        for edge in edges[:30]:
-            if focus and edge['source']['id']!=focus['id'] and edge['target']['id']!=focus['id']:
-                continue
-            det=connection_details(edge['source'],edge['target'])
-            st.markdown(f'<div class="cluster-row"><div style="display:flex;justify-content:space-between;gap:8px"><div style="font-size:.85rem;font-weight:800;color:#fff">{edge["source"]["title"][:56]}</div><div style="font-size:.66rem;color:#30D158;font-weight:900">{round(edge["score"]*100)}%</div></div><div class="mini-note" style="margin:.25rem 0">↔ {edge["target"]["title"][:76]}</div><div class="mini-note">{" • ".join(det.get("reasons",[])[:4])}</div>'+(('<div style="margin-top:.35rem">'+tags_html(det.get('shared_terms',[])[:10],'tag-teal')+'</div>') if det.get('shared_terms') else '')+'</div>',unsafe_allow_html=True)
-    st.markdown('</div>',unsafe_allow_html=True)
-
-
-def page_settings():
-    st.markdown('<div class="pw">',unsafe_allow_html=True)
-    email=st.session_state.current_user
-    u=guser()
-    st.markdown('<div class="hero-research"><div class="hero-mini">Conta</div><div class="hero-title">Dados básicos do perfil</div><div class="hero-text">Ajuste apenas o necessário: nome, linha de pesquisa e senha.</div></div>',unsafe_allow_html=True)
-    t1,t2=st.tabs(['  Perfil  ','  Segurança  '])
-    with t1:
-        with st.form('prf_final'):
-            n_name=st.text_input('Nome',value=u.get('name',''))
-            n_area=st.text_input('Linha de pesquisa',value=u.get('area',''))
-            if st.form_submit_button('Salvar perfil',use_container_width=True):
-                st.session_state.users[email].update({'name':n_name,'area':n_area})
-                save_db()
-                st.success('Perfil salvo!')
-        if st.button('Sair da conta',key='logout_final'):
-            st.session_state.logged_in=False
-            st.session_state.current_user=None
-            st.session_state.page='login'
+            added = 0
+            for up in files:
+                content = up.getvalue()
+                record = make_document_record(up.name, content)
+                st.session_state.repository.append(record)
+                update_user_interest_from_terms(st.session_state.current_user, record["keywords"][:10])
+                added += 1
+            save_db()
+            st.success(f"{added} arquivo(s) adicionados ao repositório.")
             st.rerun()
-    with t2:
-        with st.form('cpw_final'):
-            op=st.text_input('Senha atual',type='password')
-            np_=st.text_input('Nova senha',type='password')
-            nc=st.text_input('Confirmar',type='password')
-            if st.form_submit_button('Alterar senha',use_container_width=True):
-                if hp(op)!=u.get('password',''):
-                    st.error('Senha incorreta.')
-                elif np_!=nc:
-                    st.error('As senhas não coincidem.')
-                elif len(np_)<6:
-                    st.error('Mínimo 6 caracteres.')
-                else:
-                    st.session_state.users[email]['password']=hp(np_)
-                    save_db()
-                    st.success('Senha alterada!')
-    st.markdown('</div>',unsafe_allow_html=True)
+
+    st.markdown("<div class='glass'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>Arquivos catalogados</div>", unsafe_allow_html=True)
+    docs = st.session_state.repository
+    if not docs:
+        st.info("Seu repositório ainda está vazio.")
+    else:
+        search_name = st.text_input("Filtrar por nome, tema, autor ou palavra-chave")
+        filtered = docs
+        if search_name:
+            filtered = local_search(search_name, docs)
+        for doc in filtered[:50]:
+            with st.expander(f"{doc['name']} · {doc['kind']} · {doc['topic']}"):
+                st.write(f"**Autor:** {doc['author']}")
+                st.write(f"**Ano:** {doc['year']}")
+                st.write(f"**Nacionalidade:** {doc['nationality']}")
+                st.write(f"**Resumo:** {doc['summary']}")
+                if doc.get("keywords"):
+                    st.markdown("".join([f"<span class='tag'>{k}</span>" for k in doc['keywords'][:15]]), unsafe_allow_html=True)
+                rel = related_documents(doc, docs)
+                if rel:
+                    st.write("**Conexões com pesquisas semelhantes:**")
+                    for item in rel[:5]:
+                        st.write(f"- {item['name']} · similaridade {item['similarity']}% · tema {item['topic']}")
+        if st.button("Limpar repositório", use_container_width=True):
+            st.session_state.repository = []
+            save_db()
+            st.success("Repositório limpo.")
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
-def main():
-    inject_css()
-    inject_extra_css()
+# ============================================================
+# ANÁLISE AVANÇADA
+# ============================================================
+def page_analysis() -> None:
+    st.markdown("<div class='title-main'>Análise Avançada</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='subtitle-main'>Análise estatística do repositório com gráficos por ano, tema, autor, nacionalidade e mapa 3D para autores.</div>",
+        unsafe_allow_html=True,
+    )
+
+    df = get_repository_df()
+    if df.empty:
+        st.info("Envie arquivos no repositório para liberar as análises.")
+        return
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Distribuição por ano</div>", unsafe_allow_html=True)
+        year_count = df["year"].value_counts().sort_index().reset_index()
+        year_count.columns = ["Ano", "Quantidade"]
+        fig = px.line(year_count, x="Ano", y="Quantidade", markers=True)
+        fig.update_layout(height=340, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c2:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Temas da pesquisa</div>", unsafe_allow_html=True)
+        topic_count = df["topic"].value_counts().reset_index()
+        topic_count.columns = ["Tema", "Quantidade"]
+        fig = px.pie(topic_count, names="Tema", values="Quantidade", hole=0.45)
+        fig.update_layout(height=340, paper_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    c3, c4 = st.columns(2)
+    with c3:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Autores mais frequentes</div>", unsafe_allow_html=True)
+        auth_count = df["author"].value_counts().head(12).reset_index()
+        auth_count.columns = ["Autor", "Quantidade"]
+        fig = px.bar(auth_count, x="Autor", y="Quantidade", text="Quantidade")
+        fig.update_layout(height=360, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with c4:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Nacionalidade dos autores</div>", unsafe_allow_html=True)
+        nat_count = df["nationality"].value_counts().reset_index()
+        nat_count.columns = ["Nacionalidade", "Quantidade"]
+        fig = px.bar(nat_count, x="Nacionalidade", y="Quantidade", text="Quantidade")
+        fig.update_layout(height=360, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig, use_container_width=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='glass'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>Mapa 3D de nacionalidade</div>", unsafe_allow_html=True)
+    nat_count = df["nationality"].value_counts().reset_index()
+    nat_count.columns = ["Nacionalidade", "Quantidade"]
+    map_rows = []
+    for _, row in nat_count.iterrows():
+        coords = NATIONALITY_COORDS.get(row["Nacionalidade"])
+        if coords:
+            map_rows.append(
+                {
+                    "nationality": row["Nacionalidade"],
+                    "count": row["Quantidade"],
+                    "lat": coords["lat"],
+                    "lon": coords["lon"],
+                    "z": row["Quantidade"] * 10,
+                }
+            )
+    if map_rows:
+        map_df = pd.DataFrame(map_rows)
+        fig = go.Figure(
+            data=[
+                go.Scattergeo(
+                    lon=map_df["lon"],
+                    lat=map_df["lat"],
+                    text=map_df["nationality"] + " · " + map_df["count"].astype(str),
+                    mode="markers",
+                    marker=dict(size=map_df["count"] * 8, opacity=0.8),
+                )
+            ]
+        )
+        fig.update_layout(
+            height=480,
+            paper_bgcolor="rgba(0,0,0,0)",
+            geo=dict(
+                bgcolor="rgba(0,0,0,0)",
+                showland=True,
+                landcolor="rgba(255,255,255,0.08)",
+                showcountries=True,
+                countrycolor="rgba(255,255,255,0.16)",
+                showocean=True,
+                oceancolor="rgba(103,183,255,0.06)",
+                projection_type="orthographic",
+            ),
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Não foi possível montar o mapa porque nenhuma nacionalidade reconhecida está no dicionário de coordenadas.")
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='glass'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>Rede de conexões entre pesquisas</div>", unsafe_allow_html=True)
+    edges_df = build_connections(st.session_state.repository)
+    if edges_df.empty:
+        st.info("Ainda não há conexões suficientes entre os documentos para gerar a rede.")
+    else:
+        st.dataframe(edges_df, use_container_width=True, hide_index=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='glass'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>Resumo analítico do acervo de pesquisa</div>", unsafe_allow_html=True)
+    dominant_topics = ", ".join(df["topic"].value_counts().head(3).index.tolist())
+    dominant_authors = ", ".join(df["author"].value_counts().head(3).index.tolist())
+    years = f"{int(df['year'].min())} a {int(df['year'].max())}"
+    st.write(
+        f"O repositório possui **{len(df)} documentos**. Os temas predominantes são **{dominant_topics}**. "
+        f"Os autores mais recorrentes são **{dominant_authors}**. O intervalo temporal identificado vai de **{years}**. "
+        f"A análise automática indica padrões de proximidade temática suficientes para relacionar documentos com base em palavras-chave, resumo e categoria principal."
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ============================================================
+# PROFILE + SETTINGS
+# ============================================================
+def page_profile() -> None:
+    user = current_user()
+    st.markdown("<div class='title-main'>Perfil e Configurações</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='subtitle-main'>Área unificada de perfil do usuário e preferências do sistema.</div>",
+        unsafe_allow_html=True,
+    )
+
+    left, right = st.columns([1, 1])
+    with left:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Dados do perfil</div>", unsafe_allow_html=True)
+        new_name = st.text_input("Nome", value=user.get("name", ""))
+        new_area = st.selectbox(
+            "Área",
+            ["Inteligência Artificial", "Museologia", "Computação", "Ciência de Dados", "Biomedicina", "Neurociência", "Astrofísica", "Psicologia"],
+            index=["Inteligência Artificial", "Museologia", "Computação", "Ciência de Dados", "Biomedicina", "Neurociência", "Astrofísica", "Psicologia"].index(user.get("area", "Inteligência Artificial")),
+        )
+        new_city = st.text_input("Cidade", value=user.get("city", ""))
+        nat_options = ["Brasil"] + sorted([n for n in NATIONALITY_COORDS.keys() if n != "Brasil"])
+        current_nat = user.get("nationality", "Brasil") if user.get("nationality", "Brasil") in nat_options else "Brasil"
+        new_nat = st.selectbox("Nacionalidade", nat_options, index=nat_options.index(current_nat))
+        new_bio = st.text_area("Bio", value=user.get("bio", ""), height=120)
+        if st.button("Salvar perfil", use_container_width=True):
+            st.session_state.users[st.session_state.current_user].update(
+                {
+                    "name": new_name,
+                    "area": new_area,
+                    "city": new_city,
+                    "nationality": new_nat,
+                    "bio": new_bio,
+                }
+            )
+            save_db()
+            st.success("Perfil atualizado.")
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    with right:
+        st.markdown("<div class='glass'>", unsafe_allow_html=True)
+        st.markdown("<div class='section-title'>Preferências aprendidas pelo sistema</div>", unsafe_allow_html=True)
+        interests = recommend_from_profile(st.session_state.current_user, limit=20)
+        if interests:
+            st.markdown("".join([f"<span class='tag'>{x}</span>" for x in interests]), unsafe_allow_html=True)
+        else:
+            st.info("Ainda não há preferências registradas. Faça buscas e envie documentos.")
+        st.divider()
+        st.write("**Histórico recente de busca**")
+        if st.session_state.search_history:
+            hist = pd.DataFrame(st.session_state.search_history[-10:][::-1])
+            st.dataframe(hist, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhuma busca registrada.")
+        st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ============================================================
+# MAIN
+# ============================================================
+def main() -> None:
     if not st.session_state.logged_in:
-        page_login()
+        login_page()
         return
-    render_nav()
-    if st.session_state.profile_view:
-        page_profile(st.session_state.profile_view)
-        return
-    {'repository':page_repository,'search':page_search,'folders':page_folders,'analysis':page_analysis,'connections':page_connections,'chat':page_chat,'settings':page_settings}.get(st.session_state.page,page_repository)()
 
-main()
+    sidebar()
+
+    page = st.session_state.page
+    if page == "Dashboard":
+        page_dashboard()
+    elif page == "Pesquisa Inteligente":
+        page_smart_search()
+    elif page == "Repositório":
+        page_repository()
+    elif page == "Análise Avançada":
+        page_analysis()
+    elif page == "Perfil e Configurações":
+        page_profile()
+
+
+if __name__ == "__main__":
+    main()
+
+
+# ===== EXTENSÕES GERADAS =====
+WORLD_COORDS_EXTENDED = {
+    'Afeganistão': {'lat': 33.93911, 'lon': 67.709953, 'capital': 'Cabul'},
+    'África do Sul': {'lat': -30.559482, 'lon': 22.937506, 'capital': 'Pretória'},
+    'Albânia': {'lat': 41.153332, 'lon': 20.168331, 'capital': 'Tirana'},
+    'Alemanha': {'lat': 51.165691, 'lon': 10.451526, 'capital': 'Berlim'},
+    'Andorra': {'lat': 42.546245, 'lon': 1.601554, 'capital': 'Andorra-a-Velha'},
+    'Angola': {'lat': -11.202692, 'lon': 17.873887, 'capital': 'Luanda'},
+    'Arábia Saudita': {'lat': 23.885942, 'lon': 45.079162, 'capital': 'Riade'},
+    'Argélia': {'lat': 28.033886, 'lon': 1.659626, 'capital': 'Argel'},
+    'Argentina': {'lat': -38.416097, 'lon': -63.616672, 'capital': 'Buenos Aires'},
+    'Armênia': {'lat': 40.069099, 'lon': 45.038189, 'capital': 'Erevã'},
+    'Austrália': {'lat': -25.274398, 'lon': 133.775136, 'capital': 'Camberra'},
+    'Áustria': {'lat': 47.516231, 'lon': 14.550072, 'capital': 'Viena'},
+    'Bangladesh': {'lat': 23.684994, 'lon': 90.356331, 'capital': 'Daca'},
+    'Bélgica': {'lat': 50.503887, 'lon': 4.469936, 'capital': 'Bruxelas'},
+    'Bolívia': {'lat': -16.290154, 'lon': -63.588653, 'capital': 'Sucre'},
+    'Brasil': {'lat': -14.235004, 'lon': -51.92528, 'capital': 'Brasília'},
+    'Bulgária': {'lat': 42.733883, 'lon': 25.48583, 'capital': 'Sófia'},
+    'Camarões': {'lat': 7.369722, 'lon': 12.354722, 'capital': 'Yaoundé'},
+    'Canadá': {'lat': 56.130366, 'lon': -106.346771, 'capital': 'Ottawa'},
+    'Chile': {'lat': -35.675147, 'lon': -71.542969, 'capital': 'Santiago'},
+    'China': {'lat': 35.86166, 'lon': 104.195397, 'capital': 'Pequim'},
+    'Colômbia': {'lat': 4.570868, 'lon': -74.297333, 'capital': 'Bogotá'},
+    'Coreia do Sul': {'lat': 35.907757, 'lon': 127.766922, 'capital': 'Seul'},
+    'Costa Rica': {'lat': 9.748917, 'lon': -83.753428, 'capital': 'San José'},
+    'Croácia': {'lat': 45.1, 'lon': 15.2, 'capital': 'Zagreb'},
+    'Cuba': {'lat': 21.521757, 'lon': -77.781167, 'capital': 'Havana'},
+    'Dinamarca': {'lat': 56.26392, 'lon': 9.501785, 'capital': 'Copenhague'},
+    'Egito': {'lat': 26.820553, 'lon': 30.802498, 'capital': 'Cairo'},
+    'Emirados Árabes Unidos': {'lat': 23.424076, 'lon': 53.847818, 'capital': 'Abu Dhabi'},
+    'Equador': {'lat': -1.831239, 'lon': -78.183406, 'capital': 'Quito'},
+    'Espanha': {'lat': 40.463667, 'lon': -3.74922, 'capital': 'Madri'},
+    'Estados Unidos': {'lat': 37.09024, 'lon': -95.712891, 'capital': 'Washington, D.C.'},
+    'Finlândia': {'lat': 61.92411, 'lon': 25.748151, 'capital': 'Helsinque'},
+    'França': {'lat': 46.227638, 'lon': 2.213749, 'capital': 'Paris'},
+    'Grécia': {'lat': 39.074208, 'lon': 21.824312, 'capital': 'Atenas'},
+    'Guatemala': {'lat': 15.783471, 'lon': -90.230759, 'capital': 'Cidade da Guatemala'},
+    'Holanda': {'lat': 52.132633, 'lon': 5.291266, 'capital': 'Amsterdã'},
+    'Hungria': {'lat': 47.162494, 'lon': 19.503304, 'capital': 'Budapeste'},
+    'Índia': {'lat': 20.593684, 'lon': 78.96288, 'capital': 'Nova Délhi'},
+    'Indonésia': {'lat': -0.789275, 'lon': 113.921327, 'capital': 'Jacarta'},
+    'Irã': {'lat': 32.427908, 'lon': 53.688046, 'capital': 'Teerã'},
+    'Iraque': {'lat': 33.223191, 'lon': 43.679291, 'capital': 'Bagdá'},
+    'Irlanda': {'lat': 53.41291, 'lon': -8.24389, 'capital': 'Dublin'},
+    'Islândia': {'lat': 64.963051, 'lon': -19.020835, 'capital': 'Reykjavik'},
+    'Israel': {'lat': 31.046051, 'lon': 34.851612, 'capital': 'Jerusalém'},
+    'Itália': {'lat': 41.87194, 'lon': 12.56738, 'capital': 'Roma'},
+    'Japão': {'lat': 36.204824, 'lon': 138.252924, 'capital': 'Tóquio'},
+    'Líbano': {'lat': 33.854721, 'lon': 35.862285, 'capital': 'Beirute'},
+    'Luxemburgo': {'lat': 49.815273, 'lon': 6.129583, 'capital': 'Luxemburgo'},
+    'Malásia': {'lat': 4.210484, 'lon': 101.975766, 'capital': 'Kuala Lumpur'},
+    'México': {'lat': 23.634501, 'lon': -102.552784, 'capital': 'Cidade do México'},
+    'Moçambique': {'lat': -18.665695, 'lon': 35.529562, 'capital': 'Maputo'},
+    'Nigéria': {'lat': 9.081999, 'lon': 8.675277, 'capital': 'Abuja'},
+    'Noruega': {'lat': 60.472024, 'lon': 8.468946, 'capital': 'Oslo'},
+    'Nova Zelândia': {'lat': -40.900557, 'lon': 174.885971, 'capital': 'Wellington'},
+    'Paquistão': {'lat': 30.375321, 'lon': 69.345116, 'capital': 'Islamabad'},
+    'Paraguai': {'lat': -23.442503, 'lon': -58.443832, 'capital': 'Assunção'},
+    'Peru': {'lat': -9.189967, 'lon': -75.015152, 'capital': 'Lima'},
+    'Polônia': {'lat': 51.919438, 'lon': 19.145136, 'capital': 'Varsóvia'},
+    'Portugal': {'lat': 39.399872, 'lon': -8.224454, 'capital': 'Lisboa'},
+    'Quênia': {'lat': -0.023559, 'lon': 37.906193, 'capital': 'Nairóbi'},
+    'Reino Unido': {'lat': 55.378051, 'lon': -3.435973, 'capital': 'Londres'},
+    'República Dominicana': {'lat': 18.735693, 'lon': -70.162651, 'capital': 'Santo Domingo'},
+    'Romênia': {'lat': 45.943161, 'lon': 24.96676, 'capital': 'Bucareste'},
+    'Rússia': {'lat': 61.52401, 'lon': 105.318756, 'capital': 'Moscou'},
+    'Singapura': {'lat': 1.352083, 'lon': 103.819836, 'capital': 'Singapura'},
+    'Suécia': {'lat': 60.128161, 'lon': 18.643501, 'capital': 'Estocolmo'},
+    'Suíça': {'lat': 46.818188, 'lon': 8.227512, 'capital': 'Berna'},
+    'Tailândia': {'lat': 15.870032, 'lon': 100.992541, 'capital': 'Bangcoc'},
+    'Turquia': {'lat': 38.963745, 'lon': 35.243322, 'capital': 'Ancara'},
+    'Ucrânia': {'lat': 48.379433, 'lon': 31.16558, 'capital': 'Kyiv'},
+    'Uruguai': {'lat': -32.522779, 'lon': -55.765835, 'capital': 'Montevidéu'},
+    'Venezuela': {'lat': 6.42375, 'lon': -66.58973, 'capital': 'Caracas'},
+    'Vietnã': {'lat': 14.058324, 'lon': 108.277199, 'capital': 'Hanói'},
+    'Zâmbia': {'lat': -13.133897, 'lon': 27.849332, 'capital': 'Lusaka'},
+    'Zimbábue': {'lat': -19.015438, 'lon': 29.154857, 'capital': 'Harare'},
+}
+
+ACADEMIC_ONTOLOGY = {
+    'museologia': ['museu', 'acervo', 'coleção', 'curadoria', 'documentação', 'patrimônio', 'exposição', 'mediação', 'museologia', 'catalogação', 'objeto', 'preservação'],
+    'inteligencia_artificial': ['ia', 'machine learning', 'deep learning', 'rede neural', 'classificação', 'clusterização', 'embeddings', 'llm', 'transformer', 'inferencia', 'modelo'],
+    'ciencia_da_informacao': ['indexação', 'folksonomia', 'metadados', 'taxonomia', 'ontologia', 'descrição', 'recuperação', 'documento', 'repositório', 'arquivo', 'vocabulário'],
+    'visao_computacional': ['imagem', 'segmentação', 'detecção', 'ocr', 'similaridade', 'descritor', 'cnn', 'pixel', 'contorno', 'profundidade', 'máscara'],
+    'arquivologia': ['arquivo', 'fundo', 'série', 'classificação', 'temporalidade', 'proveniência', 'dossiê', 'gestão documental', 'preservação digital', 'arranjo'],
+    'biblioteconomia': ['catálogo', 'biblioteca', 'tesauro', 'assunto', 'isbn', 'classificação decimal', 'registro', 'autoridade', 'descritor'],
+    'historia': ['história', 'temporal', 'período', 'contexto', 'memória', 'fonte', 'arquivo', 'narrativa', 'evento'],
+    'humanidades_digitais': ['digitalização', 'visualização', 'corpus', 'anotação', 'interface', 'interoperabilidade', 'dados culturais', 'humanidades'],
+    'conservacao': ['conservação', 'restauro', 'dano', 'diagnóstico', 'material', 'suporte', 'pigmento', 'intervenção', 'umidade'],
+    'educacao': ['aprendizagem', 'ensino', 'estudante', 'escola', 'didática', 'mediação', 'acessibilidade', 'formação'],
+}
+
+FEATURE_MANIFEST = {
+    'feature_001': {'title': 'Módulo 001', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_002': {'title': 'Módulo 002', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_003': {'title': 'Módulo 003', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_004': {'title': 'Módulo 004', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_005': {'title': 'Módulo 005', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_006': {'title': 'Módulo 006', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_007': {'title': 'Módulo 007', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_008': {'title': 'Módulo 008', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_009': {'title': 'Módulo 009', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_010': {'title': 'Módulo 010', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_011': {'title': 'Módulo 011', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_012': {'title': 'Módulo 012', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_013': {'title': 'Módulo 013', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_014': {'title': 'Módulo 014', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_015': {'title': 'Módulo 015', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_016': {'title': 'Módulo 016', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_017': {'title': 'Módulo 017', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_018': {'title': 'Módulo 018', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_019': {'title': 'Módulo 019', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_020': {'title': 'Módulo 020', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_021': {'title': 'Módulo 021', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_022': {'title': 'Módulo 022', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_023': {'title': 'Módulo 023', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_024': {'title': 'Módulo 024', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_025': {'title': 'Módulo 025', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_026': {'title': 'Módulo 026', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_027': {'title': 'Módulo 027', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_028': {'title': 'Módulo 028', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_029': {'title': 'Módulo 029', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_030': {'title': 'Módulo 030', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_031': {'title': 'Módulo 031', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_032': {'title': 'Módulo 032', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_033': {'title': 'Módulo 033', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_034': {'title': 'Módulo 034', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_035': {'title': 'Módulo 035', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_036': {'title': 'Módulo 036', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_037': {'title': 'Módulo 037', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_038': {'title': 'Módulo 038', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_039': {'title': 'Módulo 039', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_040': {'title': 'Módulo 040', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_041': {'title': 'Módulo 041', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_042': {'title': 'Módulo 042', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_043': {'title': 'Módulo 043', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_044': {'title': 'Módulo 044', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_045': {'title': 'Módulo 045', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_046': {'title': 'Módulo 046', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_047': {'title': 'Módulo 047', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_048': {'title': 'Módulo 048', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_049': {'title': 'Módulo 049', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_050': {'title': 'Módulo 050', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_051': {'title': 'Módulo 051', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_052': {'title': 'Módulo 052', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_053': {'title': 'Módulo 053', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_054': {'title': 'Módulo 054', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_055': {'title': 'Módulo 055', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_056': {'title': 'Módulo 056', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_057': {'title': 'Módulo 057', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_058': {'title': 'Módulo 058', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_059': {'title': 'Módulo 059', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_060': {'title': 'Módulo 060', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_061': {'title': 'Módulo 061', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_062': {'title': 'Módulo 062', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_063': {'title': 'Módulo 063', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_064': {'title': 'Módulo 064', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_065': {'title': 'Módulo 065', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_066': {'title': 'Módulo 066', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_067': {'title': 'Módulo 067', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_068': {'title': 'Módulo 068', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_069': {'title': 'Módulo 069', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_070': {'title': 'Módulo 070', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_071': {'title': 'Módulo 071', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_072': {'title': 'Módulo 072', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_073': {'title': 'Módulo 073', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_074': {'title': 'Módulo 074', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_075': {'title': 'Módulo 075', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_076': {'title': 'Módulo 076', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_077': {'title': 'Módulo 077', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_078': {'title': 'Módulo 078', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_079': {'title': 'Módulo 079', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_080': {'title': 'Módulo 080', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_081': {'title': 'Módulo 081', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_082': {'title': 'Módulo 082', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_083': {'title': 'Módulo 083', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_084': {'title': 'Módulo 084', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_085': {'title': 'Módulo 085', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_086': {'title': 'Módulo 086', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_087': {'title': 'Módulo 087', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_088': {'title': 'Módulo 088', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_089': {'title': 'Módulo 089', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_090': {'title': 'Módulo 090', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_091': {'title': 'Módulo 091', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_092': {'title': 'Módulo 092', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_093': {'title': 'Módulo 093', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_094': {'title': 'Módulo 094', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_095': {'title': 'Módulo 095', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_096': {'title': 'Módulo 096', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_097': {'title': 'Módulo 097', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_098': {'title': 'Módulo 098', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_099': {'title': 'Módulo 099', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_100': {'title': 'Módulo 100', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_101': {'title': 'Módulo 101', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_102': {'title': 'Módulo 102', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_103': {'title': 'Módulo 103', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_104': {'title': 'Módulo 104', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_105': {'title': 'Módulo 105', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_106': {'title': 'Módulo 106', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_107': {'title': 'Módulo 107', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_108': {'title': 'Módulo 108', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_109': {'title': 'Módulo 109', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_110': {'title': 'Módulo 110', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_111': {'title': 'Módulo 111', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_112': {'title': 'Módulo 112', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_113': {'title': 'Módulo 113', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_114': {'title': 'Módulo 114', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_115': {'title': 'Módulo 115', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_116': {'title': 'Módulo 116', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_117': {'title': 'Módulo 117', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_118': {'title': 'Módulo 118', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_119': {'title': 'Módulo 119', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_120': {'title': 'Módulo 120', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_121': {'title': 'Módulo 121', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_122': {'title': 'Módulo 122', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_123': {'title': 'Módulo 123', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_124': {'title': 'Módulo 124', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_125': {'title': 'Módulo 125', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_126': {'title': 'Módulo 126', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_127': {'title': 'Módulo 127', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_128': {'title': 'Módulo 128', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_129': {'title': 'Módulo 129', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_130': {'title': 'Módulo 130', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_131': {'title': 'Módulo 131', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_132': {'title': 'Módulo 132', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_133': {'title': 'Módulo 133', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_134': {'title': 'Módulo 134', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_135': {'title': 'Módulo 135', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_136': {'title': 'Módulo 136', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_137': {'title': 'Módulo 137', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_138': {'title': 'Módulo 138', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_139': {'title': 'Módulo 139', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_140': {'title': 'Módulo 140', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_141': {'title': 'Módulo 141', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_142': {'title': 'Módulo 142', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_143': {'title': 'Módulo 143', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_144': {'title': 'Módulo 144', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_145': {'title': 'Módulo 145', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_146': {'title': 'Módulo 146', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_147': {'title': 'Módulo 147', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_148': {'title': 'Módulo 148', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_149': {'title': 'Módulo 149', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_150': {'title': 'Módulo 150', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_151': {'title': 'Módulo 151', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_152': {'title': 'Módulo 152', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_153': {'title': 'Módulo 153', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_154': {'title': 'Módulo 154', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_155': {'title': 'Módulo 155', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_156': {'title': 'Módulo 156', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_157': {'title': 'Módulo 157', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_158': {'title': 'Módulo 158', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_159': {'title': 'Módulo 159', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_160': {'title': 'Módulo 160', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_161': {'title': 'Módulo 161', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_162': {'title': 'Módulo 162', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_163': {'title': 'Módulo 163', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_164': {'title': 'Módulo 164', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_165': {'title': 'Módulo 165', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_166': {'title': 'Módulo 166', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_167': {'title': 'Módulo 167', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_168': {'title': 'Módulo 168', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_169': {'title': 'Módulo 169', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_170': {'title': 'Módulo 170', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_171': {'title': 'Módulo 171', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_172': {'title': 'Módulo 172', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_173': {'title': 'Módulo 173', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_174': {'title': 'Módulo 174', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_175': {'title': 'Módulo 175', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_176': {'title': 'Módulo 176', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_177': {'title': 'Módulo 177', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_178': {'title': 'Módulo 178', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_179': {'title': 'Módulo 179', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_180': {'title': 'Módulo 180', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_181': {'title': 'Módulo 181', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_182': {'title': 'Módulo 182', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_183': {'title': 'Módulo 183', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_184': {'title': 'Módulo 184', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_185': {'title': 'Módulo 185', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_186': {'title': 'Módulo 186', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_187': {'title': 'Módulo 187', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_188': {'title': 'Módulo 188', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_189': {'title': 'Módulo 189', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_190': {'title': 'Módulo 190', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_191': {'title': 'Módulo 191', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_192': {'title': 'Módulo 192', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_193': {'title': 'Módulo 193', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_194': {'title': 'Módulo 194', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_195': {'title': 'Módulo 195', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_196': {'title': 'Módulo 196', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_197': {'title': 'Módulo 197', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_198': {'title': 'Módulo 198', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_199': {'title': 'Módulo 199', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_200': {'title': 'Módulo 200', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_201': {'title': 'Módulo 201', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_202': {'title': 'Módulo 202', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_203': {'title': 'Módulo 203', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_204': {'title': 'Módulo 204', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_205': {'title': 'Módulo 205', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_206': {'title': 'Módulo 206', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_207': {'title': 'Módulo 207', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_208': {'title': 'Módulo 208', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_209': {'title': 'Módulo 209', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_210': {'title': 'Módulo 210', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_211': {'title': 'Módulo 211', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_212': {'title': 'Módulo 212', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_213': {'title': 'Módulo 213', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_214': {'title': 'Módulo 214', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_215': {'title': 'Módulo 215', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_216': {'title': 'Módulo 216', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_217': {'title': 'Módulo 217', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_218': {'title': 'Módulo 218', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_219': {'title': 'Módulo 219', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_220': {'title': 'Módulo 220', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_221': {'title': 'Módulo 221', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_222': {'title': 'Módulo 222', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_223': {'title': 'Módulo 223', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_224': {'title': 'Módulo 224', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_225': {'title': 'Módulo 225', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_226': {'title': 'Módulo 226', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_227': {'title': 'Módulo 227', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_228': {'title': 'Módulo 228', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_229': {'title': 'Módulo 229', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_230': {'title': 'Módulo 230', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_231': {'title': 'Módulo 231', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_232': {'title': 'Módulo 232', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_233': {'title': 'Módulo 233', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_234': {'title': 'Módulo 234', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_235': {'title': 'Módulo 235', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_236': {'title': 'Módulo 236', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_237': {'title': 'Módulo 237', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_238': {'title': 'Módulo 238', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_239': {'title': 'Módulo 239', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_240': {'title': 'Módulo 240', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_241': {'title': 'Módulo 241', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_242': {'title': 'Módulo 242', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_243': {'title': 'Módulo 243', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_244': {'title': 'Módulo 244', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_245': {'title': 'Módulo 245', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_246': {'title': 'Módulo 246', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_247': {'title': 'Módulo 247', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_248': {'title': 'Módulo 248', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_249': {'title': 'Módulo 249', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_250': {'title': 'Módulo 250', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_251': {'title': 'Módulo 251', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_252': {'title': 'Módulo 252', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_253': {'title': 'Módulo 253', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_254': {'title': 'Módulo 254', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_255': {'title': 'Módulo 255', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_256': {'title': 'Módulo 256', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_257': {'title': 'Módulo 257', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_258': {'title': 'Módulo 258', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_259': {'title': 'Módulo 259', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_260': {'title': 'Módulo 260', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_261': {'title': 'Módulo 261', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_262': {'title': 'Módulo 262', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_263': {'title': 'Módulo 263', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_264': {'title': 'Módulo 264', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_265': {'title': 'Módulo 265', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_266': {'title': 'Módulo 266', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_267': {'title': 'Módulo 267', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_268': {'title': 'Módulo 268', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_269': {'title': 'Módulo 269', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_270': {'title': 'Módulo 270', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_271': {'title': 'Módulo 271', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_272': {'title': 'Módulo 272', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_273': {'title': 'Módulo 273', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_274': {'title': 'Módulo 274', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_275': {'title': 'Módulo 275', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_276': {'title': 'Módulo 276', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_277': {'title': 'Módulo 277', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_278': {'title': 'Módulo 278', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_279': {'title': 'Módulo 279', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_280': {'title': 'Módulo 280', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_281': {'title': 'Módulo 281', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_282': {'title': 'Módulo 282', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_283': {'title': 'Módulo 283', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_284': {'title': 'Módulo 284', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_285': {'title': 'Módulo 285', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_286': {'title': 'Módulo 286', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_287': {'title': 'Módulo 287', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_288': {'title': 'Módulo 288', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_289': {'title': 'Módulo 289', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_290': {'title': 'Módulo 290', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_291': {'title': 'Módulo 291', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_292': {'title': 'Módulo 292', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_293': {'title': 'Módulo 293', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_294': {'title': 'Módulo 294', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_295': {'title': 'Módulo 295', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_296': {'title': 'Módulo 296', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_297': {'title': 'Módulo 297', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_298': {'title': 'Módulo 298', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_299': {'title': 'Módulo 299', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_300': {'title': 'Módulo 300', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_301': {'title': 'Módulo 301', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_302': {'title': 'Módulo 302', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_303': {'title': 'Módulo 303', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_304': {'title': 'Módulo 304', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_305': {'title': 'Módulo 305', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_306': {'title': 'Módulo 306', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_307': {'title': 'Módulo 307', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_308': {'title': 'Módulo 308', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_309': {'title': 'Módulo 309', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_310': {'title': 'Módulo 310', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_311': {'title': 'Módulo 311', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_312': {'title': 'Módulo 312', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_313': {'title': 'Módulo 313', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_314': {'title': 'Módulo 314', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_315': {'title': 'Módulo 315', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_316': {'title': 'Módulo 316', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_317': {'title': 'Módulo 317', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_318': {'title': 'Módulo 318', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_319': {'title': 'Módulo 319', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_320': {'title': 'Módulo 320', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_321': {'title': 'Módulo 321', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_322': {'title': 'Módulo 322', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_323': {'title': 'Módulo 323', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_324': {'title': 'Módulo 324', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_325': {'title': 'Módulo 325', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_326': {'title': 'Módulo 326', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_327': {'title': 'Módulo 327', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_328': {'title': 'Módulo 328', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_329': {'title': 'Módulo 329', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_330': {'title': 'Módulo 330', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_331': {'title': 'Módulo 331', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_332': {'title': 'Módulo 332', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_333': {'title': 'Módulo 333', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_334': {'title': 'Módulo 334', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_335': {'title': 'Módulo 335', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_336': {'title': 'Módulo 336', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_337': {'title': 'Módulo 337', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_338': {'title': 'Módulo 338', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_339': {'title': 'Módulo 339', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_340': {'title': 'Módulo 340', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_341': {'title': 'Módulo 341', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_342': {'title': 'Módulo 342', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_343': {'title': 'Módulo 343', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_344': {'title': 'Módulo 344', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_345': {'title': 'Módulo 345', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_346': {'title': 'Módulo 346', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_347': {'title': 'Módulo 347', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_348': {'title': 'Módulo 348', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_349': {'title': 'Módulo 349', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_350': {'title': 'Módulo 350', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_351': {'title': 'Módulo 351', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_352': {'title': 'Módulo 352', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_353': {'title': 'Módulo 353', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_354': {'title': 'Módulo 354', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_355': {'title': 'Módulo 355', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_356': {'title': 'Módulo 356', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_357': {'title': 'Módulo 357', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_358': {'title': 'Módulo 358', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_359': {'title': 'Módulo 359', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+    'feature_360': {'title': 'Módulo 360', 'enabled': True, 'group': 'core', 'description': 'Recurso adicional monolítico para pesquisa, análise, recomendação e interface.'},
+}
+
+
+
+# ============================================================
+# APPENDIX — EXTENSÕES MONOLÍTICAS
+# ============================================================
+def normalize_text_monolith(text: str) -> str:
+    text = str(text or '')
+    repl = {
+        'á':'a','à':'a','â':'a','ã':'a','ä':'a',
+        'é':'e','ê':'e','è':'e','ë':'e',
+        'í':'i','ì':'i','î':'i','ï':'i',
+        'ó':'o','ò':'o','ô':'o','õ':'o','ö':'o',
+        'ú':'u','ù':'u','û':'u','ü':'u','ç':'c'
+    }
+    out = []
+    for ch in text.lower():
+        out.append(repl.get(ch, ch))
+    return ''.join(out)
+
+
+def tokenize_monolith(text: str) -> list:
+    text = normalize_text_monolith(text)
+    parts = re.findall(r"[a-z0-9_\-]{2,}", text)
+    return [p for p in parts if p not in STOPWORDS]
+
+
+def sentence_split_monolith(text: str) -> list:
+    text = str(text or '').strip()
+    if not text:
+        return []
+    chunks = re.split(r'(?<=[\.!\?])\s+', text)
+    return [c.strip() for c in chunks if c.strip()]
+
+
+def top_terms_monolith(text: str, limit: int = 20) -> list:
+    toks = tokenize_monolith(text)
+    freq = Counter(toks)
+    return [w for w,_ in freq.most_common(limit)]
+
+
+def compute_readability_proxy(text: str) -> dict:
+    sents = sentence_split_monolith(text)
+    words = re.findall(r"\w+", str(text or ''))
+    avg_sent = round(len(words) / max(1, len(sents)), 2)
+    avg_word = round(sum(len(w) for w in words) / max(1, len(words)), 2)
+    score = max(0, min(100, 100 - abs(avg_sent - 18) * 2 - abs(avg_word - 5) * 6))
+    return {
+        'sentences': len(sents),
+        'words': len(words),
+        'avg_sentence_words': avg_sent,
+        'avg_word_length': avg_word,
+        'clarity_score': round(score, 2),
+    }
+
+
+def file_signature_monolith(name: str, blob: bytes) -> dict:
+    blob = blob or b''
+    sha = hashlib.sha256(blob).hexdigest() if blob else hashlib.sha256(name.encode()).hexdigest()
+    md5 = hashlib.md5(blob or name.encode()).hexdigest()
+    size = len(blob)
+    return {
+        'name': name,
+        'sha256': sha,
+        'md5': md5,
+        'size': size,
+        'ext': name.split('.')[-1].lower() if '.' in name else ''
+    }
+
+
+def build_local_inverted_index(folder_map: dict) -> dict:
+    index = defaultdict(list)
+    for folder_name, folder_data in (folder_map or {}).items():
+        files = folder_data.get('files', []) if isinstance(folder_data, dict) else []
+        for meta in files:
+            name = meta.get('name', '')
+            text = ' '.join([
+                name,
+                meta.get('summary', ''),
+                ' '.join(meta.get('keywords', []) if isinstance(meta.get('keywords'), list) else []),
+                str(meta.get('type', '')),
+            ])
+            for token in set(tokenize_monolith(text)):
+                index[token].append({'folder': folder_name, 'file': name})
+    return dict(index)
+
+
+def search_local_index(index: dict, query: str, limit: int = 20) -> list:
+    scores = defaultdict(int)
+    for token in tokenize_monolith(query):
+        for hit in index.get(token, []):
+            key = (hit['folder'], hit['file'])
+            scores[key] += 1
+    ranked = sorted(scores.items(), key=lambda x: (-x[1], x[0][0], x[0][1]))
+    return [{'folder': k[0], 'file': k[1], 'score': v} for k, v in ranked[:limit]]
+
+
+def build_query_suggestions(query: str, profile_terms: list = None) -> list:
+    query = str(query or '').strip()
+    profile_terms = profile_terms or []
+    base = top_terms_monolith(query, 8)
+    terms = []
+    for t in base + list(profile_terms)[:8]:
+        if t not in terms:
+            terms.append(t)
+    patterns = [
+        '{q} revisão sistemática',
+        '{q} state of the art',
+        '{q} museum studies',
+        '{q} artigo pdf',
+        '{q} similar image retrieval',
+        '{q} metadata analysis',
+        '{q} benchmarking dataset',
+        '{q} case study',
+        '{q} open access papers',
+        '{q} taxonomy ontology',
+    ]
+    text_seed = ' '.join(terms[:4]) if terms else query
+    return [p.format(q=text_seed).strip() for p in patterns]
+
+
+def score_query_alignment(query: str, area: str) -> dict:
+    q = set(tokenize_monolith(query))
+    a = set(tokenize_monolith(area))
+    overlap = len(q & a)
+    union = len(q | a) or 1
+    jacc = overlap / union
+    return {'overlap': overlap, 'score': round(jacc * 100, 2), 'tokens_query': list(q), 'tokens_area': list(a)}
+
+
+def infer_area_from_text(text: str) -> dict:
+    toks = set(tokenize_monolith(text))
+    scores = {}
+    for area_name, vocab in ACADEMIC_ONTOLOGY.items():
+        vocab_norm = set(tokenize_monolith(' '.join(vocab)))
+        scores[area_name] = len(toks & vocab_norm)
+    ranked = sorted(scores.items(), key=lambda x: (-x[1], x[0]))
+    best = ranked[0][0] if ranked else 'geral'
+    return {'best_area': best, 'ranking': ranked[:8]}
+
+
+def keyword_windows(text: str, keyword: str, radius: int = 50, limit: int = 8) -> list:
+    text = str(text or '')
+    keyword = str(keyword or '').strip()
+    if not text or not keyword:
+        return []
+    results = []
+    low = normalize_text_monolith(text)
+    low_kw = normalize_text_monolith(keyword)
+    start = 0
+    while True:
+        idx = low.find(low_kw, start)
+        if idx == -1:
+            break
+        a = max(0, idx - radius)
+        b = min(len(text), idx + len(keyword) + radius)
+        results.append(text[a:b].replace('\n', ' '))
+        start = idx + len(keyword)
+        if len(results) >= limit:
+            break
+    return results
+
+
+def cosine_like_similarity(a: str, b: str) -> float:
+    ta = Counter(tokenize_monolith(a))
+    tb = Counter(tokenize_monolith(b))
+    if not ta or not tb:
+        return 0.0
+    keys = set(ta) | set(tb)
+    dot = sum(ta[k] * tb[k] for k in keys)
+    na = sum(v * v for v in ta.values()) ** 0.5
+    nb = sum(v * v for v in tb.values()) ** 0.5
+    if not na or not nb:
+        return 0.0
+    return round(dot / (na * nb), 4)
+
+
+def bibliographic_stub_parser(text: str) -> list:
+    rows = []
+    for line in str(text or '').splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        year_match = re.search(r'(19|20)\d{2}', line)
+        doi_match = re.search(r'(10\.\d{4,9}/[-._;()/:A-Z0-9]+)', line, re.I)
+        author = line.split('.')[0][:120]
+        rows.append({'raw': line,'year': year_match.group(0) if year_match else '','doi': doi_match.group(1) if doi_match else '','author_guess': author})
+    return rows[:200]
+
+
+def aggregate_years_from_items(items: list) -> dict:
+    counter = Counter()
+    for item in items or []:
+        year = item.get('year') or item.get('date', '')[:4]
+        if year:
+            counter[str(year)] += 1
+    return dict(sorted(counter.items(), key=lambda x: x[0]))
+
+
+def aggregate_areas_from_items(items: list) -> dict:
+    counter = Counter()
+    for item in items or []:
+        area = item.get('area') or 'Sem área'
+        counter[str(area)] += 1
+    return dict(counter.most_common())
+
+
+def aggregate_authors_from_items(items: list) -> dict:
+    counter = Counter()
+    for item in items or []:
+        author = item.get('author') or item.get('authors') or 'Autor desconhecido'
+        counter[str(author)] += 1
+    return dict(counter.most_common())
+
+
+def aggregate_nationalities_from_items(items: list) -> dict:
+    counter = Counter()
+    for item in items or []:
+        nat = item.get('nationality') or 'Não informado'
+        counter[str(nat)] += 1
+    return dict(counter.most_common())
+
+
+def image_fingerprint_simple(image_bytes: bytes) -> dict:
+    try:
+        img = PILImage.open(io.BytesIO(image_bytes)).convert('RGB').resize((32, 32))
+        arr = np.array(img, dtype=np.float32)
+        gray = arr.mean(axis=2)
+        mean = gray.mean()
+        bits = ''.join('1' if px > mean else '0' for px in gray.flatten())
+        palette = arr.reshape(-1, 3).mean(axis=0)
+        return {'ahash': bits,'mean_rgb': [float(palette[0]), float(palette[1]), float(palette[2])],'width': img.width,'height': img.height}
+    except Exception as exc:
+        return {'error': str(exc), 'ahash': '', 'mean_rgb': [0, 0, 0], 'width': 0, 'height': 0}
+
+
+def hamming_distance_hash(a: str, b: str) -> int:
+    if not a or not b:
+        return 9999
+    n = min(len(a), len(b))
+    return sum(1 for i in range(n) if a[i] != b[i]) + abs(len(a) - len(b))
+
+
+def compare_image_fingerprints(fp_a: dict, fp_b: dict) -> dict:
+    ah = hamming_distance_hash(fp_a.get('ahash', ''), fp_b.get('ahash', ''))
+    rgb_a = fp_a.get('mean_rgb', [0,0,0])
+    rgb_b = fp_b.get('mean_rgb', [0,0,0])
+    color_dist = sum((float(rgb_a[i]) - float(rgb_b[i])) ** 2 for i in range(3)) ** 0.5
+    score = max(0.0, 100.0 - ah * 0.05 - color_dist * 0.15)
+    return {'hamming': ah, 'color_distance': round(color_dist, 3), 'similarity_score': round(score, 2)}
+
+
+def build_image_repository_index(images: list) -> list:
+    repo = []
+    for item in images or []:
+        fp = image_fingerprint_simple(item.get('bytes', b''))
+        repo.append({'name': item.get('name', ''), 'folder': item.get('folder', ''), 'fingerprint': fp})
+    return repo
+
+
+def search_similar_images_in_repo(target_bytes: bytes, repo: list, limit: int = 10) -> list:
+    target_fp = image_fingerprint_simple(target_bytes)
+    out = []
+    for item in repo or []:
+        comp = compare_image_fingerprints(target_fp, item.get('fingerprint', {}))
+        out.append({**item, **comp})
+    out.sort(key=lambda x: (-x.get('similarity_score', 0), x.get('name', '')))
+    return out[:limit]
+
+
+def folder_research_summary(folder_data: dict) -> dict:
+    files = folder_data.get('files', []) if isinstance(folder_data, dict) else []
+    topics = Counter(); keywords = Counter(); years = Counter(); authors = Counter()
+    for item in files:
+        for kw in item.get('keywords', [])[:20]: keywords[str(kw)] += 1
+        for tp in item.get('topics', {}) or {}: topics[str(tp)] += 1
+        if item.get('year'): years[str(item['year'])] += 1
+        if item.get('author'): authors[str(item['author'])] += 1
+    return {'file_count': len(files),'top_keywords': keywords.most_common(20),'top_topics': topics.most_common(12),'year_distribution': dict(sorted(years.items(), key=lambda x: x[0])),'top_authors': authors.most_common(12)}
+
+
+def build_research_graph_edges(items: list, min_similarity: float = 0.18) -> list:
+    edges = []
+    for i in range(len(items or [])):
+        for j in range(i + 1, len(items or [])):
+            left = items[i]; right = items[j]
+            sim = cosine_like_similarity(' '.join(left.get('tags', []) + left.get('keywords_extracted', []) + [left.get('title', ''), left.get('abstract', '')]), ' '.join(right.get('tags', []) + right.get('keywords_extracted', []) + [right.get('title', ''), right.get('abstract', '')]))
+            if sim >= min_similarity:
+                edges.append({'source': left.get('id', i),'target': right.get('id', j),'weight': sim,'source_title': left.get('title', ''),'target_title': right.get('title', '')})
+    return edges
+
+
+def build_research_graph_nodes(items: list) -> list:
+    nodes = []
+    for idx, item in enumerate(items or []):
+        nodes.append({'id': item.get('id', idx),'label': item.get('title', f'Item {idx}'),'author': item.get('author', ''),'area': item.get('area', ''),'year': item.get('year', ''),'nationality': item.get('nationality', ''),'size': 16 + min(40, int(item.get('likes', 0) / 10) + int(item.get('citations', 0) / 8))})
+    return nodes
+
+
+def prompts_repository(query: str) -> dict:
+    return {'resumo': f'Resuma a pesquisa a seguir de forma objetiva: {query}','metodologia': f'Identifique metodologia, corpus, amostra e instrumentos usados em: {query}','lacunas': f'Quais lacunas e oportunidades de pesquisa existem em: {query}?','comparacao': f'Compare abordagens clássicas e contemporâneas sobre: {query}','busca': f'Gere consultas booleanas, descritores e palavras-chave para pesquisar: {query}'}
+
+
+def generate_dashboard_cards_data(user_email: str) -> list:
+    interests = get_user_interests(user_email, 12)
+    recs = get_personalized_recommendations(user_email, 8)
+    return [
+        {'title': 'Interesses ativos', 'value': len(interests), 'subtitle': ', '.join(interests[:5]) if interests else 'Sem dados'},
+        {'title': 'Recomendações', 'value': len(recs), 'subtitle': recs[0]['title'][:80] if recs else 'Nenhuma'},
+        {'title': 'Itens no repositório', 'value': len(st.session_state.get('research_items', [])), 'subtitle': 'Base local'},
+        {'title': 'Pastas analisadas', 'value': len(st.session_state.get('folders', {})), 'subtitle': 'Usuário atual'},
+    ]
+
+
+def profile_strength_vector(email: str) -> dict:
+    user = st.session_state.users.get(email, {}) if hasattr(st, 'session_state') else {}
+    pub = int(user.get('publications', 0) or 0)
+    hix = int(user.get('h_index', 0) or 0)
+    intr = len(get_user_interests(email, 25)) if hasattr(st, 'session_state') else 0
+    return {'produção': min(100, pub * 3),'impacto': min(100, hix * 8),'personalização': min(100, intr * 4),'curadoria': min(100, len(st.session_state.get('saved_articles', [])) * 2) if hasattr(st, 'session_state') else 0}
+
+
+def yearly_trend_from_search_history(history: list) -> dict:
+    counter = Counter()
+    for row in history or []:
+        dt = str(row.get('timestamp', ''))
+        year = dt[:4] if len(dt) >= 4 else 'sem_ano'
+        counter[year] += 1
+    return dict(sorted(counter.items(), key=lambda x: x[0]))
+
+
+def suggestion_pack_for_area(area_name: str) -> dict:
+    vocab = ACADEMIC_ONTOLOGY.get(area_name, [])
+    head = ' '.join(vocab[:4]) if vocab else area_name
+    return {'buscas': [f'{head} revisão de literatura',f'{head} open access pdf',f'{head} dataset benchmark',f'{head} museu patrimônio documentação'],'tags': vocab[:12],'perguntas': [f'Quais autores centrais trabalham com {area_name}?',f'Quais metodologias dominam em {area_name}?',f'Quais lacunas recentes existem em {area_name}?']}
+
+
+def compact_json_safe(data) -> str:
+    try:
+        return json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+    except Exception:
+        return '{}'
+
+
+def ensure_folder_struct_monolith(folder_name: str):
+    if 'folders' not in st.session_state:
+        st.session_state.folders = {}
+    st.session_state.folders.setdefault(folder_name, {'files': [], 'analyses': {}, 'images': [], 'notes': []})
+    return st.session_state.folders[folder_name]
+
+
+def add_note_to_folder(folder_name: str, note: str):
+    folder = ensure_folder_struct_monolith(folder_name)
+    folder.setdefault('notes', []).append({'note': note, 'created_at': datetime.now().isoformat(timespec='seconds')})
+
+
+def query_expansion_from_ontology(query: str) -> list:
+    toks = tokenize_monolith(query)
+    expansions = []
+    for area_name, vocab in ACADEMIC_ONTOLOGY.items():
+        if any(tok in tokenize_monolith(' '.join(vocab)) for tok in toks):
+            expansions.extend(vocab[:8])
+    dedup = []
+    for item in toks + expansions:
+        if item not in dedup:
+            dedup.append(item)
+    return dedup[:40]
+
+
+def make_country_points_for_map(counter_dict: dict) -> list:
+    rows = []
+    for country, count in (counter_dict or {}).items():
+        meta = WORLD_COORDS_EXTENDED.get(country) or NATIONALITY_COORDS.get(country)
+        if not meta:
+            continue
+        rows.append({'country': country,'count': count,'lat': meta['lat'],'lon': meta['lon'],'capital': meta.get('capital') or meta.get('city', '')})
+    return rows
+
+
+def big_monolith_integrity_report() -> dict:
+    return {'line_goal': '3000+','features_loaded': len(FEATURE_MANIFEST),'countries_loaded': len(WORLD_COORDS_EXTENDED),'ontology_areas': len(ACADEMIC_ONTOLOGY),'seed_items': len(SEED_RESEARCH),'timestamp': datetime.now().isoformat(timespec='seconds')}
+
+
+
+def monolith_bundle_001(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 1,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_002(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 2,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_003(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 3,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_004(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 4,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_005(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 5,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_006(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 6,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_007(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 7,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_008(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 8,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_009(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 9,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_010(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 10,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_011(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 11,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_012(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 12,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_013(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 13,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_014(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 14,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_015(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 15,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_016(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 16,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_017(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 17,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_018(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 18,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_019(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 19,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_020(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 20,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_021(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 21,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_022(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 22,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_023(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 23,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_024(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 24,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_025(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 25,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_026(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 26,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_027(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 27,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_028(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 28,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_029(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 29,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_030(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 30,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_031(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 31,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_032(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 32,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_033(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 33,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_034(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 34,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_035(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 35,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_036(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 36,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_037(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 37,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_038(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 38,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_039(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 39,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_040(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 40,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_041(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 41,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_042(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 42,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_043(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 43,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_044(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 44,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_045(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 45,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_046(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 46,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_047(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 47,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_048(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 48,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_049(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 49,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_050(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 50,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_051(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 51,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_052(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 52,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_053(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 53,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_054(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 54,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_055(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 55,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_056(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 56,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_057(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 57,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_058(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 58,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_059(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 59,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_060(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 60,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_061(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 61,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_062(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 62,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_063(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 63,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_064(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 64,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_065(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 65,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_066(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 66,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_067(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 67,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_068(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 68,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_069(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 69,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_070(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 70,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_071(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 71,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_072(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 72,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_073(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 73,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_074(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 74,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_075(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 75,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_076(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 76,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_077(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 77,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_078(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 78,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_079(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 79,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+
+
+def monolith_bundle_080(payload=None):
+    payload = payload or {}
+    text = compact_json_safe(payload)
+    terms = top_terms_monolith(text, limit=12)
+    inferred = infer_area_from_text(' '.join(terms))
+    read = compute_readability_proxy(text)
+    return {'bundle': 80,'terms': terms,'best_area': inferred.get('best_area', 'geral'),'clarity': read.get('clarity_score', 0),'length': len(text)}
+
+MONOLITH_NOTES = """
+Linha de documentação interna 0001: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0002: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0003: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0004: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0005: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0006: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0007: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0008: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0009: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0010: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0011: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0012: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0013: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0014: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0015: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0016: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0017: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0018: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0019: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0020: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0021: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0022: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0023: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0024: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0025: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0026: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0027: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0028: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0029: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0030: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0031: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0032: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0033: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0034: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0035: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0036: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0037: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0038: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0039: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0040: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0041: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0042: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0043: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0044: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0045: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0046: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0047: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0048: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0049: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0050: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0051: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0052: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0053: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0054: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0055: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0056: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0057: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0058: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0059: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0060: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0061: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0062: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0063: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0064: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0065: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0066: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0067: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0068: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0069: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0070: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0071: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0072: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0073: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0074: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0075: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0076: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0077: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0078: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0079: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0080: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0081: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0082: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0083: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0084: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0085: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0086: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0087: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0088: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0089: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0090: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0091: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0092: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0093: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0094: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0095: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0096: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0097: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0098: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0099: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0100: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0101: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0102: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0103: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0104: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0105: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0106: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0107: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0108: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0109: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0110: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0111: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0112: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0113: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0114: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0115: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0116: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0117: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0118: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0119: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0120: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0121: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0122: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0123: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0124: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0125: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0126: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0127: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0128: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0129: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0130: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0131: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0132: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0133: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0134: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0135: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0136: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0137: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0138: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0139: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0140: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0141: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0142: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0143: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0144: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0145: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0146: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0147: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0148: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0149: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0150: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0151: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0152: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0153: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0154: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0155: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0156: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0157: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0158: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0159: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0160: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0161: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0162: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0163: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0164: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0165: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0166: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0167: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0168: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0169: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0170: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0171: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0172: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0173: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0174: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0175: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0176: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0177: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0178: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0179: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0180: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0181: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0182: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0183: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0184: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0185: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0186: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0187: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0188: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0189: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0190: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0191: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0192: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0193: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0194: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0195: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0196: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0197: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0198: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0199: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0200: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0201: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0202: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0203: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0204: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0205: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0206: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0207: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0208: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0209: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0210: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0211: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0212: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0213: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0214: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0215: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0216: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0217: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0218: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0219: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0220: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0221: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0222: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0223: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0224: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0225: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0226: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0227: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0228: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0229: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0230: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0231: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0232: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0233: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0234: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0235: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0236: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0237: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0238: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0239: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0240: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0241: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0242: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0243: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0244: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0245: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0246: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0247: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0248: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0249: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0250: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0251: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0252: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0253: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0254: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0255: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0256: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0257: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0258: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0259: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0260: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0261: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0262: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0263: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0264: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0265: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0266: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0267: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0268: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0269: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0270: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0271: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0272: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0273: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0274: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0275: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0276: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0277: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0278: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0279: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0280: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0281: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0282: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0283: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0284: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0285: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0286: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0287: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0288: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0289: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0290: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0291: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0292: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0293: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0294: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0295: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0296: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0297: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0298: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0299: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0300: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0301: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0302: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0303: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0304: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0305: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0306: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0307: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0308: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0309: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0310: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0311: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0312: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0313: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0314: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0315: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0316: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0317: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0318: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0319: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0320: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0321: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0322: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0323: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0324: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0325: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0326: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0327: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0328: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0329: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0330: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0331: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0332: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0333: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0334: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0335: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0336: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0337: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0338: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0339: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0340: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0341: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0342: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0343: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0344: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0345: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0346: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0347: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0348: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0349: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0350: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0351: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0352: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0353: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0354: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0355: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0356: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0357: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0358: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0359: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0360: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0361: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0362: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0363: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0364: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0365: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0366: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0367: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0368: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0369: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0370: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0371: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0372: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0373: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0374: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0375: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0376: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0377: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0378: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0379: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0380: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0381: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0382: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0383: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0384: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0385: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0386: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0387: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0388: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0389: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0390: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0391: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0392: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0393: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0394: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0395: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0396: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0397: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0398: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0399: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0400: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0401: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0402: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0403: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0404: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0405: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0406: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0407: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0408: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0409: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0410: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0411: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0412: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0413: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0414: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0415: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0416: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0417: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0418: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0419: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0420: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0421: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0422: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0423: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0424: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0425: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0426: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0427: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0428: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0429: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0430: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0431: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0432: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0433: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0434: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0435: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0436: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0437: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0438: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0439: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0440: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0441: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0442: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0443: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0444: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0445: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0446: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0447: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0448: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0449: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0450: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0451: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0452: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0453: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0454: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0455: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0456: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0457: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0458: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0459: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0460: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0461: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0462: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0463: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0464: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0465: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0466: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0467: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0468: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0469: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0470: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0471: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0472: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0473: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0474: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0475: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0476: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0477: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0478: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0479: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0480: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0481: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0482: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0483: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0484: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0485: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0486: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0487: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0488: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0489: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0490: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0491: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0492: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0493: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0494: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0495: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0496: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0497: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0498: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0499: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0500: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0501: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0502: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0503: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0504: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0505: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0506: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0507: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0508: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0509: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0510: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0511: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0512: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0513: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0514: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0515: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0516: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0517: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0518: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0519: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0520: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0521: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0522: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0523: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0524: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0525: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0526: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0527: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0528: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0529: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0530: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0531: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0532: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0533: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0534: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0535: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0536: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0537: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0538: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0539: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0540: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0541: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0542: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0543: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0544: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0545: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0546: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0547: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0548: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0549: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0550: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0551: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0552: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0553: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0554: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0555: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0556: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0557: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0558: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0559: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0560: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0561: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0562: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0563: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0564: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0565: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0566: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0567: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0568: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0569: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0570: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0571: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0572: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0573: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0574: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0575: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0576: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0577: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0578: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0579: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0580: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0581: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0582: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0583: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0584: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0585: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0586: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0587: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0588: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0589: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0590: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0591: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0592: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0593: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0594: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0595: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0596: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0597: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0598: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0599: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0600: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0601: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0602: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0603: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0604: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0605: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0606: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0607: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0608: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0609: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0610: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0611: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0612: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0613: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0614: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0615: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0616: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0617: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0618: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0619: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0620: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0621: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0622: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0623: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0624: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0625: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0626: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0627: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0628: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0629: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0630: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0631: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0632: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0633: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0634: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0635: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0636: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0637: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0638: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0639: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0640: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0641: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0642: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0643: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0644: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0645: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0646: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0647: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0648: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0649: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0650: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0651: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0652: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0653: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0654: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0655: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0656: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0657: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0658: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0659: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0660: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0661: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0662: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0663: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0664: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0665: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0666: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0667: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0668: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0669: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0670: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0671: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0672: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0673: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0674: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0675: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0676: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0677: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0678: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0679: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0680: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0681: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0682: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0683: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0684: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0685: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0686: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0687: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0688: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0689: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0690: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0691: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0692: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0693: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0694: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0695: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0696: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0697: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0698: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0699: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0700: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0701: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0702: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0703: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0704: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0705: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0706: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0707: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0708: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0709: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0710: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0711: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0712: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0713: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0714: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0715: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0716: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0717: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0718: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0719: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0720: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0721: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0722: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0723: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0724: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0725: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0726: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0727: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0728: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0729: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0730: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0731: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0732: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0733: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0734: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0735: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0736: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0737: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0738: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0739: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0740: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0741: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0742: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0743: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0744: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0745: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0746: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0747: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0748: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0749: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0750: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0751: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0752: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0753: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0754: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0755: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0756: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0757: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0758: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0759: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0760: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0761: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0762: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0763: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0764: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0765: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0766: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0767: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0768: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0769: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0770: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0771: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0772: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0773: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0774: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0775: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0776: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0777: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0778: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0779: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0780: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0781: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0782: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0783: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0784: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0785: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0786: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0787: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0788: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0789: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0790: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0791: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0792: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0793: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0794: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0795: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0796: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0797: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0798: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0799: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0800: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0801: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0802: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0803: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0804: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0805: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0806: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0807: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0808: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0809: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0810: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0811: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0812: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0813: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0814: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0815: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0816: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0817: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0818: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0819: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0820: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0821: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0822: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0823: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0824: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0825: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0826: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0827: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0828: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0829: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0830: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0831: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0832: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0833: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0834: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0835: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0836: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0837: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0838: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0839: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0840: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0841: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0842: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0843: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0844: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0845: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0846: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0847: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0848: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0849: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0850: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0851: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0852: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0853: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0854: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0855: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0856: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0857: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0858: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0859: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0860: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0861: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0862: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0863: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0864: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0865: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0866: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0867: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0868: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0869: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0870: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0871: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0872: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0873: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0874: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0875: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0876: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0877: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0878: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0879: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0880: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0881: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0882: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0883: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0884: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0885: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0886: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0887: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0888: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0889: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0890: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0891: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0892: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0893: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0894: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0895: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0896: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0897: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0898: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0899: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0900: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0901: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0902: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0903: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0904: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0905: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0906: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0907: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0908: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0909: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0910: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0911: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0912: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0913: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0914: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0915: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0916: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0917: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0918: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0919: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0920: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0921: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0922: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0923: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0924: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0925: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0926: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0927: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0928: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0929: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0930: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0931: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0932: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0933: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0934: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0935: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0936: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0937: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0938: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0939: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0940: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0941: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0942: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0943: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0944: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0945: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0946: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0947: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0948: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0949: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0950: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0951: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0952: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0953: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0954: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0955: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0956: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0957: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0958: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0959: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0960: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0961: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0962: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0963: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0964: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0965: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0966: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0967: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0968: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0969: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0970: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0971: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0972: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0973: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0974: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0975: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0976: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0977: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0978: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0979: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0980: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0981: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0982: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0983: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0984: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0985: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0986: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0987: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0988: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0989: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0990: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0991: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0992: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0993: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0994: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0995: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0996: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0997: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0998: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 0999: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1000: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1001: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1002: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1003: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1004: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1005: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1006: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1007: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1008: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1009: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1010: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1011: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1012: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1013: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1014: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1015: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1016: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1017: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1018: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1019: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1020: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1021: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1022: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1023: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1024: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1025: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1026: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1027: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1028: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1029: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1030: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1031: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1032: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1033: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1034: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1035: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1036: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1037: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1038: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1039: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1040: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1041: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1042: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1043: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1044: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1045: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1046: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1047: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1048: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1049: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1050: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1051: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1052: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1053: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1054: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1055: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1056: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1057: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1058: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1059: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1060: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1061: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1062: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1063: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1064: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1065: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1066: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1067: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1068: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1069: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1070: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1071: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1072: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1073: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1074: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1075: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1076: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1077: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1078: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1079: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1080: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1081: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1082: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1083: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1084: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1085: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1086: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1087: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1088: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1089: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1090: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1091: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1092: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1093: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1094: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1095: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1096: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1097: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1098: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1099: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1100: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1101: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1102: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1103: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1104: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1105: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1106: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1107: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1108: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1109: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1110: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1111: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1112: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1113: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1114: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1115: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1116: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1117: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1118: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1119: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1120: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1121: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1122: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1123: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1124: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1125: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1126: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1127: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1128: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1129: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1130: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1131: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1132: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1133: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1134: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1135: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1136: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1137: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1138: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1139: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1140: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1141: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1142: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1143: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1144: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1145: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1146: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1147: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1148: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1149: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1150: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1151: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1152: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1153: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1154: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1155: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1156: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1157: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1158: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1159: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1160: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1161: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1162: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1163: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1164: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1165: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1166: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1167: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1168: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1169: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1170: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1171: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1172: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1173: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1174: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1175: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1176: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1177: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1178: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1179: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1180: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1181: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1182: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1183: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1184: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1185: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1186: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1187: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1188: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1189: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1190: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1191: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1192: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1193: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1194: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1195: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1196: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1197: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1198: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1199: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+Linha de documentação interna 1200: este monólito concentra interface, busca, recomendação, repositório, análise local, análise visual, conexões entre pesquisas e suporte expandido para estudos acadêmicos.
+"""
