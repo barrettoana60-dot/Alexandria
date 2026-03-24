@@ -2156,3 +2156,302 @@ def main():
     }.get(st.session_state.page,page_repository)()
 
 main()
+# ==== OVERRIDES 2026-03-24 ====
+
+def inject_extra_css():
+    st.markdown("""
+    <style>
+    section[data-testid="stSidebar"]{display:none!important;}
+    div[data-testid="stSidebarCollapsedControl"]{display:none!important;}
+    .block-container{padding-top:1rem!important;max-width:1380px!important;}
+    .topbar-wrap{position:sticky;top:0;z-index:10;padding:.2rem 0 .9rem;background:linear-gradient(180deg,rgba(3,6,14,.96),rgba(3,6,14,.82),rgba(3,6,14,0));backdrop-filter:blur(16px)}
+    .topbrand{display:flex;align-items:center;gap:12px;margin-bottom:.8rem}.topbrand-icon{width:44px;height:44px;border-radius:14px;background:linear-gradient(135deg,#0A84FF,#30D158);display:flex;align-items:center;justify-content:center;font-family:Syne,sans-serif;font-weight:900;color:#fff}.topbrand-title{font-family:Syne,sans-serif;font-size:2rem;font-weight:900;letter-spacing:-.07em;color:#fff}.topbrand-sub{font-size:.71rem;color:#7A8FAD}.glass-nav{padding:.65rem;border-radius:22px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,.02));backdrop-filter:blur(18px);box-shadow:0 18px 40px rgba(0,0,0,.14)}
+    .glass-nav .stButton>button{height:54px!important;border-radius:18px!important;background:linear-gradient(135deg,rgba(255,255,255,.09),rgba(255,255,255,.03))!important;border:1px solid rgba(255,255,255,.08)!important;color:#D8E4F5!important;font-weight:700!important}
+    .hero-research,.glass-section{padding:1rem 1.05rem;border-radius:24px;border:1px solid rgba(255,255,255,.08);background:linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,.02));backdrop-filter:blur(20px);box-shadow:0 16px 44px rgba(0,0,0,.14)}
+    .hero-mini{font-size:.62rem;color:#7A8FAD;text-transform:uppercase;letter-spacing:.12em;font-weight:700;margin-bottom:.25rem}.hero-title{font-family:Syne,sans-serif;font-size:1.55rem;font-weight:900;letter-spacing:-.05em;color:#fff;margin-bottom:.35rem}.hero-text,.mini-note{font-size:.75rem;color:#91A6C6;line-height:1.7}
+    .research-clean{border:1px solid rgba(255,255,255,.07);border-radius:22px;background:linear-gradient(135deg,rgba(255,255,255,.05),rgba(255,255,255,.018));box-shadow:0 16px 40px rgba(0,0,0,.12);margin-bottom:.85rem;overflow:hidden}.research-top{padding:1rem;border-bottom:1px solid rgba(255,255,255,.05)}.research-chip{font-size:.58rem;color:#9AC7FF;border:1px solid rgba(10,132,255,.22);padding:4px 8px;border-radius:999px;background:rgba(10,132,255,.08);display:inline-block;margin:.12rem .2rem .12rem 0}.cluster-row{padding:.6rem .75rem;border-radius:15px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);margin-bottom:.4rem}
+    </style>
+    """, unsafe_allow_html=True)
+
+def _safe_nat_options(default='Brasil'):
+    opts=['Brasil']+sorted([k for k in NATIONALITY_COORDS if k!='Brasil'])
+    return opts, (default if default in opts else 'Brasil')
+
+def _repo_external_articles(query, limit=5):
+    q=(query or '').strip()
+    if not q: return []
+    ck=f"extrepo::{q.lower()[:80]}"
+    if ck not in st.session_state.scholar_cache:
+        try: st.session_state.scholar_cache[ck]=search_ss(q, limit)
+        except: st.session_state.scholar_cache[ck]=[]
+    return st.session_state.scholar_cache.get(ck, [])
+
+def page_login():
+    _,col,_=st.columns([.9,1.15,.9])
+    with col:
+        st.markdown("<br>",unsafe_allow_html=True)
+        st.markdown('<div class="hero-research" style="text-align:center"><div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:.7rem"><div class="topbrand-icon">N</div><div><div class="topbrand-title" style="font-size:2.35rem">Nebula</div><div class="topbrand-sub" style="letter-spacing:.18em;text-transform:uppercase;font-size:.66rem">Pesquisa científica conectada</div></div></div><div class="hero-text">Entre ou crie uma conta para publicar pesquisas, cruzar documentos e localizar artigos acadêmicos correlatos.</div></div>',unsafe_allow_html=True)
+        mode=st.session_state.get('auth_mode','login')
+        c1,c2=st.columns(2)
+        with c1:
+            if st.button('Entrar',key='auth_enter2',use_container_width=True): st.session_state.auth_mode='login'; st.rerun()
+        with c2:
+            if st.button('Cadastro',key='auth_signup2',use_container_width=True): st.session_state.auth_mode='signup'; st.rerun()
+        st.markdown('<div style="height:.45rem"></div>',unsafe_allow_html=True)
+        if st.session_state.get('auth_mode','login')=='login':
+            with st.form('lf_override'):
+                em=st.text_input('E-mail',placeholder='seu@email.com')
+                pw=st.text_input('Senha',type='password',placeholder='••••••••')
+                if st.form_submit_button('Entrar na plataforma',use_container_width=True):
+                    u=st.session_state.users.get(em)
+                    if not u: st.error('E-mail não encontrado.')
+                    elif u['password']!=hp(pw): st.error('Senha incorreta.')
+                    else:
+                        st.session_state.logged_in=True; st.session_state.current_user=em
+                        update_profile([w.lower() for w in re.split(r'[\s,;/]+',u.get('area','')) if len(w)>3],2.0)
+                        st.session_state.page='repository'; st.rerun()
+        else:
+            with st.form('sf_override'):
+                nn=st.text_input('Nome completo')
+                ne=st.text_input('E-mail')
+                na=st.text_input('Linha de pesquisa',placeholder='Ex: documentação museológica digital, IA aplicada à preservação')
+                c1,c2=st.columns(2)
+                with c1: np_=st.text_input('Senha',type='password')
+                with c2: np2=st.text_input('Confirmar senha',type='password')
+                if st.form_submit_button('Criar conta',use_container_width=True):
+                    if not all([nn,ne,na,np_,np2]): st.error('Preencha nome, e-mail, linha de pesquisa e senha.')
+                    elif np_!=np2: st.error('Senhas não coincidem.')
+                    elif len(np_)<6: st.error('A senha precisa ter no mínimo 6 caracteres.')
+                    elif ne in st.session_state.users: st.error('Esse e-mail já está cadastrado.')
+                    else:
+                        st.session_state.users[ne]={'name':nn,'password':hp(np_),'area':na,'bio':'','verified':True,'nationality':'Brasil'}
+                        save_db(); st.session_state.logged_in=True; st.session_state.current_user=ne
+                        update_profile([w.lower() for w in re.split(r'[\s,;/]+',na) if len(w)>3],3.0)
+                        st.session_state.page='repository'; st.rerun()
+
+def render_nav():
+    u=guser(); cur=st.session_state.page
+    nav=[('repository','Área de pesquisa'),('search','Busca acadêmica'),('folders','Pastas'),('analysis','Análise'),('connections','Conexões'),('chat','Chat'),('settings','Conta')]
+    st.markdown('<div class="topbar-wrap"><div class="topbrand"><div class="topbrand-icon">N</div><div><div class="topbrand-title">Nebula</div><div class="topbrand-sub">'+u.get('name','Usuário')+' · '+u.get('area','')[:100]+'</div></div></div><div class="glass-nav">',unsafe_allow_html=True)
+    cols=st.columns(len(nav))
+    for col,(key,label) in zip(cols,nav):
+        with col:
+            txt=('● '+label) if cur==key and not st.session_state.profile_view else label
+            if st.button(txt,key=f'topnav_{key}',use_container_width=True): st.session_state.profile_view=None; st.session_state.page=key; st.rerun()
+    st.markdown('</div></div>',unsafe_allow_html=True)
+
+def render_research_card(item, show_author=True, ctx='repo', compact=False, connection_count=None):
+    iid=item['id']; aname=item.get('author','?'); nat=item.get('nationality','Brasil'); dt=item.get('date',''); yr=item.get('year',''); cit=item.get('citations',0); method=item.get('methodology','—'); ab=(item.get('abstract','') or '').strip(); conn_count=connection_count if connection_count is not None else len(find_similar(item,0.22,20)); detail_key=f'detail_{ctx}_{iid}'
+    st.markdown('<div class="research-clean"><div class="research-top"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><div style="flex:1"><div style="font-size:.66rem;color:#7A8FAD;font-weight:600">'+aname+' · '+item.get('area','')+' · '+nat+' · '+dt+'</div><div style="font-family:Syne,sans-serif;font-size:1rem;font-weight:800;color:#fff;line-height:1.35;margin-top:.2rem">'+item.get('title','Sem título')+'</div><div style="font-size:.76rem;color:#91A6C6;line-height:1.68;margin-top:.45rem">'+ab[:380]+('...' if len(ab)>380 else '')+'</div></div>'+badge(item.get('status','Em andamento'))+'</div><div style="margin-top:.45rem"><span class="research-chip">Ano '+str(yr)+'</span><span class="research-chip">'+str(method)+'</span><span class="research-chip">'+str(cit)+' citações</span><span class="research-chip">'+str(conn_count)+' conexões</span></div>'+(('<div style="margin-top:.45rem">'+tags_html(item.get('tags',[])[:6])+'</div>') if item.get('tags') else '')+'</div>',unsafe_allow_html=True)
+    c1,c2=st.columns(2)
+    with c1:
+        if st.button('Ver conexões',key=f'cn_override_{ctx}_{iid}',use_container_width=True): st.session_state.view_research=item; st.session_state.page='connections'; st.rerun()
+    with c2:
+        if st.button('Abrir análise',key=f'dt_override_{ctx}_{iid}',use_container_width=True): st.session_state[detail_key]=not st.session_state.get(detail_key,False); st.rerun()
+    if st.session_state.get(detail_key,False):
+        related=find_similar(item,0.22,4)
+        st.markdown('<div class="glass-section" style="margin:.15rem .85rem .9rem"><div class="hero-mini">Leitura analítica</div><div class="mini-note" style="margin-bottom:.55rem">Esta pesquisa se posiciona em <strong>'+item.get('area','—')+'</strong>, usa <strong>'+str(method)+'</strong> e possui como termos dominantes: '+(', '.join(research_terms(item,8)) if research_terms(item,8) else 'sem termos dominantes')+'.</div>',unsafe_allow_html=True)
+        if related:
+            for sim,other in related:
+                det=connection_details(item,other)
+                st.markdown('<div class="cluster-row"><div style="display:flex;justify-content:space-between;gap:8px"><div style="font-size:.8rem;font-weight:700;color:#fff">'+other.get('title','')[:82]+'</div><div style="font-size:.63rem;color:#30D158;font-weight:800">'+str(round(sim*100))+'%</div></div><div class="mini-note" style="margin:.18rem 0 .25rem">'+other.get('area','')+' · '+other.get('methodology','')+'</div><div class="mini-note">'+' • '.join(det.get('reasons',[])[:3])+'</div>'+(('<div style="margin-top:.35rem">'+tags_html(det.get('shared_terms',[])[:8],'tag-teal')+'</div>') if det.get('shared_terms') else '')+'</div>',unsafe_allow_html=True)
+        else: st.markdown('<div class="mini-note">Ainda não há conexões suficientemente fortes para esta pesquisa.</div>',unsafe_allow_html=True)
+        st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
+
+def page_repository():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    u=guser(); email=st.session_state.current_user; all_items=list(st.session_state.research_items); all_edges=build_connection_edges(all_items,threshold=0.22); conn_map=connection_count_map(all_items,all_edges); interests=get_interests(email,10); recs=get_recommendations(email,8); ext_query=' '.join(interests[:4]) if interests else u.get('area','pesquisa acadêmica'); ext_articles=_repo_external_articles(ext_query,6)
+    st.markdown('<div class="hero-research"><div class="hero-mini">Área de pesquisa</div><div class="hero-title">Ambiente para mapear, comparar e conectar pesquisas</div><div class="hero-text">Publique estudos, relacione documentos das suas pastas e veja correlações com literatura acadêmica externa alinhada ao seu tema principal: <strong>'+u.get('area','—')+'</strong>.</div></div>',unsafe_allow_html=True)
+    left,right=st.columns([2.2,1],gap='medium')
+    with left:
+        with st.expander('Publicar nova pesquisa'):
+            with st.form('pub_form_override2'):
+                title=st.text_input('Título da pesquisa')
+                abstract=st.text_area('Resumo',height=100,placeholder='Objetivo, corpus, método, resultados e problema de pesquisa...')
+                c1,c2,c3=st.columns(3)
+                with c1: tags_in=st.text_input('Palavras-chave',placeholder='museologia, IA, documentação')
+                with c2: meth=st.selectbox('Metodologia',['experimental','computacional','observacional','revisao sistematica','estudo de caso','outro'])
+                with c3: status=st.selectbox('Status',['Em andamento','Publicado','Concluido'])
+                c4,c5=st.columns(2)
+                with c4: year_in=st.number_input('Ano',min_value=1900,max_value=2035,value=datetime.now().year)
+                with c5:
+                    nat_options,nat_default=_safe_nat_options('Brasil')
+                    nat_in=st.selectbox('País / nacionalidade',nat_options,index=nat_options.index(nat_default))
+                if st.form_submit_button('Adicionar pesquisa',use_container_width=True) and title and abstract:
+                    tags=[t.strip() for t in tags_in.split(',') if t.strip()] if tags_in else []
+                    st.session_state.research_items.insert(0,{'id':int(datetime.now().timestamp())+random.randint(0,999),'author':u.get('name','?'),'author_email':email,'area':u.get('area',''),'nationality':nat_in,'year':int(year_in),'title':title,'abstract':abstract,'tags':tags,'methodology':meth,'citations':0,'views':1,'likes':0,'liked_by':[],'saved_by':[],'date':datetime.now().strftime('%Y-%m-%d'),'status':status})
+                    update_profile(tags+[u.get('area','')],2.5); save_db(); st.success('Pesquisa adicionada.'); st.rerun()
+        q_col,s_col=st.columns([3.3,1.15])
+        with q_col: repo_query=st.text_input('',placeholder='Pesquisar título, resumo, método, área ou palavra-chave...',key='repo_query_override2',label_visibility='collapsed')
+        with s_col: sort_mode=st.selectbox('Ordenar',['Mais recentes','Mais conectadas','Mais citadas','Relevantes para mim'],key='repo_sort_override2')
+        ff=st.radio('',['Todas','Minhas','Por área','Relacionadas','Publicadas'],horizontal=True,key='repo_filter_override2',label_visibility='collapsed')
+        items=list(all_items)
+        if ff=='Minhas': items=[r for r in items if r.get('author_email')==email]
+        elif ff=='Por área':
+            area=_norm_text(u.get('area','')); items=[r for r in items if area and (area in _norm_text(r.get('area','')) or area in _norm_text(r.get('abstract','')))]
+        elif ff=='Relacionadas': items=recs if recs else items
+        elif ff=='Publicadas': items=[r for r in items if _norm_text(r.get('status',''))=='publicado']
+        if repo_query:
+            q=_norm_text(repo_query); items=[r for r in items if q in _norm_text(r.get('title','')) or q in _norm_text(r.get('abstract','')) or q in _norm_text(r.get('area','')) or q in _norm_text(r.get('methodology','')) or any(q in _norm_text(t) for t in r.get('tags',[]))]
+        if sort_mode=='Mais conectadas': items=sorted(items,key=lambda x:(conn_map.get(x['id'],0),x.get('citations',0),x.get('date','')),reverse=True)
+        elif sort_mode=='Mais citadas': items=sorted(items,key=lambda x:(x.get('citations',0),conn_map.get(x['id'],0),x.get('date','')),reverse=True)
+        elif sort_mode=='Relevantes para mim':
+            interest_set=set(get_interests(email,20))|{_norm_text(u.get('area',''))}
+            items=sorted(items,key=lambda item:len({t for t in interest_set if t}&research_terms(item,10))*10+conn_map.get(item['id'],0)*2+item.get('citations',0)*0.4,reverse=True)
+        else: items=sorted(items,key=lambda x:(x.get('date',''),x.get('citations',0)),reverse=True)
+        m1,m2,m3=st.columns(3)
+        with m1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas visíveis</div></div>',unsafe_allow_html=True)
+        with m2: st.markdown(f'<div class="mbox"><div class="mval-teal">{len(all_edges)}</div><div class="mlbl">Conexões semânticas</div></div>',unsafe_allow_html=True)
+        with m3: st.markdown(f'<div class="mbox"><div class="mval-pur">{len(ext_articles)}</div><div class="mlbl">Artigos externos</div></div>',unsafe_allow_html=True)
+        st.markdown('<div style="height:.35rem"></div>',unsafe_allow_html=True)
+        if not items: st.markdown('<div class="glass-card" style="padding:3rem;text-align:center;color:#7A8FAD">Nenhuma pesquisa encontrada nesse recorte.</div>',unsafe_allow_html=True)
+        else:
+            for r in items: render_research_card(r,ctx='repo_v2',connection_count=conn_map.get(r['id'],0))
+    with right:
+        st.markdown('<div class="glass-section"><div class="hero-mini">Núcleo temático do seu perfil</div><div style="font-size:.95rem;color:#fff;font-weight:800;line-height:1.4">'+u.get('area','Pesquisa')+'</div><div style="margin-top:.55rem">',unsafe_allow_html=True)
+        if interests:
+            for i,term in enumerate(interests[:8]):
+                pct=max(24,100-i*9)
+                st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:.35rem"><div style="flex:1;font-size:.71rem;color:#9CB0CC">{term}</div><div style="width:{pct}px;height:5px;background:linear-gradient(90deg,#0A84FF,#30D158);border-radius:999px"></div></div>',unsafe_allow_html=True)
+        else: st.markdown('<div class="mini-note">Publique pesquisas e faça buscas acadêmicas para alimentar esse núcleo de interesses.</div>',unsafe_allow_html=True)
+        st.markdown('</div></div><div style="height:.7rem"></div>',unsafe_allow_html=True)
+        st.markdown('<div class="glass-section">',unsafe_allow_html=True)
+        st.markdown('<div class="hero-mini">Artigos acadêmicos correlatos</div>',unsafe_allow_html=True)
+        if ext_articles:
+            for a in ext_articles[:5]:
+                st.markdown(f'<div style="padding:.45rem 0;border-bottom:1px solid rgba(255,255,255,.05)"><div style="font-size:.75rem;font-weight:700;color:#EAF2FF;line-height:1.45">{a.get("title","")[:92]}</div><div class="mini-note">{a.get("authors","—")[:70]} · {a.get("year","?")}{(" · "+str(a.get("citations",0))+" cit.") if a.get("citations") else ""}</div></div>',unsafe_allow_html=True)
+                if a.get('url'): st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.69rem;text-decoration:none">Abrir artigo</a>',unsafe_allow_html=True)
+        else: st.markdown('<div class="mini-note">Nenhum artigo externo foi localizado para esse eixo temático agora.</div>',unsafe_allow_html=True)
+        st.markdown('</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
+
+def page_analysis():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    st.markdown('<div class="hero-research"><div class="hero-mini">Análise avançada</div><div class="hero-title">Leitura analítica do ecossistema de pesquisa</div><div class="hero-text">Cruza repositório, documentos das pastas, anos, autores, temas, palavras-chave e similaridades para revelar padrões da sua base.</div></div>',unsafe_allow_html=True)
+    items=list(st.session_state.research_items); folders=st.session_state.folders
+    all_an={f:an for fd in folders.values() if isinstance(fd,dict) for f,an in fd.get('analyses',{}).items()}
+    edges=build_connection_edges(items,threshold=0.22); conn_map=connection_count_map(items,edges)
+    c1,c2,c3,c4=st.columns(4)
+    with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas</div></div>',unsafe_allow_html=True)
+    with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{len(all_an)}</div><div class="mlbl">Documentos analisados</div></div>',unsafe_allow_html=True)
+    with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{len(edges)}</div><div class="mlbl">Conexões fortes</div></div>',unsafe_allow_html=True)
+    with c4: st.markdown(f'<div class="mbox"><div class="mval-orn">{sum(r.get("citations",0) for r in items)}</div><div class="mlbl">Citações totais</div></div>',unsafe_allow_html=True)
+    tab1,tab2,tab3=st.tabs(['  Painel do repositório  ','  Documentos das pastas  ','  Correlação externa  '])
+    with tab1:
+        if not items: st.info('Nenhuma pesquisa no repositório.')
+        else:
+            years=Counter(r.get('year',datetime.now().year) for r in items); areas=Counter(r.get('area','Sem área') for r in items); meth=Counter(r.get('methodology','outro') for r in items); tags=Counter(t.lower() for r in items for t in r.get('tags',[])); top_conn=sorted(items,key=lambda x:(conn_map.get(x['id'],0),x.get('citations',0)),reverse=True)[:6]
+            if years:
+                fig=go.Figure(go.Bar(x=[str(y) for y in sorted(years)],y=[years[y] for y in sorted(years)],text=[years[y] for y in sorted(years)],textposition='outside'))
+                fig.update_layout(**{**pc_dark('Evolução por ano'),'height':220})
+                st.plotly_chart(fig,use_container_width=True)
+            c1,c2=st.columns(2)
+            with c1:
+                if areas:
+                    fig=go.Figure(go.Pie(labels=list(areas.keys())[:8],values=list(areas.values())[:8],hole=.52))
+                    fig.update_layout(height=280,paper_bgcolor='rgba(0,0,0,0)',plot_bgcolor='rgba(0,0,0,0)',title=dict(text='Áreas predominantes',font=dict(color='#D8E4F5',family='Syne',size=12)))
+                    st.plotly_chart(fig,use_container_width=True)
+            with c2:
+                if meth:
+                    fig=go.Figure(go.Bar(x=list(meth.values()),y=list(meth.keys()),orientation='h',text=list(meth.values()),textposition='outside'))
+                    fig.update_layout(**{**pc_dark('Metodologias'),'height':280})
+                    st.plotly_chart(fig,use_container_width=True)
+            st.markdown('<div class="glass-section">',unsafe_allow_html=True)
+            st.markdown('<div class="hero-mini">Pesquisas mais conectadas</div>',unsafe_allow_html=True)
+            for r in top_conn:
+                st.markdown(f'<div class="cluster-row"><div style="display:flex;justify-content:space-between;gap:8px"><div style="font-size:.8rem;font-weight:700;color:#fff">{r.get("title","")[:86]}</div><div style="font-size:.63rem;color:#30D158;font-weight:800">{conn_map.get(r["id"],0)} conexões</div></div><div class="mini-note">{r.get("area","")} · {r.get("methodology","")} · {r.get("year","")}</div></div>',unsafe_allow_html=True)
+            st.markdown('</div>',unsafe_allow_html=True)
+            if tags:
+                fig=go.Figure(go.Bar(x=[c for _,c in tags.most_common(12)],y=[t for t,_ in tags.most_common(12)],orientation='h',text=[c for _,c in tags.most_common(12)],textposition='inside'))
+                fig.update_layout(**{**pc_dark('Palavras-chave dominantes'),'height':380,'yaxis':dict(showticklabels=False)})
+                st.plotly_chart(fig,use_container_width=True)
+    with tab2:
+        if not all_an: st.info('Analise documentos nas pastas para gerar este painel.')
+        else:
+            kw=Counter(k for an in all_an.values() for k in an.get('keywords',[])); years_doc=Counter(an.get('year') for an in all_an.values() if an.get('year')); authors=Counter(a for an in all_an.values() for a in an.get('authors',[])); relev=[an.get('relevance_score',0) for an in all_an.values()]
+            c1,c2=st.columns(2)
+            with c1:
+                if years_doc:
+                    fig=go.Figure(go.Bar(x=[str(y) for y in sorted(years_doc)],y=[years_doc[y] for y in sorted(years_doc)],text=[years_doc[y] for y in sorted(years_doc)],textposition='outside'))
+                    fig.update_layout(**{**pc_dark('Documentos por ano'),'height':220})
+                    st.plotly_chart(fig,use_container_width=True)
+            with c2:
+                if relev:
+                    fig=go.Figure(go.Histogram(x=relev,nbinsx=10))
+                    fig.update_layout(**{**pc_dark('Distribuição de relevância'),'height':220})
+                    st.plotly_chart(fig,use_container_width=True)
+            st.markdown('<div class="glass-section">',unsafe_allow_html=True)
+            st.markdown('<div class="hero-mini">Autores mais recorrentes nos documentos</div>',unsafe_allow_html=True)
+            for a,c in authors.most_common(8): st.markdown(f'<div class="cluster-row"><div style="font-size:.8rem;font-weight:700;color:#fff">{a}</div><div class="mini-note">{c} documento(s)</div></div>',unsafe_allow_html=True)
+            st.markdown('</div>',unsafe_allow_html=True)
+            if kw:
+                fig=go.Figure(go.Bar(x=[c for _,c in kw.most_common(15)],y=[k for k,_ in kw.most_common(15)],orientation='h',text=[c for _,c in kw.most_common(15)],textposition='inside'))
+                fig.update_layout(**{**pc_dark('Keywords dominantes das pastas'),'height':420,'yaxis':dict(showticklabels=False)})
+                st.plotly_chart(fig,use_container_width=True)
+            for fname,an in list(all_an.items())[:8]:
+                st.markdown(f'<div class="cluster-row"><div style="font-size:.8rem;font-weight:700;color:#fff">{fname}</div><div class="mini-note">{an.get("summary","")}</div><div style="margin-top:.3rem">{tags_html(an.get("keywords",[])[:8])}</div></div>',unsafe_allow_html=True)
+    with tab3:
+        u=guser(); q=' '.join(get_interests(st.session_state.current_user,6)) or u.get('area','pesquisa científica'); arts=_repo_external_articles(q,8)
+        st.markdown('<div class="glass-section"><div class="hero-mini">Correlação com artigos externos</div><div class="mini-note">Busca automática por literatura semelhante à sua área de pesquisa.</div></div>',unsafe_allow_html=True)
+        if arts:
+            for a in arts[:8]:
+                st.markdown(f'<div class="cluster-row"><div style="font-size:.82rem;font-weight:700;color:#fff">{a.get("title","")}</div><div class="mini-note">{a.get("authors","—")} · {a.get("year","?")} · {a.get("source","")}</div><div class="mini-note" style="margin-top:.25rem">{(a.get("abstract","") or "")[:260]}{"..." if len(a.get("abstract","") or "")>260 else ""}</div></div>',unsafe_allow_html=True)
+                if a.get('url'): st.markdown(f'<a href="{a["url"]}" target="_blank" style="color:#0A84FF;font-size:.7rem;text-decoration:none">Abrir artigo</a>',unsafe_allow_html=True)
+        else: st.info('Nenhum artigo externo localizado agora para esse eixo.')
+    st.markdown('</div>',unsafe_allow_html=True)
+
+def page_connections():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    items=list(st.session_state.research_items)
+    threshold=st.slider('Força mínima da conexão',0.12,0.70,0.22,0.02)
+    edges=build_connection_edges(items,threshold=threshold)
+    st.markdown('<div class="hero-research"><div class="hero-mini">Conexões entre pesquisas</div><div class="hero-title">União real entre pesquisas semelhantes</div><div class="hero-text">O sistema agrupa pesquisas por termos compartilhados, área, metodologia e proximidade semântica. Quanto maior a pontuação, mais forte a correlação.</div></div>',unsafe_allow_html=True)
+    c1,c2,c3=st.columns(3)
+    with c1: st.markdown(f'<div class="mbox"><div class="mval-acc">{len(items)}</div><div class="mlbl">Pesquisas avaliadas</div></div>',unsafe_allow_html=True)
+    with c2: st.markdown(f'<div class="mbox"><div class="mval-teal">{len(edges)}</div><div class="mlbl">Conexões fortes</div></div>',unsafe_allow_html=True)
+    with c3: st.markdown(f'<div class="mbox"><div class="mval-pur">{len(set(tuple(sorted((e["source"]["id"],e["target"]["id"]))) for e in edges)) if edges else 0}</div><div class="mlbl">Pares conectados</div></div>',unsafe_allow_html=True)
+    focus=st.session_state.get('view_research')
+    if focus:
+        st.markdown('<div class="glass-section"><div class="hero-mini">Pesquisa focal</div><div style="font-size:1rem;color:#fff;font-weight:800">'+focus.get('title','')+'</div><div class="mini-note">'+focus.get('area','')+' · '+focus.get('methodology','')+'</div></div><div style="height:.65rem"></div>',unsafe_allow_html=True)
+    if not edges:
+        st.info('Nenhuma conexão forte encontrada com esse limiar.')
+    else:
+        for edge in edges[:24]:
+            if focus and edge['source']['id']!=focus['id'] and edge['target']['id']!=focus['id']: continue
+            det=connection_details(edge['source'],edge['target'])
+            st.markdown(f'<div class="cluster-row"><div style="display:flex;justify-content:space-between;gap:8px"><div style="font-size:.85rem;font-weight:800;color:#fff">{edge["source"]["title"][:56]}</div><div style="font-size:.66rem;color:#30D158;font-weight:900">{round(edge["score"]*100)}%</div></div><div class="mini-note" style="margin:.25rem 0">↔ {edge["target"]["title"][:76]}</div><div class="mini-note">{" • ".join(det.get("reasons",[])[:4])}</div>'+(('<div style="margin-top:.35rem">'+tags_html(det.get('shared_terms',[])[:10],'tag-teal')+'</div>') if det.get('shared_terms') else '')+'</div>',unsafe_allow_html=True)
+    st.markdown('</div>',unsafe_allow_html=True)
+
+def page_settings():
+    st.markdown('<div class="pw">',unsafe_allow_html=True)
+    email=st.session_state.current_user; u=guser(); st.markdown('<div class="hero-research"><div class="hero-mini">Conta</div><div class="hero-title">Dados básicos do perfil</div><div class="hero-text">Ajuste apenas o necessário: nome, linha de pesquisa e senha.</div></div>',unsafe_allow_html=True)
+    t1,t2=st.tabs(['  Perfil  ','  Segurança  '])
+    with t1:
+        with st.form('prf_override'):
+            n_name=st.text_input('Nome',value=u.get('name',''))
+            n_area=st.text_input('Linha de pesquisa',value=u.get('area',''))
+            if st.form_submit_button('Salvar perfil',use_container_width=True):
+                st.session_state.users[email].update({'name':n_name,'area':n_area})
+                save_db(); st.success('Perfil salvo!')
+        if st.button('Sair da conta',key='logout_override'): st.session_state.logged_in=False; st.session_state.current_user=None; st.session_state.page='login'; st.rerun()
+    with t2:
+        with st.form('cpw_override'):
+            op=st.text_input('Senha atual',type='password'); np_=st.text_input('Nova senha',type='password'); nc=st.text_input('Confirmar',type='password')
+            if st.form_submit_button('Alterar senha',use_container_width=True):
+                if hp(op)!=u.get('password',''): st.error('Senha incorreta.')
+                elif np_!=nc: st.error('As senhas não coincidem.')
+                elif len(np_)<6: st.error('Mínimo 6 caracteres.')
+                else: st.session_state.users[email]['password']=hp(np_); save_db(); st.success('Senha alterada!')
+    st.markdown('</div>',unsafe_allow_html=True)
+
+def main():
+    inject_css(); inject_extra_css()
+    if not st.session_state.logged_in:
+        page_login(); return
+    render_nav()
+    if st.session_state.profile_view:
+        page_profile(st.session_state.profile_view); return
+    {'repository':page_repository,'search':page_search,'folders':page_folders,'analysis':page_analysis,'connections':page_connections,'chat':page_chat,'settings':page_settings}.get(st.session_state.page,page_repository)()
+
+main()
