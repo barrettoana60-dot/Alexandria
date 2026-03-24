@@ -822,12 +822,9 @@ def login_page() -> None:
         reg_password = st.text_input("Senha", type="password", key="register_password")
         area = st.selectbox(
             "Área principal",
-            ["Inteligência Artificial", "Museologia", "Computação", "Ciência de Dados", "Biomedicina", "Neurociência", "Astrofísica", "Psicologia"],
+            ["Inteligência Artificial", "Museologia", "Computação", "Ciência de Dados","],
             key="register_area",
         )
-        nationality = st.selectbox("Nacionalidade", ["Brasil"] + sorted(NATIONALITY_COORDS.keys()), key="register_nat")
-        city = st.text_input("Cidade", key="register_city")
-        bio = st.text_area("Bio curta", height=100, key="register_bio")
         if st.button("Criar conta", use_container_width=True):
             if not name or not reg_email or not reg_password:
                 st.error("Preencha nome, e-mail e senha.")
@@ -838,9 +835,6 @@ def login_page() -> None:
                     "name": name,
                     "password": hash_password(reg_password),
                     "area": area,
-                    "bio": bio,
-                    "nationality": nationality,
-                    "city": city,
                 }
                 save_db()
                 st.success("Conta criada. Agora faça login.")
