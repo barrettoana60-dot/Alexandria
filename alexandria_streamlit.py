@@ -822,7 +822,7 @@ def login_page() -> None:
         reg_password = st.text_input("Senha", type="password", key="register_password")
         area = st.selectbox(
             "Área principal",
-            ["Inteligência Artificial", "Museologia", "Computação", "Ciência de Dados","],
+            ["Inteligência Artificial", "Museologia", "Computação", "Ciência de Dados", "Biomedicina", "Neurociência", "Astrofísica", "Psicologia"],
             key="register_area",
         )
         if st.button("Criar conta", use_container_width=True):
