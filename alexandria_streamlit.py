@@ -3,6 +3,7 @@ import io
 import re
 import json
 import math
+import base64
 import hashlib
 import zipfile
 import struct
@@ -29,6 +30,11 @@ try:
 except Exception:
     pdfplumber = None
 
+try:
+    from cryptography.fernet import Fernet
+except Exception:
+    Fernet = None
+
 # ============================================================
 # CONFIG
 # ============================================================
@@ -38,6 +44,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+
+APP_SCHEMA_VERSION = 3
+LOCAL_CRYPT_SALT = "nebula_local_workspace_v3"
 
 DB_FILE = "nebula_research_db.json"
 MAX_TEXT_CHARS = 80000
@@ -101,10 +110,10 @@ def inject_css():
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 :root {
-    --bg: #050810;
-    --glass: rgba(255,255,255,0.06);
-    --glass-border: rgba(255,255,255,0.10);
-    --glass-hover: rgba(255,255,255,0.10);
+    --bg: #03060d;
+    --glass: rgba(255,255,255,0.07);
+    --glass-border: rgba(170,210,255,0.12);
+    --glass-hover: rgba(255,255,255,0.11);
     --text: #eef2ff;
     --muted: #94a3c0;
     --blue: #60a5fa;
@@ -127,12 +136,12 @@ html, body, [class*="css"] {
     position: relative;
     overflow-x: hidden;
     background:
-        radial-gradient(ellipse 80% 50% at 10% -10%, rgba(96,165,250,0.20), transparent),
-        radial-gradient(ellipse 60% 40% at 90% 5%, rgba(103,232,249,0.16), transparent),
-        radial-gradient(ellipse 50% 60% at 50% 110%, rgba(74,222,128,0.06), transparent),
-        linear-gradient(135deg, #020611 0%, #07101f 42%, #020814 100%);
-    background-size: 180% 180%;
-    animation: nebulaShift 18s ease-in-out infinite;
+        radial-gradient(circle at 15% 15%, rgba(59,130,246,0.22), transparent 28%),
+        radial-gradient(circle at 82% 18%, rgba(34,211,238,0.14), transparent 22%),
+        radial-gradient(circle at 50% 100%, rgba(29,78,216,0.16), transparent 34%),
+        linear-gradient(135deg, #01040a 0%, #041226 34%, #01070f 68%, #000000 100%);
+    background-size: 220% 220%;
+    animation: nebulaShift 22s ease-in-out infinite;
     min-height: 100vh;
 }
 
@@ -284,14 +293,53 @@ section[data-testid="stSidebar"] { display: none !important; }
     background: rgba(248,113,113,0.20);
 }
 
+.nav-shell {
+    background: linear-gradient(135deg, rgba(8,16,32,0.82), rgba(3,8,18,0.74));
+    border: 1px solid rgba(170,210,255,0.12);
+    border-radius: 26px;
+    padding: 0.7rem 0.8rem 0.8rem 0.8rem;
+    margin: 0.35rem 0 1.35rem 0;
+    box-shadow: 0 18px 40px rgba(2,8,23,0.42), inset 0 1px 0 rgba(255,255,255,0.04);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+.nav-brand {
+    display:flex;
+    align-items:center;
+    height:100%;
+    min-height:46px;
+    padding:0 0.7rem;
+    font-size:1.1rem;
+    font-weight:800;
+    letter-spacing:-0.02em;
+    background: linear-gradient(135deg, #d9efff 0%, #87d7ff 48%, #c4b5fd 100%);
+    -webkit-background-clip:text;
+    -webkit-text-fill-color:transparent;
+    background-clip:text;
+}
+.nav-user-chip {
+    min-height:46px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:18px;
+    border:1px solid rgba(170,210,255,0.12);
+    background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+    color:#d8e8ff;
+    font-size:0.84rem;
+    font-weight:600;
+    backdrop-filter: blur(16px);
+}
+
 /* ── GLASS CARD ── */
 .glass {
-    background: linear-gradient(135deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
-    border: 1px solid var(--glass-border);
-    border-radius: 20px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.085), rgba(255,255,255,0.028));
+    border: 1px solid rgba(170,210,255,0.13);
+    border-radius: 22px;
     padding: 1.25rem 1.35rem;
-    backdrop-filter: blur(20px);
-    box-shadow: 0 8px 32px rgba(0,0,0,0.24);
+    backdrop-filter: blur(22px) saturate(160%);
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    box-shadow: 0 20px 46px rgba(2,8,23,0.42), inset 0 1px 0 rgba(255,255,255,0.05);
     margin-bottom: 1.25rem;
 }
 
@@ -437,22 +485,49 @@ section[data-testid="stSidebar"] { display: none !important; }
 
 /* ── STREAMLIT OVERRIDE ── */
 .stButton > button {
-    border-radius: 14px !important;
-    border: 1px solid var(--glass-border) !important;
-    background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03)) !important;
-    color: var(--text) !important;
-    font-weight: 500 !important;
-    transition: all 0.15s !important;
-    backdrop-filter: blur(12px) !important;
+    position: relative !important;
+    overflow: hidden !important;
+    min-height: 46px !important;
+    border-radius: 18px !important;
+    border: 1px solid rgba(170,210,255,0.16) !important;
+    background: linear-gradient(135deg, rgba(255,255,255,0.095), rgba(255,255,255,0.03)) !important;
+    color: #e8f2ff !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.01em !important;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease !important;
+    backdrop-filter: blur(18px) saturate(160%) !important;
+    -webkit-backdrop-filter: blur(18px) saturate(160%) !important;
+    box-shadow: 0 10px 24px rgba(3,10,25,0.32), inset 0 1px 0 rgba(255,255,255,0.05) !important;
+}
+.stButton > button::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,0.18) 22%, transparent 46%);
+    transform: translateX(-130%);
+    animation: buttonSweep 5.6s ease-in-out infinite;
+    pointer-events: none;
 }
 .stButton > button:hover {
-    border-color: rgba(96,165,250,0.30) !important;
-    background: rgba(96,165,250,0.10) !important;
+    transform: translateY(-1px) scale(1.01) !important;
+    border-color: rgba(96,165,250,0.34) !important;
+    background: linear-gradient(135deg, rgba(96,165,250,0.16), rgba(255,255,255,0.04)) !important;
+    box-shadow: 0 16px 28px rgba(2,8,23,0.42), 0 0 0 1px rgba(96,165,250,0.08) inset !important;
+}
+.stButton > button:active {
+    transform: translateY(0) scale(0.995) !important;
 }
 .stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, rgba(96,165,250,0.22), rgba(103,232,249,0.12)) !important;
-    border-color: rgba(96,165,250,0.40) !important;
-    color: #93c5fd !important;
+    background: linear-gradient(135deg, rgba(59,130,246,0.26), rgba(34,211,238,0.14)) !important;
+    border-color: rgba(96,165,250,0.42) !important;
+    color: #dff3ff !important;
+    box-shadow: 0 16px 32px rgba(8,47,73,0.28), 0 0 0 1px rgba(96,165,250,0.12) inset !important;
+}
+@keyframes buttonSweep {
+    0% { transform: translateX(-135%); opacity: 0; }
+    12% { opacity: 0.85; }
+    48% { opacity: 0.18; }
+    100% { transform: translateX(135%); opacity: 0; }
 }
 
 .stTextInput > div > div > input,
@@ -729,7 +804,7 @@ def init_state():
     st.session_state.setdefault("users", users)
     st.session_state.setdefault("workspaces", workspaces)
     st.session_state.setdefault("user_interest", user_interest)
-    st.session_state.setdefault("community_messages", db.get("community_messages", []))
+    st.session_state.setdefault("community_messages", db.get("community_messages", []) if isinstance(db.get("community_messages", []), list) else [])
     st.session_state.setdefault("logged_in", False)
     st.session_state.setdefault("current_user", None)
     st.session_state.setdefault("page", "Dashboard")
@@ -1141,34 +1216,37 @@ def doc_similarity_text(doc):
 
 
 def repository_signature(email):
-    user = st.session_state.users.get(email, {})
     docs = get_repository_for_user(email)
     topic_counter = Counter()
     keyword_counter = Counter()
     author_counter = Counter()
+    year_counter = Counter()
 
     for doc in docs:
+        richness = 2 if int(doc.get("full_text_len", 0) or 0) > 1500 else 1
         topic = doc.get("topic")
         if topic:
-            topic_counter[topic] += 2
-        for kw in doc.get("keywords", [])[:14]:
-            keyword_counter[normalize_text(kw)] += 1
+            topic_counter[topic] += 2 * richness
+        for kw in doc.get("keywords", [])[:18]:
+            kw_norm = normalize_text(kw)
+            if kw_norm and len(kw_norm) >= 3:
+                keyword_counter[kw_norm] += richness
+        for extra_kw in extract_keywords_tfidf(f"{doc.get('summary','')} {doc.get('text','')[:1800]}", 10):
+            kw_norm = normalize_text(extra_kw)
+            if kw_norm and len(kw_norm) >= 3:
+                keyword_counter[kw_norm] += 1
         author = doc.get("author")
         if author and author != "Desconhecido":
             author_counter[normalize_text(author)] += 1
-
-    for kw in extract_keywords_tfidf(user.get("research", ""), 12):
-        keyword_counter[normalize_text(kw)] += 2
-
-    research_topic = detect_topic(user.get("research", ""), fallback="Pesquisa Geral")
-    if research_topic != "Pesquisa Geral":
-        topic_counter[research_topic] += 2
+        year = doc.get("year")
+        if year:
+            year_counter[str(year)] += 1
 
     return {
         "topics": [t for t, _ in topic_counter.most_common(8)],
-        "keywords": [t for t, _ in keyword_counter.most_common(24)],
+        "keywords": [t for t, _ in keyword_counter.most_common(30)],
         "authors": [t for t, _ in author_counter.most_common(8)],
-        "research_topic": research_topic,
+        "years": [t for t, _ in year_counter.most_common(8)],
         "doc_count": len(docs),
     }
 
@@ -1183,44 +1261,58 @@ def compare_repositories(base_email, other_email):
     sig_b = repository_signature(other_email)
 
     shared_topics = [t for t in sig_a["topics"] if t in sig_b["topics"]][:6]
-    shared_terms = [t for t in sig_a["keywords"] if t and t in sig_b["keywords"]][:10]
+    shared_terms = [t for t in sig_a["keywords"] if t and t in sig_b["keywords"]][:12]
     shared_authors = [t for t in sig_a["authors"] if t and t in sig_b["authors"]][:4]
+    shared_years = [t for t in sig_a.get("years", []) if t in sig_b.get("years", [])][:4]
 
     doc_pairs = []
-    for doc_a in base_docs[:18]:
+    for doc_a in base_docs[:20]:
         text_a = doc_similarity_text(doc_a)
-        for doc_b in other_docs[:18]:
+        for doc_b in other_docs[:20]:
             text_b = doc_similarity_text(doc_b)
             sim = cosine_similarity(text_a, text_b)
             if doc_a.get("topic") == doc_b.get("topic") and doc_a.get("topic"):
-                sim += 0.09
-            if sim >= 0.12 or (doc_a.get("topic") == doc_b.get("topic") and sim >= 0.08):
+                sim += 0.12
+            overlap_terms = set(normalize_text(k) for k in doc_a.get("keywords", [])[:12]) & set(normalize_text(k) for k in doc_b.get("keywords", [])[:12])
+            if overlap_terms:
+                sim += min(0.02 * len(overlap_terms), 0.10)
+            if sim >= 0.18 or (doc_a.get("topic") == doc_b.get("topic") and len(overlap_terms) >= 2):
                 doc_pairs.append({
                     "a": doc_a.get("name", "Documento A"),
                     "b": doc_b.get("name", "Documento B"),
                     "topic": doc_a.get("topic") or doc_b.get("topic") or "Pesquisa Geral",
                     "similarity": round(min(sim, 0.99), 3),
+                    "shared_terms": sorted(list(overlap_terms))[:6],
                 })
 
-    doc_pairs = sorted(doc_pairs, key=lambda x: -x["similarity"])[:6]
-    if not shared_topics and len(shared_terms) < 2 and not shared_authors and not doc_pairs:
+    doc_pairs = sorted(doc_pairs, key=lambda x: (-x["similarity"], x["a"], x["b"]))[:8]
+    if len(shared_topics) == 0 and len(shared_terms) < 3 and not shared_authors and len(doc_pairs) < 1:
         return None
 
     topic_union = len(set(sig_a["topics"]) | set(sig_b["topics"])) or 1
     kw_union = len(set(sig_a["keywords"]) | set(sig_b["keywords"])) or 1
+    author_union = len(set(sig_a["authors"]) | set(sig_b["authors"])) or 1
+    year_union = len(set(sig_a.get("years", [])) | set(sig_b.get("years", []))) or 1
     avg_doc_sim = sum(p["similarity"] for p in doc_pairs) / max(len(doc_pairs), 1)
+    repo_density = len(doc_pairs) / max(min(len(base_docs), len(other_docs)), 1)
+
     score = (
-        0.38 * (len(shared_topics) / topic_union) +
-        0.28 * (len(shared_terms) / kw_union) +
-        0.18 * (len(shared_authors) / max(len(set(sig_a["authors"]) | set(sig_b["authors"])), 1)) +
-        0.16 * avg_doc_sim
+        0.34 * (len(shared_topics) / topic_union) +
+        0.24 * (len(shared_terms) / kw_union) +
+        0.12 * (len(shared_authors) / author_union) +
+        0.08 * (len(shared_years) / year_union) +
+        0.12 * avg_doc_sim +
+        0.10 * min(repo_density, 1.0)
     )
-    similarity = round(min(score * 180, 99.0), 1)
+    similarity = round(min(score * 100, 98.8), 1)
+    if similarity < 12:
+        return None
 
     return {
         "shared_topics": shared_topics,
         "shared_terms": shared_terms[:8],
         "shared_authors": shared_authors,
+        "shared_years": shared_years,
         "shared_docs": doc_pairs,
         "similarity": similarity,
     }
@@ -1681,41 +1773,29 @@ def render_3d_network(nodes, edges):
 def render_navbar():
     user = current_user()
     pages = ["Dashboard", "Pesquisa Inteligente", "Repositório", "Análise Avançada", "Conexões", "Chat", "Perfil"]
-    
-    nav_html = f"""
-    <div class="nebula-nav">
-        <div class="nebula-logo">Nebula Research</div>
-        <div class="nebula-navlinks">
-    """
-    for p in pages:
-        active = "active" if st.session_state.page == p else ""
-        nav_html += f'<span class="nav-btn {active}" onclick="">{p}</span>'
-    
-    nav_html += f"""
-        </div>
-        <div class="nav-right">
-            <span class="nav-user">{user.get('name','')}</span>
-        </div>
-    </div>
-    """
-    st.markdown(nav_html, unsafe_allow_html=True)
-    
-    # Real navigation buttons (hidden via CSS magic using columns)
-    cols = st.columns([2] + [1]*len(pages) + [1])
+
+    st.markdown("<div class='nav-shell'>", unsafe_allow_html=True)
+    cols = st.columns([2.2, 1.1, 1.3, 1.1, 1.3, 1.0, 0.9, 0.85, 0.55])
     with cols[0]:
-        pass
-    page_buttons = []
-    for i, p in enumerate(pages):
-        with cols[i+1]:
-            if st.button(p, key=f"nav_{p}", use_container_width=True):
-                st.session_state.page = p
+        st.markdown("<div class='nav-brand'>Nebula Research</div>", unsafe_allow_html=True)
+
+    for idx, page_name in enumerate(pages, start=1):
+        with cols[idx]:
+            kind = "primary" if st.session_state.page == page_name else "secondary"
+            if st.button(page_name, key=f"nav_{page_name}", use_container_width=True, type=kind):
+                st.session_state.page = page_name
                 st.rerun()
+
+    with cols[-2]:
+        username = (user.get("name", "") or "Perfil")[:18]
+        st.markdown(f"<div class='nav-user-chip'>{username}</div>", unsafe_allow_html=True)
     with cols[-1]:
-        if st.button("Sair", key="nav_logout"):
+        if st.button("Sair", key="nav_logout", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.current_user = None
             sync_workspace_state(None)
             st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # ============================================================
 # AUTH PAGE
@@ -1724,7 +1804,7 @@ def page_auth():
     st.markdown("""
     <div style="max-width:520px;margin:4vh auto 0;text-align:center;">
         <div class="auth-logo-big">Nebula Research</div>
-        <div class="auth-sub">Pesquisa acadêmica multimodal com interface líquida, isolamento por conta e conexões por afinidade real de repositório</div>
+        <div class="auth-sub">Pesquisa acadêmica multimodal com análise inteligente, visual escuro animado e repositórios privados</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -1735,7 +1815,7 @@ def page_auth():
         with tab_login:
             st.markdown("<div class='glass' style='margin-top:0.7rem;padding:1.2rem 1.2rem 1rem 1.2rem'>", unsafe_allow_html=True)
             st.markdown("<div class='section-title' style='margin-bottom:0.35rem'>Acesse sua pesquisa</div>", unsafe_allow_html=True)
-            st.markdown("<div class='small-muted' style='margin-bottom:0.8rem'>Entre para abrir seu repositório privado, conexões acadêmicas e análises.</div>", unsafe_allow_html=True)
+            st.markdown("<div class='small-muted' style='margin-bottom:0.8rem'>Entre para acessar sua pesquisa, seus documentos e suas análises.</div>", unsafe_allow_html=True)
             email = st.text_input("E-mail", key="li_email", placeholder="seu@email.com")
             password = st.text_input("Senha", type="password", key="li_pass", placeholder="Senha")
             if st.button("Acessar", use_container_width=True, key="li_btn", type="primary"):
@@ -1754,7 +1834,7 @@ def page_auth():
         with tab_reg:
             st.markdown("<div class='glass' style='margin-top:0.7rem;padding:1.2rem 1.2rem 1rem 1.2rem'>", unsafe_allow_html=True)
             st.markdown("<div class='section-title' style='margin-bottom:0.35rem'>Criar nova conta</div>", unsafe_allow_html=True)
-            st.markdown("<div class='small-muted' style='margin-bottom:0.8rem'>Seu perfil nasce separado dos demais, com repositório próprio e histórico independente.</div>", unsafe_allow_html=True)
+            st.markdown("<div class='small-muted' style='margin-bottom:0.8rem'>Crie sua conta para organizar seu acervo de pesquisa em um ambiente visual único.</div>", unsafe_allow_html=True)
             name = st.text_input("Nome completo", key="rg_name", placeholder="Seu nome")
             reg_email = st.text_input("E-mail", key="rg_email", placeholder="seu@email.com")
             reg_pass = st.text_input("Senha", type="password", key="rg_pass", placeholder="Crie uma senha")
